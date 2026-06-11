@@ -18,9 +18,9 @@
     <DebugType>portable</DebugType>
     <DebugSymbols>true</DebugSymbols>
     <Title>AutoCMEX</Title>
-    <Version>1.0.0</Version>
+    <Version>0.0.1</Version>
     <Description>AutoCMEX</Description>
-    <Copyright>© 2024 AutoCMEX</Copyright>
+    <Copyright>© 2026 AutoCMEX</Copyright>
     <Authors>AutoCMEX</Authors>
     <Company>AutoCMEX</Company>
 
@@ -35,8 +35,10 @@
 
   <ItemGroup>
     <!-- Production dependencies go here! -->
+    <PackageReference Include="Chickensoft.AutoInject" Version="2.13.10" />
     <PackageReference Include="Chickensoft.GameTools" Version="3.1.22" />
     <PackageReference Include="Chickensoft.GodotNodeInterfaces" Version="3.0.16" />
+    <PackageReference Include="Chickensoft.LogicBlocks" Version="6.0.0" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(RunTests)' == 'true'">
