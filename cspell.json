@@ -16,9 +16,12 @@
     "**/*.dll",
     "**/bin/**/*.*",
     "**/obj/**/*.*",
-    "addons/**/*.*"
+    "addons/**/*.*",
+    "skills-lock.json"
   ],
   "words": [
+    "AutoCMEX",
+    "CMEX",
     "animatable",
     "assemblyfilters",
     "automerge",
