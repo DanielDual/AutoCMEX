@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://olq3bui2uhly"]
+
+[ext_resource type="Script" uid="uid://cxr7py3jcoul" path="res://src/ui/main/MainWindow.cs" id="1_h87f7"]
+
+[node name="Control" type="Control" unique_id=764712909]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_h87f7")
