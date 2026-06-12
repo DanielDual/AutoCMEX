@@ -44,7 +44,7 @@ public class GuessPipeline
             var spellCard = currentBoss.SpellCards[index - 1];
 
             // 已揭晓符卡跳过
-            if (!string.IsNullOrEmpty(spellCard.Creator))
+            if (spellCard.IsRevealed)
             {
                 details.Add($"符卡 {index}（{spellCard.Name}）已揭晓，创作者为 {spellCard.Creator}");
                 continue;
@@ -52,13 +52,9 @@ public class GuessPipeline
 
             totalCards++;
 
-            if (string.Equals(spellCard.Creator, creator, System.StringComparison.OrdinalIgnoreCase)
-                || string.IsNullOrEmpty(spellCard.Creator))
+            if (string.IsNullOrEmpty(spellCard.Creator))
             {
-                // 未揭晓的符卡，创作者为空，无法判断对错
-                // 这里假设猜测的创作者与将来揭晓的创作者比对
-                // 实际场景中，未揭晓符卡的 Creator 为空，猜测无法验证
-                // 暂时将未揭晓符卡视为"待验证"
+                // 创作者答案未知，无法判断对错
                 details.Add($"符卡 {index}（{spellCard.Name}）：猜测创作者为 {creator}，待揭晓后验证");
             }
             else
