@@ -15,6 +15,10 @@ run/main_scene="res://src/Main.tscn"
 config/features=PackedStringArray("4.6", "C#", "Mobile")
 config/icon="res://icon.png"
 
+[autoload]
+
+MCPRuntime="*uid://bowkuwovyrgsj"
+
 [display]
 
 window/size/viewport_width=720
@@ -30,6 +34,10 @@ project/assembly_name="AutoCMEX"
 [editor]
 
 naming/scene_name_casing=1
+
+[editor_plugins]
+
+enabled=PackedStringArray("res://addons/auto_reload/plugin.cfg", "res://addons/godot_mcp_editor/plugin.cfg", "res://addons/godot_mcp_runtime/plugin.cfg")
 
 [gui]
 
