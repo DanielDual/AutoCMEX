@@ -39,4 +39,5 @@ theme/default_theme_scale=2.0
 
 [rendering]
 
-renderer/rendering_method="mobile"
+renderer/rendering_method="gl_compatibility"
+renderer/rendering_method.mobile="gl_compatibility"
