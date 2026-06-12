@@ -1,0 +1,121 @@
+[gd_scene format=3 uid="uid://b0o67jk40412y"]
+
+[ext_resource type="Script" uid="uid://c41htm0llrugj" path="res://src/ui/guessing/GuessingPanel.cs" id="1_lp4yd"]
+
+[node name="Control" type="Control" unique_id=460198611]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_lp4yd")
+
+[node name="MainContainer" type="VBoxContainer" parent="." unique_id=535060614]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="BossSelect" type="OptionButton" parent="MainContainer" unique_id=1449519279]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="TopSeparator" type="HSeparator" parent="MainContainer" unique_id=1200933799]
+layout_mode = 2
+
+[node name="ContentArea" type="HBoxContainer" parent="MainContainer" unique_id=234324132]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="LeftSplit" type="VSplitContainer" parent="MainContainer/ContentArea" unique_id=1531241355]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SpellCardArea" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=1534861767]
+layout_mode = 2
+
+[node name="SpellCardTree" type="Tree" parent="MainContainer/ContentArea/LeftSplit/SpellCardArea" unique_id=873310835]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+columns = 2
+
+[node name="@Timer@19241" type="Timer" parent="MainContainer/ContentArea/LeftSplit/SpellCardArea/SpellCardTree" unique_id=1098637780]
+one_shot = true
+
+[node name="SpellCardButtons" type="HBoxContainer" parent="MainContainer/ContentArea/LeftSplit/SpellCardArea" unique_id=1334070189]
+layout_mode = 2
+
+[node name="ImportCardBtn" type="Button" parent="MainContainer/ContentArea/LeftSplit/SpellCardArea/SpellCardButtons" unique_id=116317561]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导入对应表"
+
+[node name="ExportCardBtn" type="Button" parent="MainContainer/ContentArea/LeftSplit/SpellCardArea/SpellCardButtons" unique_id=889705114]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导出"
+
+[node name="AddBossBtn" type="Button" parent="MainContainer/ContentArea/LeftSplit/SpellCardArea/SpellCardButtons" unique_id=752288154]
+unique_name_in_owner = true
+layout_mode = 2
+text = "添加 Boss"
+
+[node name="DeleteBtn" type="Button" parent="MainContainer/ContentArea/LeftSplit/SpellCardArea/SpellCardButtons" unique_id=969975714]
+unique_name_in_owner = true
+layout_mode = 2
+text = "删除"
+
+[node name="AliasArea" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=740339476]
+layout_mode = 2
+
+[node name="AliasList" type="ItemList" parent="MainContainer/ContentArea/LeftSplit/AliasArea" unique_id=827487993]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="AliasButtons" type="HBoxContainer" parent="MainContainer/ContentArea/LeftSplit/AliasArea" unique_id=1473140063]
+layout_mode = 2
+
+[node name="ImportAliasBtn" type="Button" parent="MainContainer/ContentArea/LeftSplit/AliasArea/AliasButtons" unique_id=1106830674]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导入别名表"
+
+[node name="AddAliasBtn" type="Button" parent="MainContainer/ContentArea/LeftSplit/AliasArea/AliasButtons" unique_id=2119142220]
+unique_name_in_owner = true
+layout_mode = 2
+text = "添加"
+
+[node name="DeleteAliasBtn" type="Button" parent="MainContainer/ContentArea/LeftSplit/AliasArea/AliasButtons" unique_id=2019800712]
+unique_name_in_owner = true
+layout_mode = 2
+text = "删除"
+
+[node name="RightPanel" type="VBoxContainer" parent="MainContainer/ContentArea" unique_id=489645881]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="GuessInput" type="TextEdit" parent="MainContainer/ContentArea/RightPanel" unique_id=55733082]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+placeholder_text = "输入猜测文本，如：1Alice 2Bob 3Charlie"
+
+[node name="GuessButtons" type="HBoxContainer" parent="MainContainer/ContentArea/RightPanel" unique_id=1284235469]
+layout_mode = 2
+
+[node name="FuzzifyBtn" type="Button" parent="MainContainer/ContentArea/RightPanel/GuessButtons" unique_id=41580526]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "请先配置 AI 模型"
+disabled = true
+text = "模糊化处理"
+
+[node name="ProcessBtn" type="Button" parent="MainContainer/ContentArea/RightPanel/GuessButtons" unique_id=1104154199]
+unique_name_in_owner = true
+layout_mode = 2
+text = "处理"
+
+[node name="ResponseDisplay" type="RichTextLabel" parent="MainContainer/ContentArea/RightPanel" unique_id=47797024]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+text = "回应将显示在此处"
