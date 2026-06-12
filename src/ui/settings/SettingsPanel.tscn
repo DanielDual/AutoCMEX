@@ -1,0 +1,38 @@
+[gd_scene format=3 uid="uid://gihori8we6rx"]
+
+[ext_resource type="Script" uid="uid://cmxsol0aje66q" path="res://src/ui/settings/SettingsPanel.cs" id="1_4c3qi"]
+
+[node name="Control" type="Control" unique_id=1958570285]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_4c3qi")
+
+[node name="MainContainer" type="VBoxContainer" parent="." unique_id=935739202]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+
+[node name="SearchBar" type="LineEdit" parent="MainContainer" unique_id=637481764]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "搜索配置项..."
+
+[node name="Separator" type="HSeparator" parent="MainContainer" unique_id=1961088217]
+layout_mode = 2
+
+[node name="ContentArea" type="HBoxContainer" parent="MainContainer" unique_id=376425780]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="CategoryList" type="ItemList" parent="MainContainer/ContentArea" unique_id=1974396232]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(150, 0)
+layout_mode = 2
+
+[node name="VSep" type="VSeparator" parent="MainContainer/ContentArea" unique_id=1535218597]
+layout_mode = 2
+
+[node name="ConfigArea" type="Control" parent="MainContainer/ContentArea" unique_id=956423354]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
