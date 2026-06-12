@@ -17,8 +17,8 @@ public class GameTest : TestClass
   [SetupAll]
   public async Task Setup()
   {
-    _fixture = new Fixture(TestScene.GetTree());
-    _game = await _fixture.LoadAndAddScene<Game>();
+	_fixture = new Fixture(TestScene.GetTree());
+	_game = await _fixture.LoadAndAddScene<Game>();
   }
 
   [CleanupAll]
@@ -27,8 +27,8 @@ public class GameTest : TestClass
   [Test]
   public void TestButtonUpdatesCounter()
   {
-    var buttonDriver = new ButtonDriver(() => _game.TestButton);
-    buttonDriver.ClickCenter();
-    _game.ButtonPresses.ShouldBe(1);
+	var buttonDriver = new ButtonDriver(() => _game.TestButton);
+	buttonDriver.ClickCenter();
+	_game.ButtonPresses.ShouldBe(1);
   }
 }
