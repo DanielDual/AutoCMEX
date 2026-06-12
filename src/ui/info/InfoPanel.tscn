@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://cmb8ndpqvxtot"]
+
+[node name="Control" type="Control" unique_id=2075855882]
+layout_mode = 3
+anchors_preset = 0
+
+[node name="PlaceholderLabel" type="Label" parent="." unique_id=1338471131]
+layout_mode = 0
+text = "信息板块 - 暂不开发"
+horizontal_alignment = 1
+vertical_alignment = 1

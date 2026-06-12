@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://xa0vkqnpj1n0"]
+
+[node name="Control" type="Control" unique_id=1975754278]
+layout_mode = 3
+anchors_preset = 0
+
+[node name="PlaceholderLabel" type="Label" parent="." unique_id=1432992580]
+layout_mode = 0
+text = "整合板块 - 暂不开发"
+horizontal_alignment = 1
+vertical_alignment = 1

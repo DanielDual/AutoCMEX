@@ -1,0 +1,11 @@
+[gd_scene format=3 uid="uid://lpqr6wef3tj8"]
+
+[node name="Control" type="Control" unique_id=1553635630]
+layout_mode = 3
+anchors_preset = 0
+
+[node name="PlaceholderLabel" type="Label" parent="." unique_id=1838508749]
+layout_mode = 0
+text = "帮助板块 - 待开发"
+horizontal_alignment = 1
+vertical_alignment = 1
