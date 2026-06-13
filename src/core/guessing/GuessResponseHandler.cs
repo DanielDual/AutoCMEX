@@ -7,16 +7,16 @@ using System.Collections.Generic;
 /// </summary>
 public class GuessResponseHandler : IGuessResponseHandler
 {
-    /// <inheritdoc/>
-    public string Handle(int totalCards, int correctCount, List<string> details)
-    {
-        if (totalCards >= 3)
-            return $"猜对 {correctCount}/{totalCards} 张";
+  /// <inheritdoc/>
+  public string Handle(int totalCards, int correctCount, List<string> details)
+  {
+    if (totalCards >= 3)
+      return $"猜对 {correctCount}/{totalCards} 张";
 
-        if (totalCards == 2)
-            return correctCount == 2 ? "对" : "错";
+    if (totalCards == 2)
+      return correctCount == 2 ? "对" : "错";
 
-        // totalCards <= 1: 不回应
-        return string.Empty;
-    }
+    // totalCards <= 1: 不回应
+    return string.Empty;
+  }
 }

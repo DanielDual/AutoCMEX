@@ -158,9 +158,7 @@
     // Allow html in markdown.
     "MD033": false
   },
-  "markdownlint.ignore": [
-    "**/LICENSE"
-  ],
+  "markdownlint.ignore": ["**/LICENSE"],
   "omnisharp.enableEditorConfigSupport": true,
   "omnisharp.enableMsBuildLoadProjectsOnDemand": false,
   "omnisharp.maxFindSymbolsItems": 3000,

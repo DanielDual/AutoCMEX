@@ -7,9 +7,7 @@
 // custom settings, run `zed: open default settings` from the
 // command palette (cmd-shift-p / ctrl-shift-p)
 {
-  "wrap_guides": [
-    80
-  ],
+  "wrap_guides": [80],
   "languages": {
     "CSharp": {
       "format_on_save": "on",
@@ -35,10 +33,6 @@
     "metrics": false
   },
   "file_types": {
-    "XML": [
-      "csproj",
-      "xsl",
-      "props"
-    ]
+    "XML": ["csproj", "xsl", "props"]
   }
 }

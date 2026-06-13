@@ -27,9 +27,7 @@
         "debuggerPath": "${extensionInstallFolder:muhammad-sammy.csharp}/.debugger/netcoredbg/netcoredbg",
         "pipeCwd": "${workspaceFolder}",
         "pipeProgram": "${env:GODOT}",
-        "pipeArgs": [
-          "--debug"
-        ]
+        "pipeArgs": ["--debug"]
       },
       "osx": {
         "pipeTransport": {
@@ -52,11 +50,9 @@
           "debuggerPath": "${env:NETCOREDBG}",
           "pipeCwd": "${workspaceFolder}",
           "pipeProgram": "${env:GODOT}",
-          "pipeArgs": [
-            "--debug"
-          ]
+          "pipeArgs": ["--debug"]
         }
-      },
+      }
     },
     // Debug the scene that matches the name of the currently open *.cs file
     // (if there's a scene with the same name in the same directory).
@@ -66,9 +62,7 @@
       "request": "launch",
       "preLaunchTask": "build-without-tests",
       "program": "${env:GODOT}",
-      "args": [
-        "${fileDirname}/${fileBasenameNoExtension}.tscn"
-      ],
+      "args": ["${fileDirname}/${fileBasenameNoExtension}.tscn"],
       "cwd": "${workspaceFolder}",
       "stopAtEntry": false,
       "console": "integratedTerminal"
@@ -102,6 +96,6 @@
       "cwd": "${workspaceFolder}",
       "stopAtEntry": false,
       "console": "integratedTerminal"
-    },
+    }
   ]
 }

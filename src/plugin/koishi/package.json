@@ -3,7 +3,11 @@
   "version": "0.0.1",
   "description": "AutoCMEX Koishi plugin - forwards chat messages to AutoCMEX via WebSocket",
   "main": "index.js",
-  "keywords": ["koishi", "plugin", "auto-cmex"],
+  "keywords": [
+    "koishi",
+    "plugin",
+    "auto-cmex"
+  ],
   "peerDependencies": {
     "koishi": "^4.0.0"
   }

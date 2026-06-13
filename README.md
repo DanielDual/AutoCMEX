@@ -27,7 +27,7 @@ dotnet build
 
 ## 💁 Getting Help
 
-*Is this template broken? Encountering obscure C# build problems?* We'll be happy to help you in the [Chickensoft Discord server][discord].
+_Is this template broken? Encountering obscure C# build problems?_ We'll be happy to help you in the [Chickensoft Discord server][discord].
 
 ## 🏝 Environment Setup
 
@@ -57,7 +57,7 @@ On CI/CD, software graphics drivers from [mesa] emulate a virtual graphics devic
 
 The `Main.tscn` and `Main.cs` scene and script file are the entry point of your game. In general, you probably won't need to modify these unless you're doing something highly custom.
 
-If the game is running a release build, the `Main.cs` file will just immediately change the scene to `src/Game.tscn`. If the game is running in debug mode *and* GoDotTest has received the correct command line arguments to begin testing, the game will switch to the testing scene and hand off control to GoDotTest to run the game's tests.
+If the game is running a release build, the `Main.cs` file will just immediately change the scene to `src/Game.tscn`. If the game is running in debug mode _and_ GoDotTest has received the correct command line arguments to begin testing, the game will switch to the testing scene and hand off control to GoDotTest to run the game's tests.
 
 In general, prefer editing `src/Game.tscn` over `src/Main.tscn`.
 
@@ -112,7 +112,7 @@ Several launch profiles are included for Visual Studio Code:
 
   > Naturally, Chickensoft recommends naming scenes after the C# script they use and keeping them in the same directory so that you can take advantage of this launch profile.
   >
-  > ⚠️ It's very easy to rename a script class but forget to rename the scene file, or vice-versa. When that happens, this launch profile will pass in the *expected* name of the scene file based on the script's name, but Godot will fail to find a scene with that name since the script name and scene name are not the same.
+  > ⚠️ It's very easy to rename a script class but forget to rename the scene file, or vice-versa. When that happens, this launch profile will pass in the _expected_ name of the scene file based on the script's name, but Godot will fail to find a scene with that name since the script name and scene name are not the same.
 
 - 🧪 **Debug Tests**
 
@@ -200,6 +200,7 @@ The included `renovate.json` includes a few configuration options to limit how o
 <!-- Links -->
 
 <!-- Header -->
+
 [chickensoft-badge]: https://chickensoft.games/img/badges/chickensoft_badge.svg
 [chickensoft-website]: https://chickensoft.games
 [discord-badge]: https://chickensoft.games/img/badges/discord_badge.svg
@@ -210,6 +211,7 @@ The included `renovate.json` includes a few configuration options to limit how o
 [branch-coverage]: badges/branch_coverage.svg
 
 <!-- Article -->
+
 [GoDotTest]: https://github.com/chickensoft-games/go_dot_test
 [setup-docs]: https://chickensoft.games/docs/setup
 [cspell]: https://marketplace.visualstudio.com/items?itemName=streetsidesoftware.code-spell-checker

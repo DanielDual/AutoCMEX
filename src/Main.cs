@@ -1,8 +1,7 @@
 namespace AutoCMEX;
 
-using Godot;
 using Chickensoft.GameTools.Displays;
-
+using Godot;
 #if RUN_TESTS
 using System.Reflection;
 using Chickensoft.GoDotTest;
@@ -43,10 +42,9 @@ public partial class Main : Node2D
   }
 
 #if RUN_TESTS
-  private void RunTests()
-    => _ = GoTest.RunTests(Assembly.GetExecutingAssembly(), this, Environment);
+  private void RunTests() =>
+    _ = GoTest.RunTests(Assembly.GetExecutingAssembly(), this, Environment);
 #endif
 
-  private void RunScene()
-    => GetTree().ChangeSceneToFile("res://src/ui/main/MainWindow.tscn");
+  private void RunScene() => GetTree().ChangeSceneToFile("res://src/ui/main/MainWindow.tscn");
 }

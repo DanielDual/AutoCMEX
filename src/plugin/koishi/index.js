@@ -2,7 +2,7 @@
 // 将此文件夹复制到 Koishi 的 plugins 目录即可安装
 // 功能：将群聊消息通过 WebSocket 转发到 AutoCMEX，并返回处理结果
 
-const WebSocket = require('ws');
+const WebSocket = require("ws");
 
 const DEFAULT_PORT = 5140;
 const RECONNECT_INTERVAL = 5000;
@@ -14,10 +14,10 @@ let reconnectTimer = null;
 /**
  * Koishi 插件入口
  */
-module.exports.name = 'auto-cmex';
+module.exports.name = "auto-cmex";
 
 module.exports.apply = (ctx) => {
-  const config = ctx.config.plugins?.['auto-cmex'] || {};
+  const config = ctx.config.plugins?.["auto-cmex"] || {};
   const port = config.port || DEFAULT_PORT;
 
   ctx.logger.info(`[AutoCMEX] Connecting to ws://127.0.0.1:${port}`);
@@ -25,14 +25,14 @@ module.exports.apply = (ctx) => {
   connect(ctx, port);
 
   // 监听所有群聊消息
-  ctx.on('message', (session) => {
+  ctx.on("message", (session) => {
     const message = {
-      type: 'guess_message',
+      type: "guess_message",
       payload: {
-        text: session.content || '',
-        sender: session.username || session.userId || '',
-        timestamp: new Date().toISOString()
-      }
+        text: session.content || "",
+        sender: session.username || session.userId || "",
+        timestamp: new Date().toISOString(),
+      },
     };
 
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -47,13 +47,12 @@ module.exports.apply = (ctx) => {
   });
 
   // 注册命令
-  ctx.command('auto-cmex.status', '查看 AutoCMEX 连接状态')
-    .action(() => {
-      if (ws && ws.readyState === WebSocket.OPEN) {
-        return 'AutoCMEX 已连接';
-      }
-      return 'AutoCMEX 未连接';
-    });
+  ctx.command("auto-cmex.status", "查看 AutoCMEX 连接状态").action(() => {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      return "AutoCMEX 已连接";
+    }
+    return "AutoCMEX 未连接";
+  });
 };
 
 /**
@@ -66,8 +65,8 @@ function connect(ctx, port) {
 
   ws = new WebSocket(`ws://127.0.0.1:${port}`);
 
-  ws.on('open', () => {
-    ctx.logger.info('[AutoCMEX] Connected');
+  ws.on("open", () => {
+    ctx.logger.info("[AutoCMEX] Connected");
 
     // 发送缓存消息
     while (messageQueue.length > 0) {
@@ -82,10 +81,10 @@ function connect(ctx, port) {
     }
   });
 
-  ws.on('message', (data) => {
+  ws.on("message", (data) => {
     try {
       const msg = JSON.parse(data.toString());
-      if (msg.type === 'response') {
+      if (msg.type === "response") {
         // 回应消息由 AutoCMEX 处理，此处仅记录
         ctx.logger.debug(`[AutoCMEX] Response: ${msg.payload?.text}`);
       }
@@ -94,14 +93,17 @@ function connect(ctx, port) {
     }
   });
 
-  ws.on('close', () => {
-    ctx.logger.warn('[AutoCMEX] Disconnected, reconnecting...');
+  ws.on("close", () => {
+    ctx.logger.warn("[AutoCMEX] Disconnected, reconnecting...");
     if (!reconnectTimer) {
-      reconnectTimer = setInterval(() => connect(ctx, port), RECONNECT_INTERVAL);
+      reconnectTimer = setInterval(
+        () => connect(ctx, port),
+        RECONNECT_INTERVAL,
+      );
     }
   });
 
-  ws.on('error', (err) => {
+  ws.on("error", (err) => {
     ctx.logger.warn(`[AutoCMEX] Error: ${err.message}`);
   });
 }

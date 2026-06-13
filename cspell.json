@@ -1,7 +1,5 @@
 {
-  "files": [
-    "**/*.*"
-  ],
+  "files": ["**/*.*"],
   "ignorePaths": [
     "**/*.tscn",
     "**/*.import",
@@ -105,6 +103,6 @@
     "vulkan",
     "Wyri",
     "XRIP",
-    "Xunit",
+    "Xunit"
   ]
 }

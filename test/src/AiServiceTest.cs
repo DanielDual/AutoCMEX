@@ -12,95 +12,96 @@ using Shouldly;
 /// </summary>
 public class AiServiceTest : TestClass
 {
-    public AiServiceTest(Node testScene) : base(testScene) { }
+  public AiServiceTest(Node testScene)
+    : base(testScene) { }
 
-    [Test]
-    public void OpenAiService_CanBeConstructed()
+  [Test]
+  public void OpenAiService_CanBeConstructed()
+  {
+    var config = new AiModelConfig
     {
-        var config = new AiModelConfig
-        {
-            Id = "test",
-            ApiFormat = "OpenAI",
-            EndpointUrl = "https://api.openai.com",
-            ModelId = "gpt-4",
-            EncryptedApiKey = "sk-test"
-        };
+      Id = "test",
+      ApiFormat = "OpenAI",
+      EndpointUrl = "https://api.openai.com",
+      ModelId = "gpt-4",
+      EncryptedApiKey = "sk-test",
+    };
 
-        var service = new OpenAiService(config);
-        service.ShouldNotBeNull();
-    }
+    var service = new OpenAiService(config);
+    service.ShouldNotBeNull();
+  }
 
-    [Test]
-    public void AnthropicService_CanBeConstructed()
+  [Test]
+  public void AnthropicService_CanBeConstructed()
+  {
+    var config = new AiModelConfig
     {
-        var config = new AiModelConfig
-        {
-            Id = "test",
-            ApiFormat = "Anthropic",
-            EndpointUrl = "https://api.anthropic.com",
-            ModelId = "claude-3",
-            EncryptedApiKey = "sk-test"
-        };
+      Id = "test",
+      ApiFormat = "Anthropic",
+      EndpointUrl = "https://api.anthropic.com",
+      ModelId = "claude-3",
+      EncryptedApiKey = "sk-test",
+    };
 
-        var service = new AnthropicService(config);
-        service.ShouldNotBeNull();
-    }
+    var service = new AnthropicService(config);
+    service.ShouldNotBeNull();
+  }
 
-    [Test]
-    public void AiFuzzifier_CanBeConstructed()
+  [Test]
+  public void AiFuzzifier_CanBeConstructed()
+  {
+    var config = new AiModelConfig
     {
-        var config = new AiModelConfig
-        {
-            Id = "test",
-            ApiFormat = "OpenAI",
-            EndpointUrl = "https://api.openai.com",
-            ModelId = "gpt-4",
-            EncryptedApiKey = "sk-test"
-        };
+      Id = "test",
+      ApiFormat = "OpenAI",
+      EndpointUrl = "https://api.openai.com",
+      ModelId = "gpt-4",
+      EncryptedApiKey = "sk-test",
+    };
 
-        var aiService = new OpenAiService(config);
-        var boss = new Boss
-        {
-            Name = "TestBoss",
-            SpellCards = new List<SpellCard>
-            {
-                new() { Name = "Card1" },
-                new() { Name = "Card2" }
-            }
-        };
-
-        var fuzzifier = new AiFuzzifier(aiService, new List<CreatorAlias>(), new List<Boss>(), boss);
-        fuzzifier.ShouldNotBeNull();
-    }
-
-    [Test]
-    public void IAiService_Interface_IsImplementedByOpenAi()
+    var aiService = new OpenAiService(config);
+    var boss = new Boss
     {
-        var config = new AiModelConfig
-        {
-            Id = "test",
-            EndpointUrl = "https://api.openai.com",
-            ModelId = "gpt-4",
-            EncryptedApiKey = "sk-test"
-        };
+      Name = "TestBoss",
+      SpellCards = new List<SpellCard>
+      {
+        new() { Name = "Card1" },
+        new() { Name = "Card2" },
+      },
+    };
 
-        IAiService service = new OpenAiService(config);
-        service.ShouldBeAssignableTo<IAiService>();
-    }
+    var fuzzifier = new AiFuzzifier(aiService, new List<CreatorAlias>(), new List<Boss>(), boss);
+    fuzzifier.ShouldNotBeNull();
+  }
 
-    [Test]
-    public void IAiService_Interface_IsImplementedByAnthropic()
+  [Test]
+  public void IAiService_Interface_IsImplementedByOpenAi()
+  {
+    var config = new AiModelConfig
     {
-        var config = new AiModelConfig
-        {
-            Id = "test",
-            ApiFormat = "Anthropic",
-            EndpointUrl = "https://api.anthropic.com",
-            ModelId = "claude-3",
-            EncryptedApiKey = "sk-test"
-        };
+      Id = "test",
+      EndpointUrl = "https://api.openai.com",
+      ModelId = "gpt-4",
+      EncryptedApiKey = "sk-test",
+    };
 
-        IAiService service = new AnthropicService(config);
-        service.ShouldBeAssignableTo<IAiService>();
-    }
+    IAiService service = new OpenAiService(config);
+    service.ShouldBeAssignableTo<IAiService>();
+  }
+
+  [Test]
+  public void IAiService_Interface_IsImplementedByAnthropic()
+  {
+    var config = new AiModelConfig
+    {
+      Id = "test",
+      ApiFormat = "Anthropic",
+      EndpointUrl = "https://api.anthropic.com",
+      ModelId = "claude-3",
+      EncryptedApiKey = "sk-test",
+    };
+
+    IAiService service = new AnthropicService(config);
+    service.ShouldBeAssignableTo<IAiService>();
+  }
 }

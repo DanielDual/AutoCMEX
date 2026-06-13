@@ -1,0 +1,49 @@
+# See https://pre-commit.com for more information
+# See https://pre-commit.com/hooks.html for more hooks
+
+repos:
+  # Standard pre-commit hooks
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: check-added-large-files
+        args: ["--maxkb=500"]
+      - id: check-case-conflict
+      - id: check-illegal-windows-names
+      - id: check-symlinks
+      - id: check-toml
+      - id: check-xml
+      - id: check-yaml
+      - id: destroyed-symlinks
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+
+  # Prettier formatter (maintained fork of pre-commit/mirrors-prettier)
+  - repo: https://github.com/rbubley/mirrors-prettier
+    rev: v3.6.2
+    hooks:
+      - id: prettier
+        types_or: [json, yaml, markdown, css, html, javascript]
+
+  # Local hooks
+  - repo: local
+    hooks:
+      # Generate Godot .uid files for scripts (Godot 4.4+)
+      - id: godot-uid-generator
+        name: Generate Godot UID files
+        description: Opens Godot editor in headless mode to generate .uid files for scripts
+        entry: godot --headless --editor --quit
+        language: system
+        always_run: true
+        pass_filenames: false
+
+      # CSharpier C# formatter
+      - id: csharpier
+        name: Run CSharpier on C# files
+        description: CSharpier is an opinionated C# formatter inspired by Prettier
+        entry: csharpier format .
+        language: system
+        types:
+          - c#

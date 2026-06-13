@@ -15,227 +15,227 @@ using Shouldly;
 /// </summary>
 public class StorageTest : TestClass
 {
-    private string _tempDir = string.Empty;
+  private string _tempDir = string.Empty;
 
-    public StorageTest(Node testScene) : base(testScene) { }
+  public StorageTest(Node testScene)
+    : base(testScene) { }
 
-    [Setup]
-    public void Setup()
-    {
-        _tempDir = Path.Combine(Path.GetTempPath(), "AutoCMEX_Test_" + Guid.NewGuid().ToString("N")[..8]);
-        Directory.CreateDirectory(_tempDir);
-    }
+  [Setup]
+  public void Setup()
+  {
+    _tempDir = Path.Combine(
+      Path.GetTempPath(),
+      "AutoCMEX_Test_" + Guid.NewGuid().ToString("N")[..8]
+    );
+    Directory.CreateDirectory(_tempDir);
+  }
 
-    [Cleanup]
-    public void Cleanup()
-    {
-        if (Directory.Exists(_tempDir))
-            Directory.Delete(_tempDir, true);
-    }
+  [Cleanup]
+  public void Cleanup()
+  {
+    if (Directory.Exists(_tempDir))
+      Directory.Delete(_tempDir, true);
+  }
 
-    // ==================== AesEncryptor Tests ====================
+  // ==================== AesEncryptor Tests ====================
 
-    [Test]
-    public void AesEncryptor_EncryptDecrypt_RoundTrip()
-    {
-        var keyPath = Path.Combine(_tempDir, "aes.key");
-        var encryptor = new AesEncryptor(keyPath);
+  [Test]
+  public void AesEncryptor_EncryptDecrypt_RoundTrip()
+  {
+    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var encryptor = new AesEncryptor(keyPath);
 
-        var plainText = "my-secret-api-key-12345";
-        var encrypted = encryptor.Encrypt(plainText);
+    var plainText = "my-secret-api-key-12345";
+    var encrypted = encryptor.Encrypt(plainText);
 
-        encrypted.ShouldNotBe(plainText);
-        encrypted.ShouldNotBeNullOrEmpty();
+    encrypted.ShouldNotBe(plainText);
+    encrypted.ShouldNotBeNullOrEmpty();
 
-        var decrypted = encryptor.Decrypt(encrypted);
-        decrypted.ShouldBe(plainText);
-    }
+    var decrypted = encryptor.Decrypt(encrypted);
+    decrypted.ShouldBe(plainText);
+  }
 
-    [Test]
-    public void AesEncryptor_EncryptEmpty_ReturnsEmpty()
-    {
-        var keyPath = Path.Combine(_tempDir, "aes.key");
-        var encryptor = new AesEncryptor(keyPath);
+  [Test]
+  public void AesEncryptor_EncryptEmpty_ReturnsEmpty()
+  {
+    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var encryptor = new AesEncryptor(keyPath);
 
-        var encrypted = encryptor.Encrypt(string.Empty);
-        encrypted.ShouldBe(string.Empty);
-    }
+    var encrypted = encryptor.Encrypt(string.Empty);
+    encrypted.ShouldBe(string.Empty);
+  }
 
-    [Test]
-    public void AesEncryptor_DecryptEmpty_ReturnsEmpty()
-    {
-        var keyPath = Path.Combine(_tempDir, "aes.key");
-        var encryptor = new AesEncryptor(keyPath);
+  [Test]
+  public void AesEncryptor_DecryptEmpty_ReturnsEmpty()
+  {
+    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var encryptor = new AesEncryptor(keyPath);
 
-        var decrypted = encryptor.Decrypt(string.Empty);
-        decrypted.ShouldBe(string.Empty);
-    }
+    var decrypted = encryptor.Decrypt(string.Empty);
+    decrypted.ShouldBe(string.Empty);
+  }
 
-    [Test]
-    public void AesEncryptor_DecryptInvalidData_ReturnsEmpty()
-    {
-        var keyPath = Path.Combine(_tempDir, "aes.key");
-        var encryptor = new AesEncryptor(keyPath);
+  [Test]
+  public void AesEncryptor_DecryptInvalidData_ReturnsEmpty()
+  {
+    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var encryptor = new AesEncryptor(keyPath);
 
-        var decrypted = encryptor.Decrypt("not-valid-base64!!!");
-        decrypted.ShouldBe(string.Empty);
-    }
+    var decrypted = encryptor.Decrypt("not-valid-base64!!!");
+    decrypted.ShouldBe(string.Empty);
+  }
 
-    [Test]
-    public void AesEncryptor_GeneratesKeyFile()
-    {
-        var keyPath = Path.Combine(_tempDir, "aes.key");
-        var encryptor = new AesEncryptor(keyPath);
+  [Test]
+  public void AesEncryptor_GeneratesKeyFile()
+  {
+    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var encryptor = new AesEncryptor(keyPath);
 
-        File.Exists(keyPath).ShouldBeTrue();
-    }
+    File.Exists(keyPath).ShouldBeTrue();
+  }
 
-    [Test]
-    public void AesEncryptor_ReusesExistingKeyFile()
-    {
-        var keyPath = Path.Combine(_tempDir, "aes.key");
-        var encryptor1 = new AesEncryptor(keyPath);
-        var encrypted = encryptor1.Encrypt("test");
+  [Test]
+  public void AesEncryptor_ReusesExistingKeyFile()
+  {
+    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var encryptor1 = new AesEncryptor(keyPath);
+    var encrypted = encryptor1.Encrypt("test");
 
-        // Create a new encryptor with the same key file
-        var encryptor2 = new AesEncryptor(keyPath);
-        var decrypted = encryptor2.Decrypt(encrypted);
+    // Create a new encryptor with the same key file
+    var encryptor2 = new AesEncryptor(keyPath);
+    var decrypted = encryptor2.Decrypt(encrypted);
 
-        decrypted.ShouldBe("test");
-    }
+    decrypted.ShouldBe("test");
+  }
 
-    // ==================== CsvImporter Tests ====================
+  // ==================== CsvImporter Tests ====================
 
-    [Test]
-    public void CsvImporter_SpellCardTable_ValidCsv()
-    {
-        var csvPath = Path.Combine(_tempDir, "spellcard.csv");
-        var csv = "Boss,符卡名,创作者\nBoss1,Card1,Alice\nBoss1,Card2,Bob\nBoss2,Card3,Charlie";
-        File.WriteAllText(csvPath, csv, Encoding.UTF8);
+  [Test]
+  public void CsvImporter_SpellCardTable_ValidCsv()
+  {
+    var csvPath = Path.Combine(_tempDir, "spellcard.csv");
+    var csv = "Boss,符卡名,创作者\nBoss1,Card1,Alice\nBoss1,Card2,Bob\nBoss2,Card3,Charlie";
+    File.WriteAllText(csvPath, csv, Encoding.UTF8);
 
-        var result = CsvImporter.ImportSpellCardTable(csvPath);
+    var result = CsvImporter.ImportSpellCardTable(csvPath);
 
-        result.IsSuccess.ShouldBeTrue();
-        result.Data!.Count.ShouldBe(2);
-        result.Data[0].Name.ShouldBe("Boss1");
-        result.Data[0].SpellCards.Count.ShouldBe(2);
-        result.Data[0].SpellCards[0].Name.ShouldBe("Card1");
-        result.Data[0].SpellCards[0].Creator.ShouldBe("Alice");
-        result.Data[1].Name.ShouldBe("Boss2");
-        result.Data[1].SpellCards.Count.ShouldBe(1);
-    }
+    result.IsSuccess.ShouldBeTrue();
+    result.Data!.Count.ShouldBe(2);
+    result.Data[0].Name.ShouldBe("Boss1");
+    result.Data[0].SpellCards.Count.ShouldBe(2);
+    result.Data[0].SpellCards[0].Name.ShouldBe("Card1");
+    result.Data[0].SpellCards[0].Creator.ShouldBe("Alice");
+    result.Data[1].Name.ShouldBe("Boss2");
+    result.Data[1].SpellCards.Count.ShouldBe(1);
+  }
 
-    [Test]
-    public void CsvImporter_SpellCardTable_MissingColumns()
-    {
-        var csvPath = Path.Combine(_tempDir, "spellcard.csv");
-        var csv = "Boss,符卡名\nBoss1,Card1";
-        File.WriteAllText(csvPath, csv, Encoding.UTF8);
+  [Test]
+  public void CsvImporter_SpellCardTable_MissingColumns()
+  {
+    var csvPath = Path.Combine(_tempDir, "spellcard.csv");
+    var csv = "Boss,符卡名\nBoss1,Card1";
+    File.WriteAllText(csvPath, csv, Encoding.UTF8);
 
-        var result = CsvImporter.ImportSpellCardTable(csvPath);
+    var result = CsvImporter.ImportSpellCardTable(csvPath);
 
-        result.IsSuccess.ShouldBeFalse();
-        result.ErrorMessage.ShouldContain("列缺失");
-    }
+    result.IsSuccess.ShouldBeFalse();
+    result.ErrorMessage.ShouldContain("列缺失");
+  }
 
-    [Test]
-    public void CsvImporter_AliasTable_ValidCsv()
-    {
-        var csvPath = Path.Combine(_tempDir, "alias.csv");
-        var csv = "主名,别名1,别名2\nAlice,Ali,A\nBob,B,Bo";
-        File.WriteAllText(csvPath, csv, Encoding.UTF8);
+  [Test]
+  public void CsvImporter_AliasTable_ValidCsv()
+  {
+    var csvPath = Path.Combine(_tempDir, "alias.csv");
+    var csv = "主名,别名1,别名2\nAlice,Ali,A\nBob,B,Bo";
+    File.WriteAllText(csvPath, csv, Encoding.UTF8);
 
-        var result = CsvImporter.ImportAliasTable(csvPath);
+    var result = CsvImporter.ImportAliasTable(csvPath);
 
-        result.IsSuccess.ShouldBeTrue();
-        result.Data!.Count.ShouldBe(2);
-        result.Data[0].MainName.ShouldBe("Alice");
-        result.Data[0].Aliases.Count.ShouldBe(2);
-        result.Data[0].Aliases.ShouldContain("Ali");
-        result.Data[0].Aliases.ShouldContain("A");
-        result.Data[1].MainName.ShouldBe("Bob");
-        result.Data[1].Aliases.Count.ShouldBe(2);
-    }
+    result.IsSuccess.ShouldBeTrue();
+    result.Data!.Count.ShouldBe(2);
+    result.Data[0].MainName.ShouldBe("Alice");
+    result.Data[0].Aliases.Count.ShouldBe(2);
+    result.Data[0].Aliases.ShouldContain("Ali");
+    result.Data[0].Aliases.ShouldContain("A");
+    result.Data[1].MainName.ShouldBe("Bob");
+    result.Data[1].Aliases.Count.ShouldBe(2);
+  }
 
-    [Test]
-    public void CsvImporter_AliasTable_MissingColumns()
-    {
-        var csvPath = Path.Combine(_tempDir, "alias.csv");
-        var csv = "主名\nAlice";
-        File.WriteAllText(csvPath, csv, Encoding.UTF8);
+  [Test]
+  public void CsvImporter_AliasTable_MissingColumns()
+  {
+    var csvPath = Path.Combine(_tempDir, "alias.csv");
+    var csv = "主名\nAlice";
+    File.WriteAllText(csvPath, csv, Encoding.UTF8);
 
-        var result = CsvImporter.ImportAliasTable(csvPath);
+    var result = CsvImporter.ImportAliasTable(csvPath);
 
-        result.IsSuccess.ShouldBeFalse();
-        result.ErrorMessage.ShouldContain("列缺失");
-    }
+    result.IsSuccess.ShouldBeFalse();
+    result.ErrorMessage.ShouldContain("列缺失");
+  }
 
-    [Test]
-    public void CsvImporter_FileNotFound_ReturnsError()
-    {
-        var result = CsvImporter.ImportSpellCardTable(Path.Combine(_tempDir, "nonexistent.csv"));
+  [Test]
+  public void CsvImporter_FileNotFound_ReturnsError()
+  {
+    var result = CsvImporter.ImportSpellCardTable(Path.Combine(_tempDir, "nonexistent.csv"));
 
-        result.IsSuccess.ShouldBeFalse();
-    }
+    result.IsSuccess.ShouldBeFalse();
+  }
 
-    // ==================== DataManager Tests ====================
+  // ==================== DataManager Tests ====================
 
-    [Test]
-    public void DataManager_LoadAll_EmptyWhenNoFiles()
-    {
-        var keyPath = Path.Combine(_tempDir, "aes.key");
-        var encryptor = new AesEncryptor(keyPath);
-        var dm = new DataManager(_tempDir, encryptor);
+  [Test]
+  public void DataManager_LoadAll_EmptyWhenNoFiles()
+  {
+    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var encryptor = new AesEncryptor(keyPath);
+    var dm = new DataManager(_tempDir, encryptor);
 
-        dm.LoadAll();
+    dm.LoadAll();
 
-        dm.Bosses.ShouldBeEmpty();
-        dm.Aliases.ShouldBeEmpty();
-        dm.Settings.AiModels.ShouldBeEmpty();
-    }
+    dm.Bosses.ShouldBeEmpty();
+    dm.Aliases.ShouldBeEmpty();
+    dm.Settings.AiModels.ShouldBeEmpty();
+  }
 
-    [Test]
-    public void DataManager_SaveAndLoad_RoundTrip()
-    {
-        var keyPath = Path.Combine(_tempDir, "aes.key");
-        var encryptor = new AesEncryptor(keyPath);
-        var dm = new DataManager(_tempDir, encryptor);
+  [Test]
+  public void DataManager_SaveAndLoad_RoundTrip()
+  {
+    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var encryptor = new AesEncryptor(keyPath);
+    var dm = new DataManager(_tempDir, encryptor);
 
-        dm.Bosses.Add(new Boss { Name = "TestBoss" });
-        dm.Aliases.Add(new CreatorAlias { MainName = "Alice" });
-        dm.Settings.WebSocketPort = 9999;
+    dm.Bosses.Add(new Boss { Name = "TestBoss" });
+    dm.Aliases.Add(new CreatorAlias { MainName = "Alice" });
+    dm.Settings.WebSocketPort = 9999;
 
-        dm.SaveAll();
+    dm.SaveAll();
 
-        // Load with a new DataManager
-        var dm2 = new DataManager(_tempDir, encryptor);
-        dm2.LoadAll();
+    // Load with a new DataManager
+    var dm2 = new DataManager(_tempDir, encryptor);
+    dm2.LoadAll();
 
-        dm2.Bosses.Count.ShouldBe(1);
-        dm2.Bosses[0].Name.ShouldBe("TestBoss");
-        dm2.Aliases.Count.ShouldBe(1);
-        dm2.Aliases[0].MainName.ShouldBe("Alice");
-        dm2.Settings.WebSocketPort.ShouldBe(9999);
-    }
+    dm2.Bosses.Count.ShouldBe(1);
+    dm2.Bosses[0].Name.ShouldBe("TestBoss");
+    dm2.Aliases.Count.ShouldBe(1);
+    dm2.Aliases[0].MainName.ShouldBe("Alice");
+    dm2.Settings.WebSocketPort.ShouldBe(9999);
+  }
 
-    [Test]
-    public void DataManager_AiModelApiKey_EncryptedOnSave()
-    {
-        var keyPath = Path.Combine(_tempDir, "aes.key");
-        var encryptor = new AesEncryptor(keyPath);
-        var dm = new DataManager(_tempDir, encryptor);
+  [Test]
+  public void DataManager_AiModelApiKey_EncryptedOnSave()
+  {
+    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var encryptor = new AesEncryptor(keyPath);
+    var dm = new DataManager(_tempDir, encryptor);
 
-        dm.Settings.AiModels.Add(new AiModelConfig
-        {
-            Id = "test",
-            EncryptedApiKey = "sk-secret-key"
-        });
+    dm.Settings.AiModels.Add(new AiModelConfig { Id = "test", EncryptedApiKey = "sk-secret-key" });
 
-        dm.SaveAll();
+    dm.SaveAll();
 
-        // Read the raw JSON to verify encryption
-        var jsonPath = Path.Combine(_tempDir, "app_settings.json");
-        var json = File.ReadAllText(jsonPath);
-        json.ShouldNotContain("sk-secret-key");
-    }
+    // Read the raw JSON to verify encryption
+    var jsonPath = Path.Combine(_tempDir, "app_settings.json");
+    var json = File.ReadAllText(jsonPath);
+    json.ShouldNotContain("sk-secret-key");
+  }
 }

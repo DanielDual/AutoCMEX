@@ -39,42 +39,49 @@
 
 ### 核心Skill说明
 
-| Skill | 用途 |
-|--|--|
-| `csharp-solution-output-standard` | 规范实现方案的输出格式与内容要求 |
-| `csharp-test-granularity-standard` | 规范测试代码的颗粒度与覆盖要求 |
-| `csharp-document-writing-standard` | 规范项目文档的编写标准 |
+| Skill                              | 用途                             |
+| ---------------------------------- | -------------------------------- |
+| `csharp-solution-output-standard`  | 规范实现方案的输出格式与内容要求 |
+| `csharp-test-granularity-standard` | 规范测试代码的颗粒度与覆盖要求   |
+| `csharp-document-writing-standard` | 规范项目文档的编写标准           |
 
 ## 权限边界
 
 ### 目录权限
+
 - 可写：`/src`、`/doc`、`/CHANGELOG.md`
 - 禁止：`.git`、`/bin`、`/obj`、核心配置文件（`.csproj`等）、`.env`等环境文件
 
 ### 命令权限
+
 - 允许：`dotnet build/test/clean`、`git checkout/branch/add/commit/push`
 - 禁止：合并到主分支、生产发布、高危系统命令
 
 ### Git权限
+
 - 允许：创建分支、本地提交、推送到远程功能分支
 - 禁止：推送到主分支、合并、删除分支、强制推送
 
 ## 输出规范
 
 ### 分支命名（kebab-case）
+
 - 新功能：`feature/功能名称`，示例：`feature/user-password-reset`
 - 问题修复：`fix/补丁名称`，示例：`fix/order-coupon-calculate-error`
 - 文档更新：`docs/更新内容`，示例：`docs/update-api-spec`
 - 测试补充：`test/补充内容`，示例：`test/add-user-service-test`
 
 ### 提交规范
+
 必须按模块分批次提交，禁止一次性提交所有变更。
+
 - `feat: 实现【xxx】核心业务逻辑`
 - `test: 补充【xxx】功能单元测试`
 - `docs: 更新【xxx】功能相关文档与变更日志`
 - `fix: 修复【xxx】业务逻辑，解决测试不通过问题`
 
 ### 编码规范
+
 - 遵循C#编码规范、分层架构，禁止跨层调用
 - 类、方法必须添加XML注释
 - 测试覆盖率≥80%

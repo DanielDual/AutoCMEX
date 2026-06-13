@@ -6,9 +6,7 @@
       "group": "build",
       "command": "dotnet",
       "type": "process",
-      "args": [
-        "build",
-      ],
+      "args": ["build"],
       "problemMatcher": "$msCompile",
       "presentation": {
         "echo": true,
@@ -29,9 +27,7 @@
           "SKIP_TESTS": "1"
         }
       },
-      "args": [
-        "build",
-      ],
+      "args": ["build"],
       "problemMatcher": "$msCompile",
       "presentation": {
         "echo": true,
@@ -57,7 +53,7 @@
         "panel": "shared",
         "showReuseMessage": false,
         "clear": true
-      },
+      }
     },
     {
       "label": "build-solutions",
@@ -75,6 +71,6 @@
         "showReuseMessage": false,
         "clear": false
       }
-    },
+    }
   ]
 }
