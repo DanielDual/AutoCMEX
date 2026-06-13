@@ -2,6 +2,7 @@ namespace AutoCMEX.UI.Guessing;
 
 using System.Collections.Generic;
 using System.Linq;
+using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Guessing;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
@@ -87,7 +88,31 @@ public partial class GuessingPanel : Control
     _bosses = dataManager.Bosses;
     _aliases = dataManager.Aliases;
     _pipeline = new GuessPipeline(new GuessResponseHandler(), _aliases);
+
+    // 检查是否已配置 AI 模型，启用模糊化按钮
+    UpdateFuzzifyButtonState();
+
     RefreshAll();
+  }
+
+  /// <summary>
+  /// 根据 AI 模型配置状态更新模糊化按钮
+  /// </summary>
+  private void UpdateFuzzifyButtonState()
+  {
+    var hasAiModel =
+      _dataManager != null
+      && _dataManager.Settings.AiModels.Count > 0
+      && _dataManager.Settings.AiModels.Exists(m =>
+        !string.IsNullOrEmpty(m.EndpointUrl)
+        && !string.IsNullOrEmpty(m.ModelId)
+        && !string.IsNullOrEmpty(m.EncryptedApiKey)
+      );
+
+    _fuzzifyBtn.Disabled = !hasAiModel;
+    _fuzzifyBtn.TooltipText = hasAiModel
+      ? "使用 AI 将非严格格式文本转为严格格式"
+      : "请先配置 AI 模型";
   }
 
   /// <summary>
@@ -387,10 +412,66 @@ public partial class GuessingPanel : Control
   /// <summary>
   /// 模糊化处理
   /// </summary>
-  private void OnFuzzify()
+  private async void OnFuzzify()
   {
-    // 需要 AI 配置，暂时禁用
-    _responseDisplay.Text = "[color=yellow]请先在设置中配置 AI 模型[/color]";
+    if (_currentBoss == null)
+    {
+      _responseDisplay.Text = "[color=red]请先选择 Boss[/color]";
+      return;
+    }
+
+    var text = _guessInput.Text.Trim();
+    if (string.IsNullOrEmpty(text))
+    {
+      _responseDisplay.Text = "[color=red]请输入猜测文本[/color]";
+      return;
+    }
+
+    if (_dataManager == null || _dataManager.Settings.AiModels.Count == 0)
+    {
+      _responseDisplay.Text = "[color=yellow]请先在设置中配置 AI 模型[/color]";
+      return;
+    }
+
+    // 使用第一个已完整配置的 AI 模型
+    var modelConfig = _dataManager.Settings.AiModels.Find(m =>
+      !string.IsNullOrEmpty(m.EndpointUrl)
+      && !string.IsNullOrEmpty(m.ModelId)
+      && !string.IsNullOrEmpty(m.EncryptedApiKey)
+    );
+
+    if (modelConfig == null)
+    {
+      _responseDisplay.Text = "[color=yellow]请先在设置中完整配置 AI 模型[/color]";
+      return;
+    }
+
+    _fuzzifyBtn.Disabled = true;
+    _fuzzifyBtn.Text = "模糊化中...";
+    _responseDisplay.Text = "[color=gray]正在调用 AI 进行模糊化处理...[/color]";
+
+    try
+    {
+      IAiService aiService =
+        modelConfig.ApiFormat == "Anthropic"
+          ? new AnthropicService(modelConfig)
+          : new OpenAiService(modelConfig);
+
+      var fuzzifier = new AiFuzzifier(aiService, _aliases, _bosses, _currentBoss);
+      var result = await fuzzifier.FuzzifyAsync(text);
+
+      _guessInput.Text = result;
+      _responseDisplay.Text = $"[color=green]模糊化完成[/color]\n\n{result}";
+    }
+    catch (System.Exception ex)
+    {
+      _responseDisplay.Text = $"[color=red]模糊化失败: {ex.Message}[/color]";
+    }
+    finally
+    {
+      _fuzzifyBtn.Disabled = false;
+      _fuzzifyBtn.Text = "模糊化";
+    }
   }
 
   /// <summary>
