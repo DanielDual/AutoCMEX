@@ -15,6 +15,12 @@ public partial class MainWindow : Control
   private Control _rightPanel = default!;
   private Control _currentPanel = default!;
 
+  private Button _integrationBtn = default!;
+  private Button _guessingBtn = default!;
+  private Button _infoBtn = default!;
+  private Button _settingsBtn = default!;
+  private Button _helpBtn = default!;
+
   private readonly Dictionary<string, Control> _panels = new();
   private readonly Dictionary<string, Button> _navButtons = new();
 
@@ -22,87 +28,35 @@ public partial class MainWindow : Control
 
   public override void _Ready()
   {
-    SetupLayout();
+    // 获取节点引用
+    _leftPanel = GetNode<VBoxContainer>("MainContainer/LeftPanel");
+    _rightPanel = GetNode<Control>("MainContainer/RightPanel");
+
+    _integrationBtn = GetNode<Button>("MainContainer/LeftPanel/IntegrationBtn");
+    _guessingBtn = GetNode<Button>("MainContainer/LeftPanel/GuessingBtn");
+    _infoBtn = GetNode<Button>("MainContainer/LeftPanel/InfoBtn");
+    _settingsBtn = GetNode<Button>("MainContainer/LeftPanel/SettingsBtn");
+    _helpBtn = GetNode<Button>("MainContainer/LeftPanel/HelpBtn");
+
+    // 应用导出属性
+    _leftPanel.CustomMinimumSize = new Vector2(LeftPanelWidth, 0);
+
+    // 注册导航按钮
+    _navButtons["integration"] = _integrationBtn;
+    _navButtons["guessing"] = _guessingBtn;
+    _navButtons["info"] = _infoBtn;
+    _navButtons["settings"] = _settingsBtn;
+    _navButtons["help"] = _helpBtn;
+
+    // 连接信号
+    _integrationBtn.Pressed += () => SwitchPanel("integration");
+    _guessingBtn.Pressed += () => SwitchPanel("guessing");
+    _infoBtn.Pressed += () => SwitchPanel("info");
+    _settingsBtn.Pressed += () => SwitchPanel("settings");
+    _helpBtn.Pressed += () => SwitchPanel("help");
+
     PreloadPanels();
     SwitchPanel(DefaultPanel);
-  }
-
-  /// <summary>
-  /// 构建左右两栏布局
-  /// </summary>
-  private void SetupLayout()
-  {
-    // 主容器：水平布局
-    var mainContainer = new HBoxContainer();
-    mainContainer.SetAnchorsPreset(LayoutPreset.FullRect);
-    AddChild(mainContainer);
-
-    // 左栏：固定宽度
-    _leftPanel = new VBoxContainer();
-    _leftPanel.CustomMinimumSize = new Vector2(LeftPanelWidth, 0);
-    mainContainer.AddChild(_leftPanel);
-
-    // 分隔线
-    var separator = new VSeparator();
-    mainContainer.AddChild(separator);
-
-    // 右栏：自适应
-    _rightPanel = new Control();
-    _rightPanel.SizeFlagsHorizontal = SizeFlags.Expand | SizeFlags.Fill;
-    mainContainer.AddChild(_rightPanel);
-
-    BuildLeftPanel();
-  }
-
-  /// <summary>
-  /// 构建左栏导航
-  /// </summary>
-  private void BuildLeftPanel()
-  {
-    // Logo 占位
-    var logoLabel = new Label();
-    logoLabel.Text = "AutoCMEX";
-    logoLabel.HorizontalAlignment = HorizontalAlignment.Center;
-    logoLabel.AddThemeFontSizeOverride("font_size", 20);
-    _leftPanel.AddChild(logoLabel);
-
-    _leftPanel.AddChild(new HSeparator());
-
-    // 功能板块按钮
-    AddNavButton("integration", "整合");
-    AddNavButton("guessing", "猜测");
-    AddNavButton("info", "信息");
-
-    // 弹性空白区域
-    var spacer = new Control();
-    spacer.SizeFlagsVertical = SizeFlags.Expand | SizeFlags.Fill;
-    _leftPanel.AddChild(spacer);
-
-    _leftPanel.AddChild(new HSeparator());
-
-    AddNavButton("settings", "设置");
-    AddNavButton("help", "帮助");
-
-    _leftPanel.AddChild(new HSeparator());
-
-    // 版本号
-    var versionLabel = new Label();
-    versionLabel.Text = "v0.0.1";
-    versionLabel.HorizontalAlignment = HorizontalAlignment.Center;
-    _leftPanel.AddChild(versionLabel);
-  }
-
-  /// <summary>
-  /// 添加导航按钮
-  /// </summary>
-  private void AddNavButton(string panelKey, string text)
-  {
-    var button = new Button();
-    button.Text = text;
-    button.SizeFlagsHorizontal = SizeFlags.Fill;
-    button.Pressed += () => SwitchPanel(panelKey);
-    _leftPanel.AddChild(button);
-    _navButtons[panelKey] = button;
   }
 
   /// <summary>
