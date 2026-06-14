@@ -4,7 +4,6 @@ using System.Threading.Tasks;
 using AutoCMEX.UI.Settings;
 using Chickensoft.GoDotTest;
 using Chickensoft.GodotTestDriver;
-using Chickensoft.GodotTestDriver.Drivers;
 using Godot;
 using Shouldly;
 
@@ -38,37 +37,32 @@ public class SettingsPanelTest : TestClass
   [Test]
   public void SettingsPanel_SearchBar_Exists()
   {
-    var searchBar = _panel.GetNodeOrNull<LineEdit>("%SearchBar");
-    searchBar.ShouldNotBeNull();
+    _panel.SearchBar.ShouldNotBeNull();
   }
 
   [Test]
   public void SettingsPanel_CategoryList_Exists()
   {
-    var list = _panel.GetNodeOrNull<ItemList>("%CategoryList");
-    list.ShouldNotBeNull();
+    _panel.CategoryList.ShouldNotBeNull();
   }
 
   [Test]
   public void SettingsPanel_ConfigArea_Exists()
   {
-    var area = _panel.GetNodeOrNull<Control>("%ConfigArea");
-    area.ShouldNotBeNull();
+    _panel.ConfigArea.ShouldNotBeNull();
   }
 
   [Test]
   public void SettingsPanel_CategoryList_HasSevenCategories()
   {
-    var list = _panel.GetNodeOrNull<ItemList>("%CategoryList");
-    list.ShouldNotBeNull();
-    list.ItemCount.ShouldBe(7);
+    _panel.CategoryList.ShouldNotBeNull();
+    _panel.CategoryList.ItemCount.ShouldBe(7);
   }
 
   [Test]
   public void SettingsPanel_SearchBar_HasPlaceholder()
   {
-    var searchBar = _panel.GetNodeOrNull<LineEdit>("%SearchBar");
-    searchBar.ShouldNotBeNull();
-    searchBar.PlaceholderText.ShouldContain("搜索");
+    _panel.SearchBar.ShouldNotBeNull();
+    _panel.SearchBar.PlaceholderText.ShouldContain("搜索");
   }
 }

@@ -38,95 +38,83 @@ public class GuessingPanelTest : TestClass
   [Test]
   public void GuessingPanel_BossSelect_Exists()
   {
-    var driver = new OptionButtonDriver(() => _panel.GetNodeOrNull<OptionButton>("%BossSelect"));
-    driver.ShouldNotBeNull();
+    _panel.BossSelect.ShouldNotBeNull();
   }
 
   [Test]
   public void GuessingPanel_SpellCardTree_Exists()
   {
-    var tree = _panel.GetNodeOrNull<Tree>("%SpellCardTree");
-    tree.ShouldNotBeNull();
+    _panel.SpellCardTree.ShouldNotBeNull();
   }
 
   [Test]
   public void GuessingPanel_AliasList_Exists()
   {
-    var list = _panel.GetNodeOrNull<ItemList>("%AliasList");
-    list.ShouldNotBeNull();
+    _panel.AliasList.ShouldNotBeNull();
   }
 
   [Test]
   public void GuessingPanel_GuessInput_Exists()
   {
-    var input = _panel.GetNodeOrNull<TextEdit>("%GuessInput");
-    input.ShouldNotBeNull();
+    _panel.GuessInput.ShouldNotBeNull();
   }
 
   [Test]
   public void GuessingPanel_ResponseDisplay_Exists()
   {
-    var display = _panel.GetNodeOrNull<RichTextLabel>("%ResponseDisplay");
-    display.ShouldNotBeNull();
+    _panel.ResponseDisplay.ShouldNotBeNull();
   }
 
   [Test]
   public void GuessingPanel_ImportCardBtn_Exists()
   {
-    var btn = _panel.GetNodeOrNull<Button>("%ImportCardBtn");
-    btn.ShouldNotBeNull();
-    btn.Text.ShouldBe("导入对应表");
+    _panel.ImportCardBtn.ShouldNotBeNull();
+    _panel.ImportCardBtn.Text.ShouldBe("导入对应表");
   }
 
   [Test]
   public void GuessingPanel_AddBossBtn_Exists()
   {
-    var btn = _panel.GetNodeOrNull<Button>("%AddBossBtn");
-    btn.ShouldNotBeNull();
-    btn.Text.ShouldBe("添加 Boss");
+    _panel.AddBossBtn.ShouldNotBeNull();
+    _panel.AddBossBtn.Text.ShouldBe("添加 Boss");
   }
 
   [Test]
   public void GuessingPanel_DeleteBtn_Exists()
   {
-    var btn = _panel.GetNodeOrNull<Button>("%DeleteBtn");
-    btn.ShouldNotBeNull();
-    btn.Text.ShouldBe("删除");
+    _panel.DeleteBtn.ShouldNotBeNull();
+    _panel.DeleteBtn.Text.ShouldBe("删除");
   }
 
   [Test]
   public void GuessingPanel_ImportAliasBtn_Exists()
   {
-    var btn = _panel.GetNodeOrNull<Button>("%ImportAliasBtn");
-    btn.ShouldNotBeNull();
-    btn.Text.ShouldBe("导入别名表");
+    _panel.ImportAliasBtn.ShouldNotBeNull();
+    _panel.ImportAliasBtn.Text.ShouldBe("导入别名表");
   }
 
   [Test]
   public void GuessingPanel_FuzzifyBtn_InitiallyDisabled()
   {
-    var btn = _panel.GetNodeOrNull<Button>("%FuzzifyBtn");
-    btn.ShouldNotBeNull();
-    btn.Disabled.ShouldBeTrue();
+    _panel.FuzzifyBtn.ShouldNotBeNull();
+    _panel.FuzzifyBtn.Disabled.ShouldBeTrue();
   }
 
   [Test]
   public void GuessingPanel_ProcessBtn_Exists()
   {
-    var btn = _panel.GetNodeOrNull<Button>("%ProcessBtn");
-    btn.ShouldNotBeNull();
-    btn.Text.ShouldBe("处理");
+    _panel.ProcessBtn.ShouldNotBeNull();
+    _panel.ProcessBtn.Text.ShouldBe("处理");
   }
 
   [Test]
   public void GuessingPanel_ProcessEmptyInput_ShowsError()
   {
-    var processBtn = new ButtonDriver(() => _panel.GetNodeOrNull<Button>("%ProcessBtn"));
+    var processBtn = new ButtonDriver(() => (Button)_panel.ProcessBtn);
     processBtn.ClickCenter();
 
-    var display = _panel.GetNodeOrNull<RichTextLabel>("%ResponseDisplay");
-    display.ShouldNotBeNull();
+    _panel.ResponseDisplay.ShouldNotBeNull();
     // Should show error about no boss selected or empty input
-    display.Text.ShouldNotBeNullOrEmpty();
+    _panel.ResponseDisplay.Text.ShouldNotBeNullOrEmpty();
   }
 }

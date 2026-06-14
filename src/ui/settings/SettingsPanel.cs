@@ -4,24 +4,37 @@ using System.Collections.Generic;
 using System.Linq;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
+using Chickensoft.AutoInject;
+using Chickensoft.Introspection;
 using Godot;
 
 /// <summary>
 /// 设置板块脚本
 /// </summary>
+[Meta(typeof(IAutoNode))]
 public partial class SettingsPanel : Control
 {
-  // 搜索栏
-  private LineEdit _searchBar = default!;
+  #region AutoConnect Nodes
 
-  // 左栏：配置类别列表
-  private ItemList _categoryList = default!;
+  [Node]
+  public LineEdit SearchBar { get; set; } = default!;
 
-  // 右栏：配置项区域
-  private Control _configArea = default!;
+  [Node]
+  public ItemList CategoryList { get; set; } = default!;
+
+  [Node]
+  public Control ConfigArea { get; set; } = default!;
+
+  #endregion
+
+  #region Dependencies
+
+  [Dependency]
+  public DataManager DataManager => this.DependOn<DataManager>(() => null!);
+
+  #endregion
 
   // 数据
-  private DataManager? _dataManager;
   private AppSettings _settings = new();
 
   private readonly string[] _categories =
@@ -36,29 +49,27 @@ public partial class SettingsPanel : Control
   };
   private int _currentCategory = -1;
 
-  public override void _Ready()
-  {
-    _searchBar = GetNode<LineEdit>("%SearchBar");
-    _categoryList = GetNode<ItemList>("%CategoryList");
-    _configArea = GetNode<Control>("%ConfigArea");
+  public override void _Notification(int what) => this.Notify(what);
 
+  public void OnReady()
+  {
     // 初始化类别列表
     foreach (var cat in _categories)
     {
-      _categoryList.AddItem(cat);
+      CategoryList.AddItem(cat);
     }
 
-    _categoryList.ItemSelected += OnCategorySelected;
-    _searchBar.TextChanged += OnSearchChanged;
+    CategoryList.ItemSelected += OnCategorySelected;
+    SearchBar.TextChanged += OnSearchChanged;
   }
 
-  /// <summary>
-  /// 设置数据管理器引用
-  /// </summary>
-  public void SetDataManager(DataManager dataManager)
+  public void OnResolved()
   {
-    _dataManager = dataManager;
-    _settings = dataManager.Settings;
+    // 依赖已解析，同步设置数据
+    if (DataManager != null)
+    {
+      _settings = DataManager.Settings;
+    }
   }
 
   /// <summary>
@@ -81,7 +92,7 @@ public partial class SettingsPanel : Control
       var visible =
         string.IsNullOrEmpty(newText)
         || _categories[i].Contains(newText, System.StringComparison.OrdinalIgnoreCase);
-      _categoryList.SetItemDisabled(i, !visible);
+      CategoryList.SetItemDisabled(i, !visible);
     }
   }
 
@@ -91,7 +102,7 @@ public partial class SettingsPanel : Control
   private void RefreshConfigArea()
   {
     // 清除旧内容
-    foreach (var child in _configArea.GetChildren())
+    foreach (var child in ConfigArea.GetChildren())
     {
       child.QueueFree();
     }
@@ -117,7 +128,7 @@ public partial class SettingsPanel : Control
   {
     var container = new VBoxContainer();
     container.SetAnchorsPreset(LayoutPreset.FullRect);
-    _configArea.AddChild(container);
+    ConfigArea.AddChild(container);
 
     // 模型列表
     var scrollContainer = new ScrollContainer();
@@ -144,7 +155,7 @@ public partial class SettingsPanel : Control
         ApiFormat = "OpenAI",
       };
       _settings.AiModels.Add(newModel);
-      _dataManager?.TriggerAutoSave();
+      DataManager?.TriggerAutoSave();
       RefreshConfigArea();
     };
     container.AddChild(addBtn);
@@ -171,7 +182,7 @@ public partial class SettingsPanel : Control
     formatOption.ItemSelected += (idx) =>
     {
       model.ApiFormat = idx == 1 ? "Anthropic" : "OpenAI";
-      _dataManager?.TriggerAutoSave();
+      DataManager?.TriggerAutoSave();
     };
     formatRow.AddChild(formatOption);
     entry.AddChild(formatRow);
@@ -189,7 +200,7 @@ public partial class SettingsPanel : Control
     urlInput.TextChanged += (text) =>
     {
       model.EndpointUrl = text;
-      _dataManager?.TriggerAutoSave();
+      DataManager?.TriggerAutoSave();
     };
     urlRow.AddChild(urlInput);
     entry.AddChild(urlRow);
@@ -207,7 +218,7 @@ public partial class SettingsPanel : Control
     modelIdInput.TextChanged += (text) =>
     {
       model.ModelId = text;
-      _dataManager?.TriggerAutoSave();
+      DataManager?.TriggerAutoSave();
     };
     modelIdRow.AddChild(modelIdInput);
     entry.AddChild(modelIdRow);
@@ -226,7 +237,7 @@ public partial class SettingsPanel : Control
     keyInput.TextChanged += (text) =>
     {
       model.EncryptedApiKey = text;
-      _dataManager?.TriggerAutoSave();
+      DataManager?.TriggerAutoSave();
     };
     keyRow.AddChild(keyInput);
 
@@ -266,7 +277,7 @@ public partial class SettingsPanel : Control
     deleteBtn.Pressed += () =>
     {
       _settings.AiModels.Remove(model);
-      _dataManager?.TriggerAutoSave();
+      DataManager?.TriggerAutoSave();
       RefreshConfigArea();
     };
     actionRow.AddChild(deleteBtn);
@@ -304,7 +315,7 @@ public partial class SettingsPanel : Control
   {
     var container = new VBoxContainer();
     container.SetAnchorsPreset(LayoutPreset.FullRect);
-    _configArea.AddChild(container);
+    ConfigArea.AddChild(container);
 
     // WebSocket 端口
     var portRow = new HBoxContainer();
@@ -321,7 +332,7 @@ public partial class SettingsPanel : Control
     portInput.ValueChanged += (value) =>
     {
       _settings.WebSocketPort = (int)value;
-      _dataManager?.TriggerAutoSave();
+      DataManager?.TriggerAutoSave();
     };
     portRow.AddChild(portInput);
     container.AddChild(portRow);
@@ -353,7 +364,7 @@ public partial class SettingsPanel : Control
         2 => "strict_then_ai",
         _ => "strict",
       };
-      _dataManager?.TriggerAutoSave();
+      DataManager?.TriggerAutoSave();
     };
     filterRow.AddChild(filterOption);
     container.AddChild(filterRow);
@@ -378,7 +389,7 @@ public partial class SettingsPanel : Control
         CopyPluginDir(sourceDir, destDir);
 
         _settings.KoishiPluginPath = destDir;
-        _dataManager?.TriggerAutoSave();
+        DataManager?.TriggerAutoSave();
 
         var okDialog = new AcceptDialog();
         okDialog.Title = "安装完成";
@@ -433,6 +444,6 @@ public partial class SettingsPanel : Control
     label.HorizontalAlignment = HorizontalAlignment.Center;
     label.VerticalAlignment = VerticalAlignment.Center;
     label.SetAnchorsPreset(LayoutPreset.FullRect);
-    _configArea.AddChild(label);
+    ConfigArea.AddChild(label);
   }
 }

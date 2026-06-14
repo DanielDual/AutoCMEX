@@ -1,59 +1,107 @@
 namespace AutoCMEX.UI.Main;
 
 using System.Collections.Generic;
+using AutoCMEX.Core.Ai;
+using AutoCMEX.Core.Guessing;
+using AutoCMEX.Core.Storage;
+using Chickensoft.AutoInject;
+using Chickensoft.Introspection;
 using Godot;
 
 /// <summary>
-/// 主窗口脚本：左右两栏布局、板块切换
+/// 主窗口脚本：左右两栏布局、板块切换，同时作为 DI 容器提供核心服务
 /// </summary>
-public partial class MainWindow : Control
+[Meta(typeof(IAutoNode))]
+public partial class MainWindow
+  : Control,
+    IProvide<DataManager>,
+    IProvide<GuessPipeline>,
+    IProvide<IGuessResponseHandler>
 {
   [Export]
   public int LeftPanelWidth { get; set; } = 200;
 
-  private VBoxContainer _leftPanel = default!;
-  private Control _rightPanel = default!;
-  private Control _currentPanel = default!;
+  #region AutoConnect Nodes
 
-  private Button _integrationBtn = default!;
-  private Button _guessingBtn = default!;
-  private Button _infoBtn = default!;
-  private Button _settingsBtn = default!;
-  private Button _helpBtn = default!;
+  [Node("MainContainer/LeftPanel")]
+  public VBoxContainer LeftPanel { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel")]
+  public Control RightPanel { get; set; } = default!;
+
+  [Node("MainContainer/LeftPanel/IntegrationBtn")]
+  public Button IntegrationBtn { get; set; } = default!;
+
+  [Node("MainContainer/LeftPanel/GuessingBtn")]
+  public Button GuessingBtn { get; set; } = default!;
+
+  [Node("MainContainer/LeftPanel/InfoBtn")]
+  public Button InfoBtn { get; set; } = default!;
+
+  [Node("MainContainer/LeftPanel/SettingsBtn")]
+  public Button SettingsBtn { get; set; } = default!;
+
+  [Node("MainContainer/LeftPanel/HelpBtn")]
+  public Button HelpBtn { get; set; } = default!;
+
+  #endregion
+
+  #region Provided Services
+
+  private DataManager _dataManager = default!;
+  private GuessPipeline _guessPipeline = default!;
+  private GuessResponseHandler _guessResponseHandler = default!;
+
+  DataManager IProvide<DataManager>.Value() => _dataManager;
+
+  GuessPipeline IProvide<GuessPipeline>.Value() => _guessPipeline;
+
+  IGuessResponseHandler IProvide<IGuessResponseHandler>.Value() => _guessResponseHandler;
+
+  #endregion
 
   private readonly Dictionary<string, Control> _panels = new();
   private readonly Dictionary<string, Button> _navButtons = new();
 
+  private Control? _currentPanel;
   private const string DefaultPanel = "guessing";
 
-  public override void _Ready()
+  public override void _Notification(int what) => this.Notify(what);
+
+  public void OnReady()
   {
-    // 获取节点引用
-    _leftPanel = GetNode<VBoxContainer>("MainContainer/LeftPanel");
-    _rightPanel = GetNode<Control>("MainContainer/RightPanel");
+    // 初始化核心服务
+    var dataDir = ProjectSettings.GlobalizePath("user://data/");
+    var keyPath = ProjectSettings.GlobalizePath("user://data/key.bin");
+    var encryptor = new AesEncryptor(keyPath);
+    _dataManager = new DataManager(dataDir, encryptor);
+    _dataManager.LoadAll();
 
-    _integrationBtn = GetNode<Button>("MainContainer/LeftPanel/IntegrationBtn");
-    _guessingBtn = GetNode<Button>("MainContainer/LeftPanel/GuessingBtn");
-    _infoBtn = GetNode<Button>("MainContainer/LeftPanel/InfoBtn");
-    _settingsBtn = GetNode<Button>("MainContainer/LeftPanel/SettingsBtn");
-    _helpBtn = GetNode<Button>("MainContainer/LeftPanel/HelpBtn");
+    _guessResponseHandler = new GuessResponseHandler();
+    _guessPipeline = new GuessPipeline(_guessResponseHandler, _dataManager.Aliases);
 
-    // 应用导出属性
-    _leftPanel.CustomMinimumSize = new Vector2(LeftPanelWidth, 0);
+    // 通知 AutoInject 依赖已就绪
+    this.Provide();
+  }
+
+  public void OnProvided()
+  {
+    // 所有依赖已提供，初始化 UI
+    LeftPanel.CustomMinimumSize = new Vector2(LeftPanelWidth, 0);
 
     // 注册导航按钮
-    _navButtons["integration"] = _integrationBtn;
-    _navButtons["guessing"] = _guessingBtn;
-    _navButtons["info"] = _infoBtn;
-    _navButtons["settings"] = _settingsBtn;
-    _navButtons["help"] = _helpBtn;
+    _navButtons["integration"] = IntegrationBtn;
+    _navButtons["guessing"] = GuessingBtn;
+    _navButtons["info"] = InfoBtn;
+    _navButtons["settings"] = SettingsBtn;
+    _navButtons["help"] = HelpBtn;
 
     // 连接信号
-    _integrationBtn.Pressed += () => SwitchPanel("integration");
-    _guessingBtn.Pressed += () => SwitchPanel("guessing");
-    _infoBtn.Pressed += () => SwitchPanel("info");
-    _settingsBtn.Pressed += () => SwitchPanel("settings");
-    _helpBtn.Pressed += () => SwitchPanel("help");
+    IntegrationBtn.Pressed += () => SwitchPanel("integration");
+    GuessingBtn.Pressed += () => SwitchPanel("guessing");
+    InfoBtn.Pressed += () => SwitchPanel("info");
+    SettingsBtn.Pressed += () => SwitchPanel("settings");
+    HelpBtn.Pressed += () => SwitchPanel("help");
 
     PreloadPanels();
     SwitchPanel(DefaultPanel);
@@ -83,7 +131,7 @@ public partial class MainWindow : Control
     var panel = scene.Instantiate<Control>();
     panel.Visible = false;
     panel.SetAnchorsPreset(LayoutPreset.FullRect);
-    _rightPanel.AddChild(panel);
+    RightPanel.AddChild(panel);
     _panels[key] = panel;
   }
 

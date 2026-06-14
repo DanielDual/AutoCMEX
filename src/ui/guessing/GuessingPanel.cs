@@ -6,93 +6,110 @@ using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Guessing;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
+using Chickensoft.AutoInject;
+using Chickensoft.Introspection;
 using Godot;
 
 /// <summary>
 /// 猜测板块脚本
 /// </summary>
+[Meta(typeof(IAutoNode))]
 public partial class GuessingPanel : Control
 {
-  // Boss 选择
-  private OptionButton _bossSelect = default!;
+  #region AutoConnect Nodes
 
-  // 左上：符卡—创作者对应表
-  private Tree _spellCardTree = default!;
-  private Button _importCardBtn = default!;
-  private Button _exportCardBtn = default!;
-  private Button _addBossBtn = default!;
-  private Button _deleteBtn = default!;
+  [Node]
+  public OptionButton BossSelect { get; set; } = default!;
 
-  // 左下：别名表
-  private ItemList _aliasList = default!;
-  private Button _importAliasBtn = default!;
-  private Button _addAliasBtn = default!;
-  private Button _deleteAliasBtn = default!;
+  [Node]
+  public Tree SpellCardTree { get; set; } = default!;
 
-  // 右侧
-  private TextEdit _guessInput = default!;
-  private Button _fuzzifyBtn = default!;
-  private Button _processBtn = default!;
-  private RichTextLabel _responseDisplay = default!;
+  [Node]
+  public Button ImportCardBtn { get; set; } = default!;
+
+  [Node]
+  public Button ExportCardBtn { get; set; } = default!;
+
+  [Node]
+  public Button AddBossBtn { get; set; } = default!;
+
+  [Node]
+  public Button DeleteBtn { get; set; } = default!;
+
+  [Node]
+  public ItemList AliasList { get; set; } = default!;
+
+  [Node]
+  public Button ImportAliasBtn { get; set; } = default!;
+
+  [Node]
+  public Button AddAliasBtn { get; set; } = default!;
+
+  [Node]
+  public Button DeleteAliasBtn { get; set; } = default!;
+
+  [Node]
+  public TextEdit GuessInput { get; set; } = default!;
+
+  [Node]
+  public Button FuzzifyBtn { get; set; } = default!;
+
+  [Node]
+  public Button ProcessBtn { get; set; } = default!;
+
+  [Node]
+  public RichTextLabel ResponseDisplay { get; set; } = default!;
+
+  #endregion
+
+  #region Dependencies
+
+  [Dependency]
+  public DataManager DataManager => this.DependOn<DataManager>(() => null!);
+
+  [Dependency]
+  public GuessPipeline Pipeline =>
+    this.DependOn<GuessPipeline>(() =>
+      new GuessPipeline(new GuessResponseHandler(), new List<CreatorAlias>())
+    );
+
+  #endregion
 
   // 数据
-  private DataManager? _dataManager;
-  private GuessPipeline? _pipeline;
   private List<Boss> _bosses = new();
   private List<CreatorAlias> _aliases = new();
   private Boss? _currentBoss;
 
-  public override void _Ready()
+  public override void _Notification(int what) => this.Notify(what);
+
+  public void OnReady()
   {
-    // 获取节点引用
-    _bossSelect = GetNode<OptionButton>("%BossSelect");
-    _spellCardTree = GetNode<Tree>("%SpellCardTree");
-    _importCardBtn = GetNode<Button>("%ImportCardBtn");
-    _exportCardBtn = GetNode<Button>("%ExportCardBtn");
-    _addBossBtn = GetNode<Button>("%AddBossBtn");
-    _deleteBtn = GetNode<Button>("%DeleteBtn");
-    _aliasList = GetNode<ItemList>("%AliasList");
-    _importAliasBtn = GetNode<Button>("%ImportAliasBtn");
-    _addAliasBtn = GetNode<Button>("%AddAliasBtn");
-    _deleteAliasBtn = GetNode<Button>("%DeleteAliasBtn");
-    _guessInput = GetNode<TextEdit>("%GuessInput");
-    _fuzzifyBtn = GetNode<Button>("%FuzzifyBtn");
-    _processBtn = GetNode<Button>("%ProcessBtn");
-    _responseDisplay = GetNode<RichTextLabel>("%ResponseDisplay");
-
-    // 连接信号
-    _bossSelect.ItemSelected += OnBossSelected;
-    _importCardBtn.Pressed += OnImportCardTable;
-    _importAliasBtn.Pressed += OnImportAliasTable;
-    _addBossBtn.Pressed += OnAddBoss;
-    _deleteBtn.Pressed += OnDeleteSelected;
-    _addAliasBtn.Pressed += OnAddAlias;
-    _deleteAliasBtn.Pressed += OnDeleteAlias;
-    _processBtn.Pressed += OnProcessGuess;
-    _fuzzifyBtn.Pressed += OnFuzzify;
-
-    // 初始化管道
-    _pipeline = new GuessPipeline(new GuessResponseHandler(), _aliases);
+    // 连接信号 (节点已由 IAutoConnect 绑定)
+    BossSelect.ItemSelected += OnBossSelected;
+    ImportCardBtn.Pressed += OnImportCardTable;
+    ImportAliasBtn.Pressed += OnImportAliasTable;
+    AddBossBtn.Pressed += OnAddBoss;
+    DeleteBtn.Pressed += OnDeleteSelected;
+    AddAliasBtn.Pressed += OnAddAlias;
+    DeleteAliasBtn.Pressed += OnDeleteAlias;
+    ProcessBtn.Pressed += OnProcessGuess;
+    FuzzifyBtn.Pressed += OnFuzzify;
 
     // 禁用模糊化按钮（需配置 AI）
-    _fuzzifyBtn.Disabled = true;
-    _fuzzifyBtn.TooltipText = "请先配置 AI 模型";
+    FuzzifyBtn.Disabled = true;
+    FuzzifyBtn.TooltipText = "请先配置 AI 模型";
   }
 
-  /// <summary>
-  /// 设置数据管理器引用
-  /// </summary>
-  public void SetDataManager(DataManager dataManager)
+  public void OnResolved()
   {
-    _dataManager = dataManager;
-    _bosses = dataManager.Bosses;
-    _aliases = dataManager.Aliases;
-    _pipeline = new GuessPipeline(new GuessResponseHandler(), _aliases);
-
-    // 检查是否已配置 AI 模型，启用模糊化按钮
-    UpdateFuzzifyButtonState();
-
-    RefreshAll();
+    // 依赖已解析，初始化数据
+    if (DataManager != null)
+    {
+      _bosses = DataManager.Bosses;
+      _aliases = DataManager.Aliases;
+      UpdateFuzzifyButtonState();
+      RefreshAll();
+    }
   }
 
   /// <summary>
@@ -101,16 +118,16 @@ public partial class GuessingPanel : Control
   private void UpdateFuzzifyButtonState()
   {
     var hasAiModel =
-      _dataManager != null
-      && _dataManager.Settings.AiModels.Count > 0
-      && _dataManager.Settings.AiModels.Exists(m =>
+      DataManager != null
+      && DataManager.Settings.AiModels.Count > 0
+      && DataManager.Settings.AiModels.Exists(m =>
         !string.IsNullOrEmpty(m.EndpointUrl)
         && !string.IsNullOrEmpty(m.ModelId)
         && !string.IsNullOrEmpty(m.EncryptedApiKey)
       );
 
-    _fuzzifyBtn.Disabled = !hasAiModel;
-    _fuzzifyBtn.TooltipText = hasAiModel
+    FuzzifyBtn.Disabled = !hasAiModel;
+    FuzzifyBtn.TooltipText = hasAiModel
       ? "使用 AI 将非严格格式文本转为严格格式"
       : "请先配置 AI 模型";
   }
@@ -130,15 +147,15 @@ public partial class GuessingPanel : Control
   /// </summary>
   private void RefreshBossSelect()
   {
-    _bossSelect.Clear();
+    BossSelect.Clear();
     foreach (var boss in _bosses)
     {
-      _bossSelect.AddItem(boss.Name);
+      BossSelect.AddItem(boss.Name);
     }
 
     if (_bosses.Count > 0)
     {
-      _bossSelect.Select(0);
+      BossSelect.Select(0);
       _currentBoss = _bosses[0];
     }
     else
@@ -154,21 +171,21 @@ public partial class GuessingPanel : Control
   /// </summary>
   private void RefreshSpellCardTree()
   {
-    _spellCardTree.Clear();
-    var root = _spellCardTree.CreateItem();
-    _spellCardTree.HideRoot = true;
+    SpellCardTree.Clear();
+    var root = SpellCardTree.CreateItem();
+    SpellCardTree.HideRoot = true;
 
     if (_currentBoss == null)
       return;
 
-    var bossItem = _spellCardTree.CreateItem(root);
+    var bossItem = SpellCardTree.CreateItem(root);
     bossItem.SetText(0, _currentBoss.Name);
     bossItem.SetEditable(0, true);
 
     for (int i = 0; i < _currentBoss.SpellCards.Count; i++)
     {
       var card = _currentBoss.SpellCards[i];
-      var cardItem = _spellCardTree.CreateItem(bossItem);
+      var cardItem = SpellCardTree.CreateItem(bossItem);
       cardItem.SetText(0, $"{i + 1}. {card.Name}");
       cardItem.SetText(1, string.IsNullOrEmpty(card.Creator) ? "(未揭晓)" : card.Creator);
       cardItem.SetEditable(0, true);
@@ -181,11 +198,11 @@ public partial class GuessingPanel : Control
   /// </summary>
   private void RefreshAliasList()
   {
-    _aliasList.Clear();
+    AliasList.Clear();
     foreach (var alias in _aliases)
     {
       var aliasesStr = string.Join(", ", alias.Aliases);
-      _aliasList.AddItem($"{alias.MainName}: {aliasesStr}");
+      AliasList.AddItem($"{alias.MainName}: {aliasesStr}");
     }
   }
 
@@ -232,11 +249,11 @@ public partial class GuessingPanel : Control
     }
 
     _bosses = result.Data!;
-    if (_dataManager != null)
+    if (DataManager != null)
     {
-      _dataManager.Bosses.Clear();
-      _dataManager.Bosses.AddRange(_bosses);
-      _dataManager.TriggerAutoSave();
+      DataManager.Bosses.Clear();
+      DataManager.Bosses.AddRange(_bosses);
+      DataManager.TriggerAutoSave();
     }
     RefreshAll();
   }
@@ -272,13 +289,12 @@ public partial class GuessingPanel : Control
     }
 
     _aliases = result.Data!;
-    if (_dataManager != null)
+    if (DataManager != null)
     {
-      _dataManager.Aliases.Clear();
-      _dataManager.Aliases.AddRange(_aliases);
-      _dataManager.TriggerAutoSave();
+      DataManager.Aliases.Clear();
+      DataManager.Aliases.AddRange(_aliases);
+      DataManager.TriggerAutoSave();
     }
-    _pipeline = new GuessPipeline(new GuessResponseHandler(), _aliases);
     RefreshAliasList();
   }
 
@@ -289,11 +305,11 @@ public partial class GuessingPanel : Control
   {
     var boss = new Boss { Name = "新 Boss" };
     _bosses.Add(boss);
-    if (_dataManager != null)
+    if (DataManager != null)
     {
-      _dataManager.Bosses.Clear();
-      _dataManager.Bosses.AddRange(_bosses);
-      _dataManager.TriggerAutoSave();
+      DataManager.Bosses.Clear();
+      DataManager.Bosses.AddRange(_bosses);
+      DataManager.TriggerAutoSave();
     }
     RefreshAll();
   }
@@ -303,12 +319,12 @@ public partial class GuessingPanel : Control
   /// </summary>
   private void OnDeleteSelected()
   {
-    var selected = _spellCardTree.GetNextSelected(null);
+    var selected = SpellCardTree.GetNextSelected(null);
     if (selected == null)
       return;
 
     var parent = selected.GetParent();
-    if (parent == null || parent == _spellCardTree.GetRoot())
+    if (parent == null || parent == SpellCardTree.GetRoot())
     {
       // 删除 Boss
       var bossName = selected.GetText(0);
@@ -324,8 +340,8 @@ public partial class GuessingPanel : Control
       }
     }
 
-    if (_dataManager != null)
-      _dataManager.TriggerAutoSave();
+    if (DataManager != null)
+      DataManager.TriggerAutoSave();
 
     RefreshAll();
   }
@@ -337,13 +353,12 @@ public partial class GuessingPanel : Control
   {
     var alias = new CreatorAlias { MainName = "新创作者" };
     _aliases.Add(alias);
-    if (_dataManager != null)
+    if (DataManager != null)
     {
-      _dataManager.Aliases.Clear();
-      _dataManager.Aliases.AddRange(_aliases);
-      _dataManager.TriggerAutoSave();
+      DataManager.Aliases.Clear();
+      DataManager.Aliases.AddRange(_aliases);
+      DataManager.TriggerAutoSave();
     }
-    _pipeline = new GuessPipeline(new GuessResponseHandler(), _aliases);
     RefreshAliasList();
   }
 
@@ -352,7 +367,7 @@ public partial class GuessingPanel : Control
   /// </summary>
   private void OnDeleteAlias()
   {
-    var selectedItems = _aliasList.GetSelectedItems();
+    var selectedItems = AliasList.GetSelectedItems();
     if (selectedItems.Length == 0)
       return;
 
@@ -362,10 +377,9 @@ public partial class GuessingPanel : Control
       _aliases.RemoveAt((int)index);
     }
 
-    if (_dataManager != null)
-      _dataManager.TriggerAutoSave();
+    if (DataManager != null)
+      DataManager.TriggerAutoSave();
 
-    _pipeline = new GuessPipeline(new GuessResponseHandler(), _aliases);
     RefreshAliasList();
   }
 
@@ -376,22 +390,22 @@ public partial class GuessingPanel : Control
   {
     if (_currentBoss == null)
     {
-      _responseDisplay.Text = "[color=red]请先选择 Boss[/color]";
+      ResponseDisplay.Text = "[color=red]请先选择 Boss[/color]";
       return;
     }
 
-    var text = _guessInput.Text.Trim();
+    var text = GuessInput.Text.Trim();
     if (string.IsNullOrEmpty(text))
     {
-      _responseDisplay.Text = "[color=red]请输入猜测文本[/color]";
+      ResponseDisplay.Text = "[color=red]请输入猜测文本[/color]";
       return;
     }
 
-    var result = _pipeline!.Process(text, _currentBoss);
+    var result = Pipeline.Process(text, _currentBoss);
 
     if (!result.IsSuccess)
     {
-      _responseDisplay.Text = $"[color=red]{result.ErrorMessage}[/color]";
+      ResponseDisplay.Text = $"[color=red]{result.ErrorMessage}[/color]";
       return;
     }
 
@@ -406,7 +420,7 @@ public partial class GuessingPanel : Control
       displayText += $"{detail}\n";
     }
 
-    _responseDisplay.Text = displayText;
+    ResponseDisplay.Text = displayText;
   }
 
   /// <summary>
@@ -416,25 +430,25 @@ public partial class GuessingPanel : Control
   {
     if (_currentBoss == null)
     {
-      _responseDisplay.Text = "[color=red]请先选择 Boss[/color]";
+      ResponseDisplay.Text = "[color=red]请先选择 Boss[/color]";
       return;
     }
 
-    var text = _guessInput.Text.Trim();
+    var text = GuessInput.Text.Trim();
     if (string.IsNullOrEmpty(text))
     {
-      _responseDisplay.Text = "[color=red]请输入猜测文本[/color]";
+      ResponseDisplay.Text = "[color=red]请输入猜测文本[/color]";
       return;
     }
 
-    if (_dataManager == null || _dataManager.Settings.AiModels.Count == 0)
+    if (DataManager == null || DataManager.Settings.AiModels.Count == 0)
     {
-      _responseDisplay.Text = "[color=yellow]请先在设置中配置 AI 模型[/color]";
+      ResponseDisplay.Text = "[color=yellow]请先在设置中配置 AI 模型[/color]";
       return;
     }
 
     // 使用第一个已完整配置的 AI 模型
-    var modelConfig = _dataManager.Settings.AiModels.Find(m =>
+    var modelConfig = DataManager.Settings.AiModels.Find(m =>
       !string.IsNullOrEmpty(m.EndpointUrl)
       && !string.IsNullOrEmpty(m.ModelId)
       && !string.IsNullOrEmpty(m.EncryptedApiKey)
@@ -442,13 +456,13 @@ public partial class GuessingPanel : Control
 
     if (modelConfig == null)
     {
-      _responseDisplay.Text = "[color=yellow]请先在设置中完整配置 AI 模型[/color]";
+      ResponseDisplay.Text = "[color=yellow]请先在设置中完整配置 AI 模型[/color]";
       return;
     }
 
-    _fuzzifyBtn.Disabled = true;
-    _fuzzifyBtn.Text = "模糊化中...";
-    _responseDisplay.Text = "[color=gray]正在调用 AI 进行模糊化处理...[/color]";
+    FuzzifyBtn.Disabled = true;
+    FuzzifyBtn.Text = "模糊化中...";
+    ResponseDisplay.Text = "[color=gray]正在调用 AI 进行模糊化处理...[/color]";
 
     try
     {
@@ -460,17 +474,17 @@ public partial class GuessingPanel : Control
       var fuzzifier = new AiFuzzifier(aiService, _aliases, _bosses, _currentBoss);
       var result = await fuzzifier.FuzzifyAsync(text);
 
-      _guessInput.Text = result;
-      _responseDisplay.Text = $"[color=green]模糊化完成[/color]\n\n{result}";
+      GuessInput.Text = result;
+      ResponseDisplay.Text = $"[color=green]模糊化完成[/color]\n\n{result}";
     }
     catch (System.Exception ex)
     {
-      _responseDisplay.Text = $"[color=red]模糊化失败: {ex.Message}[/color]";
+      ResponseDisplay.Text = $"[color=red]模糊化失败: {ex.Message}[/color]";
     }
     finally
     {
-      _fuzzifyBtn.Disabled = false;
-      _fuzzifyBtn.Text = "模糊化";
+      FuzzifyBtn.Disabled = false;
+      FuzzifyBtn.Text = "模糊化";
     }
   }
 
