@@ -164,7 +164,7 @@ public partial class SettingsPanel : Control
   /// <summary>
   /// 创建单个模型配置条目
   /// </summary>
-  private Control CreateModelEntry(AiModelConfig model)
+  private VBoxContainer CreateModelEntry(AiModelConfig model)
   {
     var entry = new VBoxContainer();
 
@@ -291,7 +291,7 @@ public partial class SettingsPanel : Control
   /// <summary>
   /// 测试模型连接
   /// </summary>
-  private async System.Threading.Tasks.Task<bool> TestModelConnection(AiModelConfig model)
+  private static async System.Threading.Tasks.Task<bool> TestModelConnection(AiModelConfig model)
   {
     try
     {
@@ -407,7 +407,7 @@ public partial class SettingsPanel : Control
   /// <summary>
   /// 复制插件目录
   /// </summary>
-  private void CopyPluginDir(string sourceDir, string destDir)
+  private static void CopyPluginDir(string sourceDir, string destDir)
   {
     var dir = DirAccess.Open(sourceDir);
     if (dir == null)

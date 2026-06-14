@@ -54,13 +54,14 @@ public static class CsvImporter
         if (string.IsNullOrEmpty(bossName) || string.IsNullOrEmpty(cardName))
           continue;
 
-        if (!bossMap.ContainsKey(bossName))
+        if (!bossMap.TryGetValue(bossName, out var boss))
         {
-          bossMap[bossName] = new Boss { Name = bossName };
+          boss = new Boss { Name = bossName };
+          bossMap[bossName] = boss;
           bossOrder.Add(bossName);
         }
 
-        bossMap[bossName].SpellCards.Add(new SpellCard { Name = cardName, Creator = creator });
+        boss.SpellCards.Add(new SpellCard { Name = cardName, Creator = creator });
       }
 
       var bosses = new List<Boss>();
@@ -129,25 +130,4 @@ public static class CsvImporter
       return ImportResult<List<CreatorAlias>>.Error($"导入失败：{ex.Message}");
     }
   }
-}
-
-/// <summary>
-/// 导入结果
-/// </summary>
-public class ImportResult<T>
-{
-  public bool IsSuccess { get; }
-  public T? Data { get; }
-  public string ErrorMessage { get; } = string.Empty;
-
-  private ImportResult(bool success, T? data, string error)
-  {
-    IsSuccess = success;
-    Data = data;
-    ErrorMessage = error;
-  }
-
-  public static ImportResult<T> Success(T data) => new(true, data, string.Empty);
-
-  public static ImportResult<T> Error(string message) => new(false, default, message);
 }

@@ -6,20 +6,19 @@ using System.Text.RegularExpressions;
 /// <summary>
 /// 猜测文本严格格式解析器
 /// </summary>
-public static class GuessParser
+public static partial class GuessParser
 {
   /// <summary>
   /// 严格格式正则：数字+非空白字符，空格分隔
   /// </summary>
-  private static readonly Regex StrictFormatRegex = new(
-    @"^(\d+\S+)(\s+\d+\S+)*$",
-    RegexOptions.Compiled
-  );
+  [GeneratedRegex(@"^(\d+\S+)(\s+\d+\S+)*$", RegexOptions.Compiled)]
+  private static partial Regex StrictFormatRegex();
 
   /// <summary>
   /// 解析单个猜测对的正则
   /// </summary>
-  private static readonly Regex PairRegex = new(@"^(\d+)(\S+)$", RegexOptions.Compiled);
+  [GeneratedRegex(@"^(\d+)(\S+)$", RegexOptions.Compiled)]
+  private static partial Regex PairRegex();
 
   /// <summary>
   /// 解析猜测文本为符卡下标—创作者对列表
@@ -34,7 +33,7 @@ public static class GuessParser
 
     text = text.Trim();
 
-    if (!StrictFormatRegex.IsMatch(text))
+    if (!StrictFormatRegex().IsMatch(text))
       return ParseResult.Error("格式错误：请使用严格格式，如 1Alice 2Bob 3Charlie");
 
     var pairs = new List<(int Index, string Creator)>();
@@ -42,7 +41,7 @@ public static class GuessParser
 
     foreach (var part in parts)
     {
-      var match = PairRegex.Match(part);
+      var match = PairRegex().Match(part);
       if (!match.Success)
         return ParseResult.Error($"无法解析 '{part}'");
 

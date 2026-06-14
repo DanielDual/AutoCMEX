@@ -237,7 +237,7 @@ public partial class GuessingPanel : Control
   private void OnCardFileSelected(string path)
   {
     ImportResult<List<Boss>> result;
-    if (path.EndsWith(".xlsx"))
+    if (path.EndsWith(".xlsx", System.StringComparison.OrdinalIgnoreCase))
       result = ExcelImporter.ImportSpellCardTable(path);
     else
       result = CsvImporter.ImportSpellCardTable(path);
@@ -277,7 +277,7 @@ public partial class GuessingPanel : Control
   private void OnAliasFileSelected(string path)
   {
     ImportResult<List<CreatorAlias>> result;
-    if (path.EndsWith(".xlsx"))
+    if (path.EndsWith(".xlsx", System.StringComparison.OrdinalIgnoreCase))
       result = ExcelImporter.ImportAliasTable(path);
     else
       result = CsvImporter.ImportAliasTable(path);

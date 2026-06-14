@@ -2,12 +2,13 @@ namespace AutoCMEX.Core.Guessing;
 
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using AutoCMEX.Models;
 
 /// <summary>
 /// 猜测处理管道：统一入口，处理手动输入和群聊抓取的猜测文本
 /// </summary>
-public class GuessPipeline
+public partial class GuessPipeline
 {
   private readonly IGuessResponseHandler _responseHandler;
   private readonly List<CreatorAlias> _aliasTable;
@@ -84,6 +85,9 @@ public class GuessPipeline
     return PipelineResult.Success(response, details);
   }
 
+  [GeneratedRegex(@"^(\d+)(\S+)$", RegexOptions.Compiled)]
+  private static partial Regex PairPattern();
+
   /// <summary>
   /// 将猜测文本中的别名转换为主名
   /// </summary>
@@ -96,7 +100,7 @@ public class GuessPipeline
     for (int i = 0; i < parts.Length; i++)
     {
       var part = parts[i];
-      var match = System.Text.RegularExpressions.Regex.Match(part, @"^(\d+)(\S+)$");
+      var match = PairPattern().Match(part);
       if (!match.Success)
         continue;
 

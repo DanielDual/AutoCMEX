@@ -10,10 +10,11 @@ using AutoCMEX.Models;
 /// <summary>
 /// OpenAI 兼容格式 API 服务
 /// </summary>
-public class OpenAiService : IAiService
+public class OpenAiService : IAiService, IDisposable
 {
   private readonly AiModelConfig _config;
   private readonly HttpClient _httpClient;
+  private bool _disposed;
 
   public OpenAiService(AiModelConfig config)
   {
@@ -67,5 +68,16 @@ public class OpenAiService : IAiService
     {
       return false;
     }
+  }
+
+  /// <inheritdoc/>
+  public void Dispose()
+  {
+    if (_disposed)
+      return;
+
+    _disposed = true;
+    _httpClient.Dispose();
+    GC.SuppressFinalize(this);
   }
 }

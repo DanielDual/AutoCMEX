@@ -23,7 +23,11 @@ public static class ExcelImporter
     {
       using var workbook = new XLWorkbook(filePath);
       var worksheet = workbook.Worksheet(1);
-      var rows = worksheet.RangeUsed().RowsUsed().ToList();
+      var range = worksheet.RangeUsed();
+      if (range == null)
+        return ImportResult<List<Boss>>.Error("文件为空");
+
+      var rows = range.RowsUsed().ToList();
 
       if (rows.Count < 2)
         return ImportResult<List<Boss>>.Error("文件为空或仅包含表头");
@@ -47,13 +51,14 @@ public static class ExcelImporter
         if (string.IsNullOrEmpty(bossName) || string.IsNullOrEmpty(cardName))
           continue;
 
-        if (!bossMap.ContainsKey(bossName))
+        if (!bossMap.TryGetValue(bossName, out var boss))
         {
-          bossMap[bossName] = new Boss { Name = bossName };
+          boss = new Boss { Name = bossName };
+          bossMap[bossName] = boss;
           bossOrder.Add(bossName);
         }
 
-        bossMap[bossName].SpellCards.Add(new SpellCard { Name = cardName, Creator = creator });
+        boss.SpellCards.Add(new SpellCard { Name = cardName, Creator = creator });
       }
 
       var bosses = new List<Boss>();
@@ -79,7 +84,11 @@ public static class ExcelImporter
     {
       using var workbook = new XLWorkbook(filePath);
       var worksheet = workbook.Worksheet(1);
-      var rows = worksheet.RangeUsed().RowsUsed().ToList();
+      var range = worksheet.RangeUsed();
+      if (range == null)
+        return ImportResult<List<CreatorAlias>>.Error("文件为空");
+
+      var rows = range.RowsUsed().ToList();
 
       if (rows.Count < 2)
         return ImportResult<List<CreatorAlias>>.Error("文件为空或仅包含表头");

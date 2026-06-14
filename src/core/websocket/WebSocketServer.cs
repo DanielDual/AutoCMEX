@@ -5,14 +5,13 @@ using System.Collections.Concurrent;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
-using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
 /// <summary>
 /// WebSocket 服务端
 /// </summary>
-public class WebSocketServer
+public class WebSocketServer : IDisposable
 {
   private readonly int _port;
   private HttpListener? _listener;
@@ -20,6 +19,7 @@ public class WebSocketServer
   private readonly ConcurrentQueue<string> _messageQueue = new();
   private System.Net.WebSockets.WebSocket? _connectedSocket;
   private readonly object _socketLock = new();
+  private bool _disposed;
 
   public event Action<string>? OnMessageReceived;
   public bool IsRunning { get; private set; }
@@ -32,7 +32,7 @@ public class WebSocketServer
   /// <summary>
   /// 启动 WebSocket 服务
   /// </summary>
-  public async Task StartAsync()
+  public void Start()
   {
     if (IsRunning)
       return;
@@ -88,6 +88,19 @@ public class WebSocketServer
       true,
       CancellationToken.None
     );
+  }
+
+  /// <inheritdoc/>
+  public void Dispose()
+  {
+    if (_disposed)
+      return;
+
+    _disposed = true;
+    Stop();
+    _cts?.Dispose();
+    _listener?.Close();
+    GC.SuppressFinalize(this);
   }
 
   private async Task ListenLoop(CancellationToken token)

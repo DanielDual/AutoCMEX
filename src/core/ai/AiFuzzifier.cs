@@ -2,6 +2,7 @@ namespace AutoCMEX.Core.Ai;
 
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -64,19 +65,22 @@ public class AiFuzzifier
       foreach (var alias in _aliasTable)
       {
         var aliases = string.Join(", ", alias.Aliases);
-        sb.AppendLine($"- {alias.MainName}（别名：{aliases}）");
+        sb.Append(CultureInfo.InvariantCulture, $"- {alias.MainName}（别名：{aliases}）");
+        sb.AppendLine();
       }
       sb.AppendLine();
     }
 
     // 当前 Boss 符卡列表
-    sb.AppendLine($"当前 Boss：{_currentBoss.Name}");
+    sb.Append(CultureInfo.InvariantCulture, $"当前 Boss：{_currentBoss.Name}");
+    sb.AppendLine();
     sb.AppendLine("符卡列表：");
     for (int i = 0; i < _currentBoss.SpellCards.Count; i++)
     {
       var card = _currentBoss.SpellCards[i];
       var creator = string.IsNullOrEmpty(card.Creator) ? "未揭晓" : card.Creator;
-      sb.AppendLine($"  {i + 1}. {card.Name}（创作者：{creator}）");
+      sb.Append(CultureInfo.InvariantCulture, $"  {i + 1}. {card.Name}（创作者：{creator}）");
+      sb.AppendLine();
     }
     sb.AppendLine();
     sb.AppendLine("请仅输出转换后的严格格式文本，不要输出任何其他内容。");

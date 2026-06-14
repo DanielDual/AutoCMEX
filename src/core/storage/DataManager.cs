@@ -11,7 +11,7 @@ using AutoCMEX.Models;
 /// <summary>
 /// 数据持久化管理：JSON 读写 + 自动保存防抖
 /// </summary>
-public class DataManager
+public class DataManager : IDisposable
 {
   private readonly string _dataDir;
   private readonly AesEncryptor _encryptor;
@@ -24,6 +24,7 @@ public class DataManager
   private CancellationTokenSource? _saveCts;
   private readonly object _saveLock = new();
   private const int DebounceMs = 1500;
+  private bool _disposed;
 
   public List<Boss> Bosses => _bosses;
   public List<CreatorAlias> Aliases => _aliases;
@@ -70,6 +71,7 @@ public class DataManager
     lock (_saveLock)
     {
       _saveCts?.Cancel();
+      _saveCts?.Dispose();
       _saveCts = new CancellationTokenSource();
       var token = _saveCts.Token;
 
@@ -96,6 +98,19 @@ public class DataManager
     SaveJson("spellcard_table.json", _bosses);
     SaveJson("alias_table.json", _aliases);
     SaveJson("app_settings.json", settingsToSave);
+  }
+
+  /// <inheritdoc/>
+  public void Dispose()
+  {
+    if (_disposed)
+      return;
+
+    _disposed = true;
+    _saveCts?.Cancel();
+    _saveCts?.Dispose();
+    _saveCts = null;
+    GC.SuppressFinalize(this);
   }
 
   private AppSettings CloneSettingsForSave()

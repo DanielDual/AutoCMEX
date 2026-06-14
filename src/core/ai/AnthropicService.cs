@@ -10,10 +10,11 @@ using AutoCMEX.Models;
 /// <summary>
 /// Anthropic 原生格式 API 服务
 /// </summary>
-public class AnthropicService : IAiService
+public class AnthropicService : IAiService, IDisposable
 {
   private readonly AiModelConfig _config;
   private readonly HttpClient _httpClient;
+  private bool _disposed;
 
   public AnthropicService(AiModelConfig config)
   {
@@ -65,5 +66,16 @@ public class AnthropicService : IAiService
     {
       return false;
     }
+  }
+
+  /// <inheritdoc/>
+  public void Dispose()
+  {
+    if (_disposed)
+      return;
+
+    _disposed = true;
+    _httpClient.Dispose();
+    GC.SuppressFinalize(this);
   }
 }
