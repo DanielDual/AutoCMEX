@@ -63,13 +63,13 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "删除"
 
-[node name="AliasArea" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=740339476]
-layout_mode = 2
-
-[node name="AliasList" type="ItemList" parent="MainContainer/ContentArea/LeftSplit/AliasArea" unique_id=827487993]
+[node name="AddCardBtn" type="Button" parent="MainContainer/ContentArea/LeftSplit/SpellCardArea/SpellCardButtons" unique_id=1686660289]
 unique_name_in_owner = true
 layout_mode = 2
-size_flags_vertical = 3
+text = "添加符卡"
+
+[node name="AliasArea" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=740339476]
+layout_mode = 2
 
 [node name="AliasButtons" type="HBoxContainer" parent="MainContainer/ContentArea/LeftSplit/AliasArea" unique_id=1473140063]
 layout_mode = 2
@@ -88,6 +88,26 @@ text = "添加"
 unique_name_in_owner = true
 layout_mode = 2
 text = "删除"
+
+[node name="ExportAliasBtn" type="Button" parent="MainContainer/ContentArea/LeftSplit/AliasArea/AliasButtons" unique_id=2088669925]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导出别名表"
+
+[node name="AddAliasToCreatorBtn" type="Button" parent="MainContainer/ContentArea/LeftSplit/AliasArea/AliasButtons" unique_id=105980023]
+unique_name_in_owner = true
+layout_mode = 2
+text = "添加别名"
+
+[node name="AliasTree" type="Tree" parent="MainContainer/ContentArea/LeftSplit/AliasArea" unique_id=702069490]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+columns = 2
+hide_root = true
+
+[node name="@Timer@94392" type="Timer" parent="MainContainer/ContentArea/LeftSplit/AliasArea/AliasTree" unique_id=1484384508]
+one_shot = true
 
 [node name="RightPanel" type="VBoxContainer" parent="MainContainer/ContentArea" unique_id=489645881]
 layout_mode = 2

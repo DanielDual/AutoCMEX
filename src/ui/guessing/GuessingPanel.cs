@@ -1,7 +1,10 @@
 namespace AutoCMEX.UI.Guessing;
 
+using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Globalization;
+using System.IO;
+using System.Text;
 using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Guessing;
 using AutoCMEX.Core.Storage;
@@ -11,7 +14,7 @@ using Chickensoft.Introspection;
 using Godot;
 
 /// <summary>
-/// 猜测板块脚本
+/// 猜测板块脚本 - 支持符卡表和别名表的内联编辑
 /// </summary>
 [Meta(typeof(IAutoNode))]
 public partial class GuessingPanel : Control
@@ -34,16 +37,25 @@ public partial class GuessingPanel : Control
   public Button AddBossBtn { get; set; } = default!;
 
   [Node]
+  public Button AddCardBtn { get; set; } = default!;
+
+  [Node]
   public Button DeleteBtn { get; set; } = default!;
 
   [Node]
-  public ItemList AliasList { get; set; } = default!;
+  public Tree AliasTree { get; set; } = default!;
 
   [Node]
   public Button ImportAliasBtn { get; set; } = default!;
 
   [Node]
+  public Button ExportAliasBtn { get; set; } = default!;
+
+  [Node]
   public Button AddAliasBtn { get; set; } = default!;
+
+  [Node]
+  public Button AddAliasToCreatorBtn { get; set; } = default!;
 
   [Node]
   public Button DeleteAliasBtn { get; set; } = default!;
@@ -65,7 +77,28 @@ public partial class GuessingPanel : Control
   #region Dependencies
 
   [Dependency]
-  public DataManager DataManager => this.DependOn<DataManager>(() => null!);
+  public DataManager DataManager =>
+    this.DependOn<DataManager>(() =>
+    {
+      // 尝试多个路径确保 fallback 不会抛出
+      string[] dirs = { Path.Combine(Path.GetTempPath(), "AutoCMEX_Fallback"), Path.GetTempPath() };
+      foreach (var dir in dirs)
+      {
+        try
+        {
+          Directory.CreateDirectory(dir);
+          return new DataManager(dir, new AesEncryptor(Path.Combine(dir, "key.bin")));
+        }
+        catch (Exception ex)
+        {
+          GD.PrintErr($"[GuessingPanel] Fallback attempt {dir}: {ex.Message}");
+        }
+      }
+      // 最终兜底：使用内存中的临时路径
+      var tmpDir = Path.Combine(Path.GetTempPath(), $"acmex_{Guid.NewGuid():N}");
+      Directory.CreateDirectory(tmpDir);
+      return new DataManager(tmpDir, new AesEncryptor(Path.Combine(tmpDir, "key.bin")));
+    });
 
   [Dependency]
   public GuessPipeline Pipeline =>
@@ -75,317 +108,462 @@ public partial class GuessingPanel : Control
 
   #endregion
 
-  // 数据
-  private List<Boss> _bosses = new();
-  private List<CreatorAlias> _aliases = new();
+  private DataManager? _dm;
+  private GuessPipeline? _pipeline;
   private Boss? _currentBoss;
+  private bool _rebuildingAliasTree;
 
   public override void _Notification(int what) => this.Notify(what);
 
   public void OnReady()
   {
-    // 连接信号 (节点已由 IAutoConnect 绑定)
     BossSelect.ItemSelected += OnBossSelected;
     ImportCardBtn.Pressed += OnImportCardTable;
-    ImportAliasBtn.Pressed += OnImportAliasTable;
+    ExportCardBtn.Pressed += OnExportCardTable;
     AddBossBtn.Pressed += OnAddBoss;
+    AddCardBtn.Pressed += OnAddSpellCard;
     DeleteBtn.Pressed += OnDeleteSelected;
+    SpellCardTree.ItemEdited += OnSpellCardEdited;
+
+    ImportAliasBtn.Pressed += OnImportAliasTable;
+    ExportAliasBtn.Pressed += OnExportAliasTable;
     AddAliasBtn.Pressed += OnAddAlias;
+    AddAliasToCreatorBtn.Pressed += OnAddAliasToCreator;
     DeleteAliasBtn.Pressed += OnDeleteAlias;
+    AliasTree.ItemEdited += OnAliasEdited;
+
     ProcessBtn.Pressed += OnProcessGuess;
     FuzzifyBtn.Pressed += OnFuzzify;
 
-    // 禁用模糊化按钮（需配置 AI）
+    AliasTree.Columns = 1;
+    AliasTree.SetColumnTitle(0, "创作者 / 别名");
+    AliasTree.HideRoot = true;
+
     FuzzifyBtn.Disabled = true;
     FuzzifyBtn.TooltipText = "请先配置 AI 模型";
   }
 
   public void OnResolved()
   {
-    // 依赖已解析，初始化数据
-    if (DataManager != null)
+    try
     {
-      _bosses = DataManager.Bosses;
-      _aliases = DataManager.Aliases;
+      _dm = DataManager;
+    }
+    catch (Exception ex)
+    {
+      GD.PrintErr($"[GuessingPanel] Resolve DataManager: {ex.Message}");
+      _dm = null;
+    }
+    try
+    {
+      _pipeline = Pipeline;
+    }
+    catch
+    {
+      _pipeline = null;
+    }
+
+    if (_dm != null)
+    {
+      _dm.LoadAll();
       UpdateFuzzifyButtonState();
       RefreshAll();
     }
   }
 
-  /// <summary>
-  /// 根据 AI 模型配置状态更新模糊化按钮
-  /// </summary>
   private void UpdateFuzzifyButtonState()
   {
-    var hasAiModel =
-      DataManager != null
-      && DataManager.Settings.AiModels.Count > 0
-      && DataManager.Settings.AiModels.Exists(m =>
+    var hasAi =
+      _dm != null
+      && _dm.Settings.AiModels.Count > 0
+      && _dm.Settings.AiModels.Exists(m =>
         !string.IsNullOrEmpty(m.EndpointUrl)
         && !string.IsNullOrEmpty(m.ModelId)
         && !string.IsNullOrEmpty(m.EncryptedApiKey)
       );
-
-    FuzzifyBtn.Disabled = !hasAiModel;
-    FuzzifyBtn.TooltipText = hasAiModel
-      ? "使用 AI 将非严格格式文本转为严格格式"
-      : "请先配置 AI 模型";
+    FuzzifyBtn.Disabled = !hasAi;
+    FuzzifyBtn.TooltipText = hasAi ? "使用 AI 模糊化" : "请先配置 AI 模型";
   }
 
-  /// <summary>
-  /// 刷新所有显示
-  /// </summary>
   public void RefreshAll()
   {
     RefreshBossSelect();
     RefreshSpellCardTree();
-    RefreshAliasList();
+    RefreshAliasTree();
   }
 
-  /// <summary>
-  /// 刷新 Boss 下拉框
-  /// </summary>
+  // ==================== 符卡表 ====================
+
   private void RefreshBossSelect()
   {
     BossSelect.Clear();
-    foreach (var boss in _bosses)
-    {
+    if (_dm == null)
+      return;
+    foreach (var boss in _dm.Bosses)
       BossSelect.AddItem(boss.Name);
-    }
-
-    if (_bosses.Count > 0)
+    if (_dm.Bosses.Count > 0)
     {
       BossSelect.Select(0);
-      _currentBoss = _bosses[0];
+      _currentBoss = _dm.Bosses[0];
     }
     else
-    {
       _currentBoss = null;
-    }
-
     RefreshSpellCardTree();
   }
 
-  /// <summary>
-  /// 刷新符卡—创作者对应表
-  /// </summary>
   private void RefreshSpellCardTree()
   {
     SpellCardTree.Clear();
-    var root = SpellCardTree.CreateItem();
-    SpellCardTree.HideRoot = true;
-
     if (_currentBoss == null)
       return;
-
+    var root = SpellCardTree.CreateItem();
+    SpellCardTree.HideRoot = true;
     var bossItem = SpellCardTree.CreateItem(root);
     bossItem.SetText(0, _currentBoss.Name);
     bossItem.SetEditable(0, true);
-
+    bossItem.SetMetadata(0, -1);
     for (int i = 0; i < _currentBoss.SpellCards.Count; i++)
     {
       var card = _currentBoss.SpellCards[i];
       var cardItem = SpellCardTree.CreateItem(bossItem);
-      cardItem.SetText(0, $"{i + 1}. {card.Name}");
+      cardItem.SetText(0, card.Name);
       cardItem.SetText(1, string.IsNullOrEmpty(card.Creator) ? "(未揭晓)" : card.Creator);
       cardItem.SetEditable(0, true);
+      cardItem.SetEditable(1, true);
       cardItem.SetMetadata(0, i);
     }
   }
 
-  /// <summary>
-  /// 刷新别名表
-  /// </summary>
-  private void RefreshAliasList()
+  private void OnSpellCardEdited()
   {
-    AliasList.Clear();
-    foreach (var alias in _aliases)
+    var edited = SpellCardTree.GetEdited();
+    var column = SpellCardTree.GetEditedColumn();
+    if (edited == null || _currentBoss == null)
+      return;
+    var parent = edited.GetParent();
+    var metaIndex = edited.GetMetadata(0).AsInt32();
+    if (parent == SpellCardTree.GetRoot() || metaIndex == -1)
     {
-      var aliasesStr = string.Join(", ", alias.Aliases);
-      AliasList.AddItem($"{alias.MainName}: {aliasesStr}");
+      _currentBoss.Name = edited.GetText(0);
+      var idx = _dm?.Bosses.IndexOf(_currentBoss) ?? -1;
+      if (idx >= 0)
+        BossSelect.SetItemText(idx, _currentBoss.Name);
     }
+    else if (metaIndex >= 0 && metaIndex < _currentBoss.SpellCards.Count)
+    {
+      var card = _currentBoss.SpellCards[metaIndex];
+      if (column == 0)
+        card.Name = edited.GetText(0);
+      else if (column == 1)
+      {
+        var t = edited.GetText(1);
+        card.Creator = t == "(未揭晓)" ? "" : t;
+      }
+    }
+    _dm?.TriggerAutoSave();
   }
 
-  /// <summary>
-  /// Boss 选择变更
-  /// </summary>
   private void OnBossSelected(long index)
   {
-    if (index >= 0 && index < _bosses.Count)
+    if (_dm != null && index >= 0 && index < _dm.Bosses.Count)
     {
-      _currentBoss = _bosses[(int)index];
+      _currentBoss = _dm.Bosses[(int)index];
       RefreshSpellCardTree();
     }
   }
 
-  /// <summary>
-  /// 导入符卡—创作者对应表
-  /// </summary>
   private void OnImportCardTable()
   {
-    var dialog = new FileDialog();
-    dialog.FileMode = FileDialog.FileModeEnum.OpenFile;
-    dialog.Access = FileDialog.AccessEnum.Filesystem;
-    dialog.AddFilter("*.csv, *.xlsx", "*.csv, *.xlsx");
-    dialog.AddFilter("*.csv", "*.csv");
-    dialog.AddFilter("*.xlsx", "*.xlsx");
-    dialog.FileSelected += OnCardFileSelected;
-    AddChild(dialog);
-    dialog.PopupCentered();
+    var d = new FileDialog();
+    d.FileMode = FileDialog.FileModeEnum.OpenFile;
+    d.Access = FileDialog.AccessEnum.Filesystem;
+    d.AddFilter("*.csv, *.xlsx", "*.csv, *.xlsx");
+    d.AddFilter("*.csv", "*.csv");
+    d.AddFilter("*.xlsx", "*.xlsx");
+    d.FileSelected += OnCardFileSelected;
+    AddChild(d);
+    d.PopupCentered();
+  }
+
+  private void OnExportCardTable()
+  {
+    var d = new FileDialog();
+    d.FileMode = FileDialog.FileModeEnum.SaveFile;
+    d.Access = FileDialog.AccessEnum.Filesystem;
+    d.AddFilter("*.csv", "*.csv");
+    d.FileSelected += OnCardExportFileSelected;
+    AddChild(d);
+    d.PopupCentered();
+  }
+
+  private void OnCardExportFileSelected(string path)
+  {
+    if (_dm == null)
+      return;
+    var sb = new StringBuilder();
+    sb.AppendLine("Boss,符卡名,创作者");
+    foreach (var boss in _dm.Bosses)
+    foreach (var card in boss.SpellCards)
+      sb.AppendLine(
+        CultureInfo.InvariantCulture,
+        $"{EscapeCsv(boss.Name)},{EscapeCsv(card.Name)},{EscapeCsv(card.Creator)}"
+      );
+    File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
   }
 
   private void OnCardFileSelected(string path)
   {
+    if (_dm == null)
+      return;
     ImportResult<List<Boss>> result;
-    if (path.EndsWith(".xlsx", System.StringComparison.OrdinalIgnoreCase))
+    if (path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
       result = ExcelImporter.ImportSpellCardTable(path);
     else
       result = CsvImporter.ImportSpellCardTable(path);
-
     if (!result.IsSuccess)
     {
       ShowError(result.ErrorMessage);
       return;
     }
-
-    _bosses = result.Data!;
-    if (DataManager != null)
-    {
-      DataManager.Bosses.Clear();
-      DataManager.Bosses.AddRange(_bosses);
-      DataManager.TriggerAutoSave();
-    }
+    _dm.Bosses.Clear();
+    _dm.Bosses.AddRange(result.Data!);
+    _dm.TriggerAutoSave();
     RefreshAll();
   }
 
-  /// <summary>
-  /// 导入别名表
-  /// </summary>
+  private void OnAddBoss()
+  {
+    if (_dm == null)
+      return;
+    _dm.Bosses.Add(new Boss { Name = "新 Boss" });
+    _dm.TriggerAutoSave();
+    RefreshAll();
+  }
+
+  private void OnAddSpellCard()
+  {
+    if (_currentBoss == null)
+    {
+      ShowError("请先选择 Boss");
+      return;
+    }
+    _currentBoss.SpellCards.Add(new SpellCard { Name = "新符卡" });
+    _dm?.TriggerAutoSave();
+    RefreshSpellCardTree();
+  }
+
+  private void OnDeleteSelected()
+  {
+    if (_dm == null)
+      return;
+    var selected = SpellCardTree.GetNextSelected(null);
+    if (selected == null)
+      return;
+    var parent = selected.GetParent();
+    if (parent == null || parent == SpellCardTree.GetRoot())
+      _dm.Bosses.RemoveAll(b => b.Name == selected.GetText(0));
+    else
+    {
+      var index = selected.GetMetadata(0).AsInt32();
+      if (_currentBoss != null && index >= 0 && index < _currentBoss.SpellCards.Count)
+        _currentBoss.SpellCards.RemoveAt(index);
+    }
+    _dm.TriggerAutoSave();
+    RefreshAll();
+  }
+
+  // ==================== 别名表 ====================
+
+  private void RefreshAliasTree()
+  {
+    _rebuildingAliasTree = true;
+    AliasTree.ItemEdited -= OnAliasEdited;
+    AliasTree.Clear();
+
+    if (_dm != null)
+    {
+      var root = AliasTree.CreateItem();
+      for (int i = 0; i < _dm.Aliases.Count; i++)
+      {
+        var creator = _dm.Aliases[i];
+        var creatorItem = AliasTree.CreateItem(root);
+        creatorItem.SetText(0, creator.MainName);
+        creatorItem.SetEditable(0, true);
+        creatorItem.SetMetadata(0, i);
+
+        for (int j = 0; j < creator.Aliases.Count; j++)
+        {
+          var aliasItem = AliasTree.CreateItem(creatorItem);
+          aliasItem.SetText(0, creator.Aliases[j]);
+          aliasItem.SetEditable(0, true);
+          aliasItem.SetMetadata(0, i);
+        }
+      }
+    }
+
+    AliasTree.ItemEdited += OnAliasEdited;
+    _rebuildingAliasTree = false;
+  }
+
+  private void OnAliasEdited()
+  {
+    if (_rebuildingAliasTree || _dm == null)
+      return;
+    var edited = AliasTree.GetEdited();
+    if (edited == null)
+      return;
+    var column = AliasTree.GetEditedColumn();
+    if (column != 0)
+      return;
+
+    var creatorIdx = edited.GetMetadata(0).AsInt32();
+    if (creatorIdx < 0 || creatorIdx >= _dm.Aliases.Count)
+      return;
+
+    // 有子行 → 创作者行；无子行 → 别名行
+    if (edited.GetChildCount() > 0)
+    {
+      _dm.Aliases[creatorIdx].MainName = edited.GetText(0);
+    }
+    else
+    {
+      var parent = edited.GetParent();
+      if (parent == null)
+        return;
+      var aliasIdx = edited.GetIndex();
+      if (aliasIdx >= 0 && aliasIdx < _dm.Aliases[creatorIdx].Aliases.Count)
+        _dm.Aliases[creatorIdx].Aliases[aliasIdx] = edited.GetText(0);
+    }
+
+    _dm.TriggerAutoSave();
+  }
+
   private void OnImportAliasTable()
   {
-    var dialog = new FileDialog();
-    dialog.FileMode = FileDialog.FileModeEnum.OpenFile;
-    dialog.Access = FileDialog.AccessEnum.Filesystem;
-    dialog.AddFilter("*.csv, *.xlsx", "*.csv, *.xlsx");
-    dialog.AddFilter("*.csv", "*.csv");
-    dialog.AddFilter("*.xlsx", "*.xlsx");
-    dialog.FileSelected += OnAliasFileSelected;
-    AddChild(dialog);
-    dialog.PopupCentered();
+    var d = new FileDialog();
+    d.FileMode = FileDialog.FileModeEnum.OpenFile;
+    d.Access = FileDialog.AccessEnum.Filesystem;
+    d.AddFilter("*.csv, *.xlsx", "*.csv, *.xlsx");
+    d.AddFilter("*.csv", "*.csv");
+    d.AddFilter("*.xlsx", "*.xlsx");
+    d.FileSelected += OnAliasFileSelected;
+    AddChild(d);
+    d.PopupCentered();
+  }
+
+  private void OnExportAliasTable()
+  {
+    var d = new FileDialog();
+    d.FileMode = FileDialog.FileModeEnum.SaveFile;
+    d.Access = FileDialog.AccessEnum.Filesystem;
+    d.AddFilter("*.csv", "*.csv");
+    d.FileSelected += OnAliasExportFileSelected;
+    AddChild(d);
+    d.PopupCentered();
+  }
+
+  private void OnAliasExportFileSelected(string path)
+  {
+    if (_dm == null)
+      return;
+    int maxAliases = 0;
+    foreach (var a in _dm.Aliases)
+    {
+      if (a.Aliases.Count > maxAliases)
+        maxAliases = a.Aliases.Count;
+    }
+    var sb = new StringBuilder();
+    var header = "主名";
+    for (int i = 1; i <= maxAliases; i++)
+      header += $",别名{i}";
+    sb.AppendLine(header);
+    foreach (var a in _dm.Aliases)
+    {
+      var line = EscapeCsv(a.MainName);
+      for (int i = 0; i < maxAliases; i++)
+      {
+        line += ",";
+        if (i < a.Aliases.Count)
+          line += EscapeCsv(a.Aliases[i]);
+      }
+      sb.AppendLine(line);
+    }
+    File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
   }
 
   private void OnAliasFileSelected(string path)
   {
+    if (_dm == null)
+      return;
     ImportResult<List<CreatorAlias>> result;
-    if (path.EndsWith(".xlsx", System.StringComparison.OrdinalIgnoreCase))
+    if (path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
       result = ExcelImporter.ImportAliasTable(path);
     else
       result = CsvImporter.ImportAliasTable(path);
-
     if (!result.IsSuccess)
     {
       ShowError(result.ErrorMessage);
       return;
     }
-
-    _aliases = result.Data!;
-    if (DataManager != null)
-    {
-      DataManager.Aliases.Clear();
-      DataManager.Aliases.AddRange(_aliases);
-      DataManager.TriggerAutoSave();
-    }
-    RefreshAliasList();
+    _dm.Aliases.Clear();
+    _dm.Aliases.AddRange(result.Data!);
+    _dm.TriggerAutoSave();
+    RefreshAliasTree();
   }
 
-  /// <summary>
-  /// 添加 Boss
-  /// </summary>
-  private void OnAddBoss()
-  {
-    var boss = new Boss { Name = "新 Boss" };
-    _bosses.Add(boss);
-    if (DataManager != null)
-    {
-      DataManager.Bosses.Clear();
-      DataManager.Bosses.AddRange(_bosses);
-      DataManager.TriggerAutoSave();
-    }
-    RefreshAll();
-  }
-
-  /// <summary>
-  /// 删除选中项
-  /// </summary>
-  private void OnDeleteSelected()
-  {
-    var selected = SpellCardTree.GetNextSelected(null);
-    if (selected == null)
-      return;
-
-    var parent = selected.GetParent();
-    if (parent == null || parent == SpellCardTree.GetRoot())
-    {
-      // 删除 Boss
-      var bossName = selected.GetText(0);
-      _bosses.RemoveAll(b => b.Name == bossName);
-    }
-    else
-    {
-      // 删除符卡
-      var index = selected.GetMetadata(0).AsInt32();
-      if (_currentBoss != null && index >= 0 && index < _currentBoss.SpellCards.Count)
-      {
-        _currentBoss.SpellCards.RemoveAt(index);
-      }
-    }
-
-    if (DataManager != null)
-      DataManager.TriggerAutoSave();
-
-    RefreshAll();
-  }
-
-  /// <summary>
-  /// 添加别名
-  /// </summary>
   private void OnAddAlias()
   {
-    var alias = new CreatorAlias { MainName = "新创作者" };
-    _aliases.Add(alias);
-    if (DataManager != null)
-    {
-      DataManager.Aliases.Clear();
-      DataManager.Aliases.AddRange(_aliases);
-      DataManager.TriggerAutoSave();
-    }
-    RefreshAliasList();
+    if (_dm == null)
+      return;
+    _dm.Aliases.Add(new CreatorAlias { MainName = "新创作者" });
+    _dm.TriggerAutoSave();
+    RefreshAliasTree();
   }
 
-  /// <summary>
-  /// 删除别名
-  /// </summary>
+  private void OnAddAliasToCreator()
+  {
+    if (_dm == null)
+      return;
+    var selected = AliasTree.GetNextSelected(null);
+    if (selected == null)
+    {
+      ShowError("请先在别名表中选择一个创作者");
+      return;
+    }
+    var creatorIdx = selected.GetMetadata(0).AsInt32();
+    if (creatorIdx < 0 || creatorIdx >= _dm.Aliases.Count)
+      return;
+    _dm.Aliases[creatorIdx].Aliases.Add("新别名");
+    _dm.TriggerAutoSave();
+    RefreshAliasTree();
+  }
+
   private void OnDeleteAlias()
   {
-    var selectedItems = AliasList.GetSelectedItems();
-    if (selectedItems.Length == 0)
+    if (_dm == null)
+      return;
+    var selected = AliasTree.GetNextSelected(null);
+    if (selected == null)
+      return;
+    var creatorIdx = selected.GetMetadata(0).AsInt32();
+    if (creatorIdx < 0 || creatorIdx >= _dm.Aliases.Count)
       return;
 
-    var index = selectedItems[0];
-    if (index >= 0 && index < _aliases.Count)
+    // 有子行 → 删除整个创作者；无子行 → 删除单个别名
+    if (selected.GetChildCount() > 0)
+      _dm.Aliases.RemoveAt(creatorIdx);
+    else
     {
-      _aliases.RemoveAt((int)index);
+      var aliasIdx = selected.GetIndex();
+      if (aliasIdx >= 0 && aliasIdx < _dm.Aliases[creatorIdx].Aliases.Count)
+        _dm.Aliases[creatorIdx].Aliases.RemoveAt(aliasIdx);
     }
-
-    if (DataManager != null)
-      DataManager.TriggerAutoSave();
-
-    RefreshAliasList();
+    _dm.TriggerAutoSave();
+    RefreshAliasTree();
   }
 
-  /// <summary>
-  /// 处理猜测文本
-  /// </summary>
+  // ==================== 猜测处理 ====================
+
   private void OnProcessGuess()
   {
     if (_currentBoss == null)
@@ -393,39 +571,30 @@ public partial class GuessingPanel : Control
       ResponseDisplay.Text = "[color=red]请先选择 Boss[/color]";
       return;
     }
-
     var text = GuessInput.Text.Trim();
     if (string.IsNullOrEmpty(text))
     {
       ResponseDisplay.Text = "[color=red]请输入猜测文本[/color]";
       return;
     }
-
-    var result = Pipeline.Process(text, _currentBoss);
-
+    var pipeline =
+      _dm != null
+        ? new GuessPipeline(new GuessResponseHandler(), _dm.Aliases)
+        : _pipeline ?? Pipeline;
+    var result = pipeline.Process(text, _currentBoss);
     if (!result.IsSuccess)
     {
       ResponseDisplay.Text = $"[color=red]{result.ErrorMessage}[/color]";
       return;
     }
-
-    var displayText = string.Empty;
+    var display = "";
     if (!string.IsNullOrEmpty(result.Response))
-    {
-      displayText += $"[b]{result.Response}[/b]\n\n";
-    }
-
-    foreach (var detail in result.Details)
-    {
-      displayText += $"{detail}\n";
-    }
-
-    ResponseDisplay.Text = displayText;
+      display += $"[b]{result.Response}[/b]\n\n";
+    foreach (var d in result.Details)
+      display += $"{d}\n";
+    ResponseDisplay.Text = display;
   }
 
-  /// <summary>
-  /// 模糊化处理
-  /// </summary>
   private async void OnFuzzify()
   {
     if (_currentBoss == null)
@@ -433,53 +602,42 @@ public partial class GuessingPanel : Control
       ResponseDisplay.Text = "[color=red]请先选择 Boss[/color]";
       return;
     }
-
     var text = GuessInput.Text.Trim();
     if (string.IsNullOrEmpty(text))
     {
       ResponseDisplay.Text = "[color=red]请输入猜测文本[/color]";
       return;
     }
-
-    if (DataManager == null || DataManager.Settings.AiModels.Count == 0)
+    if (_dm == null || _dm.Settings.AiModels.Count == 0)
     {
-      ResponseDisplay.Text = "[color=yellow]请先在设置中配置 AI 模型[/color]";
+      ResponseDisplay.Text = "[color=yellow]请先配置 AI 模型[/color]";
       return;
     }
-
-    // 使用第一个已完整配置的 AI 模型
-    var modelConfig = DataManager.Settings.AiModels.Find(m =>
+    var mc = _dm.Settings.AiModels.Find(m =>
       !string.IsNullOrEmpty(m.EndpointUrl)
       && !string.IsNullOrEmpty(m.ModelId)
       && !string.IsNullOrEmpty(m.EncryptedApiKey)
     );
-
-    if (modelConfig == null)
+    if (mc == null)
     {
-      ResponseDisplay.Text = "[color=yellow]请先在设置中完整配置 AI 模型[/color]";
+      ResponseDisplay.Text = "[color=yellow]请完整配置 AI 模型[/color]";
       return;
     }
-
     FuzzifyBtn.Disabled = true;
     FuzzifyBtn.Text = "模糊化中...";
-    ResponseDisplay.Text = "[color=gray]正在调用 AI 进行模糊化处理...[/color]";
-
+    ResponseDisplay.Text = "[color=gray]正在调用 AI...[/color]";
     try
     {
-      IAiService aiService =
-        modelConfig.ApiFormat == "Anthropic"
-          ? new AnthropicService(modelConfig)
-          : new OpenAiService(modelConfig);
-
-      var fuzzifier = new AiFuzzifier(aiService, _aliases, _bosses, _currentBoss);
+      IAiService ai =
+        mc.ApiFormat == "Anthropic" ? new AnthropicService(mc) : new OpenAiService(mc);
+      var fuzzifier = new AiFuzzifier(ai, _dm.Aliases, _dm.Bosses, _currentBoss);
       var result = await fuzzifier.FuzzifyAsync(text);
-
       GuessInput.Text = result;
-      ResponseDisplay.Text = $"[color=green]模糊化完成[/color]\n\n{result}";
+      ResponseDisplay.Text = $"[color=green]完成[/color]\n\n{result}";
     }
-    catch (System.Exception ex)
+    catch (Exception ex)
     {
-      ResponseDisplay.Text = $"[color=red]模糊化失败: {ex.Message}[/color]";
+      ResponseDisplay.Text = $"[color=red]失败: {ex.Message}[/color]";
     }
     finally
     {
@@ -488,15 +646,23 @@ public partial class GuessingPanel : Control
     }
   }
 
-  /// <summary>
-  /// 显示错误弹窗
-  /// </summary>
-  private void ShowError(string message)
+  // ==================== 工具 ====================
+
+  private void ShowError(string msg)
   {
-    var dialog = new AcceptDialog();
-    dialog.Title = "错误";
-    dialog.DialogText = message;
-    AddChild(dialog);
-    dialog.PopupCentered();
+    var d = new AcceptDialog();
+    d.Title = "错误";
+    d.DialogText = msg;
+    AddChild(d);
+    d.PopupCentered();
+  }
+
+  private static string EscapeCsv(string f)
+  {
+    if (string.IsNullOrEmpty(f))
+      return "";
+    if (f.Contains(',') || f.Contains('"') || f.Contains('\n'))
+      return $"\"{f.Replace("\"", "\"\"")}\"";
+    return f;
   }
 }
