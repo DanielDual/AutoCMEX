@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://cxr7py3jcoul" path="res://src/ui/main/MainWindow.cs" id="1_h87f7"]
 
-[node name="Control" type="Control" unique_id=764712909]
+[node name="Control2" type="Control" unique_id=764712909]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
@@ -11,8 +11,15 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_h87f7")
 
-[node name="MainContainer" type="HBoxContainer" parent="." unique_id=1886962598]
-layout_mode = 0
+[node name="MainContainer" type="HSplitContainer" parent="." unique_id=2009167682]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+split_offsets = PackedInt32Array(200)
+split_offset = 200
 
 [node name="LeftPanel" type="VBoxContainer" parent="MainContainer" unique_id=1652975084]
 custom_minimum_size = Vector2(200, 0)
@@ -65,9 +72,6 @@ layout_mode = 2
 layout_mode = 2
 text = "v0.0.1"
 horizontal_alignment = 1
-
-[node name="PanelSeparator" type="VSeparator" parent="MainContainer" unique_id=1428856240]
-layout_mode = 2
 
 [node name="RightPanel" type="Control" parent="MainContainer" unique_id=1925822448]
 layout_mode = 2
