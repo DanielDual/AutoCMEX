@@ -26,7 +26,7 @@ public class OpenAiService : IAiService, IDisposable
   /// <inheritdoc/>
   public async Task<string> ChatAsync(string systemPrompt, string userMessage)
   {
-    var url = _config.EndpointUrl.TrimEnd('/') + "/v1/chat/completions";
+    var url = _config.EndpointUrl.TrimEnd('/') + "/chat/completions";
 
     var requestBody = new
     {
@@ -64,7 +64,7 @@ public class OpenAiService : IAiService, IDisposable
       var result = await ChatAsync("Hello", "Hi");
       return !string.IsNullOrEmpty(result);
     }
-    catch
+    catch (Exception ex)
     {
       return false;
     }
