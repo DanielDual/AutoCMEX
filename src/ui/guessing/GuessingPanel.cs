@@ -95,7 +95,7 @@ public partial class GuessingPanel : Control
         }
       }
       // 最终兜底：使用内存中的临时路径
-      var tmpDir = Path.Combine(Path.GetTempPath(), $"acmex_{Guid.NewGuid():N}");
+      var tmpDir = Path.Combine(Path.GetTempPath(), $"AutoCMEX_{Guid.NewGuid():N}");
       Directory.CreateDirectory(tmpDir);
       return new DataManager(tmpDir, new AesEncryptor(Path.Combine(tmpDir, "key.bin")));
     });
