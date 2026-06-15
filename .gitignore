@@ -10,6 +10,13 @@
 *.old*
 
 
+# [Coverage]
+
+
+coverage/*
+!coverage/.gdignore
+
+
 # [Visual Studio]
 
 
