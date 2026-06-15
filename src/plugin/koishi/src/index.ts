@@ -2,8 +2,10 @@
 // 将此文件夹复制到 Koishi 的 plugins 目录即可安装
 // 功能：将群聊消息通过 WebSocket 转发到 AutoCMEX，并返回处理结果
 
+const { Schema } = require("koishi");
 const WebSocket = require("ws");
 
+const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 5140;
 const RECONNECT_INTERVAL = 5000;
 
@@ -12,17 +14,29 @@ let messageQueue = [];
 let reconnectTimer = null;
 
 /**
+ * 插件配置项
+ */
+module.exports.Config = Schema.object({
+  host: Schema.string()
+    .default(DEFAULT_HOST)
+    .description("AutoCMEX WebSocket 服务地址"),
+  port: Schema.number()
+    .default(DEFAULT_PORT)
+    .description("AutoCMEX WebSocket 服务端口"),
+}).description("AutoCMEX 配置");
+
+/**
  * Koishi 插件入口
  */
 module.exports.name = "auto-cmex";
 
-module.exports.apply = (ctx) => {
-  const config = ctx.config.plugins?.["auto-cmex"] || {};
+module.exports.apply = (ctx, config) => {
+  const host = config.host || DEFAULT_HOST;
   const port = config.port || DEFAULT_PORT;
 
-  ctx.logger.info(`[AutoCMEX] Connecting to ws://127.0.0.1:${port}`);
+  ctx.logger.info(`[AutoCMEX] Connecting to ws://${host}:${port}`);
 
-  connect(ctx, port);
+  connect(ctx, host, port);
 
   // 监听所有群聊消息
   ctx.on("message", (session) => {
@@ -58,12 +72,12 @@ module.exports.apply = (ctx) => {
 /**
  * 连接到 AutoCMEX WebSocket 服务
  */
-function connect(ctx, port) {
+function connect(ctx, host, port) {
   if (ws) {
     ws.close();
   }
 
-  ws = new WebSocket(`ws://127.0.0.1:${port}`);
+  ws = new WebSocket(`ws://${host}:${port}`);
 
   ws.on("open", () => {
     ctx.logger.info("[AutoCMEX] Connected");
@@ -97,7 +111,7 @@ function connect(ctx, port) {
     ctx.logger.warn("[AutoCMEX] Disconnected, reconnecting...");
     if (!reconnectTimer) {
       reconnectTimer = setInterval(
-        () => connect(ctx, port),
+        () => connect(ctx, host, port),
         RECONNECT_INTERVAL,
       );
     }

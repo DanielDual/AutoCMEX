@@ -1,14 +1,22 @@
 {
-  "name": "auto-cmex",
-  "version": "0.0.1",
+  "name": "koishi-plugin-adapter-autocmex",
   "description": "AutoCMEX Koishi plugin - forwards chat messages to AutoCMEX via WebSocket",
-  "main": "index.js",
+  "version": "0.0.1",
+  "main": "lib/index.js",
+  "typings": "lib/index.d.ts",
+  "files": [
+    "lib",
+    "dist"
+  ],
+  "license": "MIT",
+  "scripts": {},
   "keywords": [
     "koishi",
     "plugin",
     "auto-cmex"
   ],
+  "devDependencies": {},
   "peerDependencies": {
-    "koishi": "^4.0.0"
+    "koishi": "^4.18.7"
   }
 }
