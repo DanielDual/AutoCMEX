@@ -6,7 +6,9 @@ using System.IO;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using AutoCMEX.Core.Logging;
 using AutoCMEX.Models;
+using Chickensoft.Log;
 
 /// <summary>
 /// 数据持久化管理：JSON 读写 + 自动保存防抖
@@ -16,6 +18,7 @@ public class DataManager : IDisposable
   private readonly string _dataDir;
   private readonly AesEncryptor _encryptor;
   private readonly JsonSerializerOptions _jsonOptions;
+  private readonly ILog _log;
 
   private List<Boss> _bosses = new();
   private List<CreatorAlias> _aliases = new();
@@ -31,9 +34,13 @@ public class DataManager : IDisposable
   public AppSettings Settings => _settings;
 
   public DataManager(string dataDir, AesEncryptor encryptor)
+    : this(dataDir, encryptor, AppLogs.GetOrCreate().GetLogger(nameof(DataManager))) { }
+
+  public DataManager(string dataDir, AesEncryptor encryptor, ILog log)
   {
     _dataDir = dataDir;
     _encryptor = encryptor;
+    _log = log;
     _jsonOptions = new JsonSerializerOptions
     {
       WriteIndented = true,
@@ -41,7 +48,10 @@ public class DataManager : IDisposable
     };
 
     if (!Directory.Exists(_dataDir))
+    {
       Directory.CreateDirectory(_dataDir);
+      _log.Print($"DataManager: created data dir {_dataDir}");
+    }
   }
 
   /// <summary>
@@ -49,9 +59,14 @@ public class DataManager : IDisposable
   /// </summary>
   public void LoadAll()
   {
+    _log.Print($"DataManager.LoadAll: dir={_dataDir}");
     _bosses = LoadJson<List<Boss>>("spellcard_table.json") ?? new();
     _aliases = LoadJson<List<CreatorAlias>>("alias_table.json") ?? new();
     _settings = LoadJson<AppSettings>("app_settings.json") ?? new();
+    _log.Print(
+      $"DataManager.LoadAll: bosses={_bosses.Count}, aliases={_aliases.Count}, "
+        + $"aiModels={_settings.AiModels.Count}"
+    );
 
     // 解密 API 密钥
     foreach (var model in _settings.AiModels)
@@ -68,6 +83,7 @@ public class DataManager : IDisposable
   /// </summary>
   public void TriggerAutoSave()
   {
+    _log.Print("DataManager: TriggerAutoSave called.");
     lock (_saveLock)
     {
       _saveCts?.Cancel();
@@ -80,7 +96,17 @@ public class DataManager : IDisposable
           _ =>
           {
             if (!token.IsCancellationRequested)
-              SaveAll();
+            {
+              try
+              {
+                SaveAll();
+                _log.Print("DataManager: auto-save completed.");
+              }
+              catch (Exception ex)
+              {
+                _log.Err($"DataManager: auto-save failed: {ex.GetType().Name}: {ex.Message}");
+              }
+            }
           },
           token
         );
@@ -92,12 +118,22 @@ public class DataManager : IDisposable
   /// </summary>
   public void SaveAll()
   {
+    _log.Print("DataManager: SaveAll running.");
     // 保存前加密 API 密钥
     var settingsToSave = CloneSettingsForSave();
 
-    SaveJson("spellcard_table.json", _bosses);
-    SaveJson("alias_table.json", _aliases);
-    SaveJson("app_settings.json", settingsToSave);
+    try
+    {
+      SaveJson("spellcard_table.json", _bosses);
+      SaveJson("alias_table.json", _aliases);
+      SaveJson("app_settings.json", settingsToSave);
+      _log.Print("DataManager: SaveAll succeeded.");
+    }
+    catch (Exception ex)
+    {
+      _log.Err($"DataManager: SaveAll failed: {ex.GetType().Name}: {ex.Message}");
+      throw;
+    }
   }
 
   /// <inheritdoc/>

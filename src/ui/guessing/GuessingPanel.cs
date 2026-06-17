@@ -5,12 +5,15 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Text;
+using AutoCMEX;
 using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Guessing;
+using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.AutoInject;
 using Chickensoft.Introspection;
+using Chickensoft.Log;
 using Godot;
 
 /// <summary>
@@ -112,6 +115,7 @@ public partial class GuessingPanel : Control
   private GuessPipeline? _pipeline;
   private Boss? _currentBoss;
   private bool _rebuildingAliasTree;
+  private ILog _log = AppLogs.GetOrCreate().GetLogger(nameof(GuessingPanel));
 
   public override void _Notification(int what) => this.Notify(what);
 
@@ -274,6 +278,7 @@ public partial class GuessingPanel : Control
 
   private void OnImportCardTable()
   {
+    _log.Print("GuessingPanel: user requested import spellcard table.");
     var d = new FileDialog();
     d.FileMode = FileDialog.FileModeEnum.OpenFile;
     d.Access = FileDialog.AccessEnum.Filesystem;
@@ -287,6 +292,7 @@ public partial class GuessingPanel : Control
 
   private void OnExportCardTable()
   {
+    _log.Print("GuessingPanel: user requested export spellcard table.");
     var d = new FileDialog();
     d.FileMode = FileDialog.FileModeEnum.SaveFile;
     d.Access = FileDialog.AccessEnum.Filesystem;
@@ -335,6 +341,7 @@ public partial class GuessingPanel : Control
   {
     if (_dm == null)
       return;
+    _log.Print("GuessingPanel: user added a new Boss.");
     _dm.Bosses.Add(new Boss { Name = "新 Boss" });
     _dm.TriggerAutoSave();
     RefreshAll();
@@ -347,6 +354,7 @@ public partial class GuessingPanel : Control
       ShowError("请先选择 Boss");
       return;
     }
+    _log.Print($"GuessingPanel: user added spellcard to boss '{_currentBoss.Name}'.");
     _currentBoss.SpellCards.Add(new SpellCard { Name = "新符卡" });
     _dm?.TriggerAutoSave();
     RefreshSpellCardTree();
@@ -440,6 +448,7 @@ public partial class GuessingPanel : Control
 
   private void OnImportAliasTable()
   {
+    _log.Print("GuessingPanel: user requested import alias table.");
     var d = new FileDialog();
     d.FileMode = FileDialog.FileModeEnum.OpenFile;
     d.Access = FileDialog.AccessEnum.Filesystem;
@@ -568,15 +577,20 @@ public partial class GuessingPanel : Control
   {
     if (_currentBoss == null)
     {
+      _log.Warn("OnProcessGuess: no current boss selected.");
       ResponseDisplay.Text = "[color=red]请先选择 Boss[/color]";
       return;
     }
     var text = GuessInput.Text.Trim();
     if (string.IsNullOrEmpty(text))
     {
+      _log.Warn("OnProcessGuess: empty input.");
       ResponseDisplay.Text = "[color=red]请输入猜测文本[/color]";
       return;
     }
+    _log.Print(
+      $"OnProcessGuess: processing guess (len={text.Length}) for boss '{_currentBoss.Name}'."
+    );
     var pipeline =
       _dm != null
         ? new GuessPipeline(new GuessResponseHandler(), _dm.Aliases)
@@ -584,6 +598,7 @@ public partial class GuessingPanel : Control
     var result = pipeline.Process(text, _currentBoss);
     if (!result.IsSuccess)
     {
+      _log.Warn($"OnProcessGuess: pipeline returned error: {result.ErrorMessage}");
       ResponseDisplay.Text = $"[color=red]{result.ErrorMessage}[/color]";
       return;
     }
@@ -599,17 +614,20 @@ public partial class GuessingPanel : Control
   {
     if (_currentBoss == null)
     {
+      _log.Warn("OnFuzzify: no current boss selected.");
       ResponseDisplay.Text = "[color=red]请先选择 Boss[/color]";
       return;
     }
     var text = GuessInput.Text.Trim();
     if (string.IsNullOrEmpty(text))
     {
+      _log.Warn("OnFuzzify: empty input.");
       ResponseDisplay.Text = "[color=red]请输入猜测文本[/color]";
       return;
     }
     if (_dm == null || _dm.Settings.AiModels.Count == 0)
     {
+      _log.Warn("OnFuzzify: no AI model configured.");
       ResponseDisplay.Text = "[color=yellow]请先配置 AI 模型[/color]";
       return;
     }
@@ -620,9 +638,13 @@ public partial class GuessingPanel : Control
     );
     if (mc == null)
     {
+      _log.Warn("OnFuzzify: AI model not fully configured.");
       ResponseDisplay.Text = "[color=yellow]请完整配置 AI 模型[/color]";
       return;
     }
+    _log.Print(
+      $"OnFuzzify: start, model={mc.ModelId}, format={mc.ApiFormat}, input_len={text.Length}"
+    );
     FuzzifyBtn.Disabled = true;
     FuzzifyBtn.Text = "模糊化中...";
     ResponseDisplay.Text = "[color=gray]正在调用 AI...[/color]";
@@ -632,11 +654,13 @@ public partial class GuessingPanel : Control
         mc.ApiFormat == "Anthropic" ? new AnthropicService(mc) : new OpenAiService(mc);
       var fuzzifier = new AiFuzzifier(ai, _dm.Aliases, _dm.Bosses, _currentBoss);
       var result = await fuzzifier.FuzzifyAsync(text);
+      _log.Print($"OnFuzzify: succeeded, output_len={result?.Length ?? 0}");
       GuessInput.Text = result;
       ResponseDisplay.Text = $"[color=green]完成[/color]\n\n{result}";
     }
     catch (Exception ex)
     {
+      _log.Err($"OnFuzzify failed: {ex.GetType().Name}: {ex.Message}");
       ResponseDisplay.Text = $"[color=red]失败: {ex.Message}[/color]";
     }
     finally

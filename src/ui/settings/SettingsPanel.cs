@@ -2,10 +2,13 @@ namespace AutoCMEX.UI.Settings;
 
 using System.Collections.Generic;
 using System.Linq;
+using AutoCMEX;
+using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.AutoInject;
 using Chickensoft.Introspection;
+using Chickensoft.Log;
 using Godot;
 
 /// <summary>
@@ -149,6 +152,8 @@ public partial class SettingsPanel : Control
     addBtn.Text = "添加模型";
     addBtn.Pressed += () =>
     {
+      var _log = AppLogs.GetOrCreate().GetLogger(nameof(SettingsPanel));
+      _log.Print("SettingsPanel: user added new AI model.");
       var newModel = new AiModelConfig
       {
         Id = System.Guid.NewGuid().ToString("N")[..8],
@@ -258,10 +263,15 @@ public partial class SettingsPanel : Control
     testBtn.Text = "测试连接";
     testBtn.Pressed += async () =>
     {
+      var _log = AppLogs.GetOrCreate().GetLogger(nameof(SettingsPanel));
+      _log.Print(
+        $"SettingsPanel: user requested connection test for model {model.Id} ({model.ModelId})."
+      );
       testBtn.Disabled = true;
       testBtn.Text = "测试中...";
 
       var success = await TestModelConnection(model);
+      _log.Print($"SettingsPanel: connection test for model {model.Id} result={success}");
 
       testBtn.Disabled = false;
       testBtn.Text = success ? "连接成功" : "连接失败";
