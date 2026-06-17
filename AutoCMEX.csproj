@@ -45,6 +45,8 @@
     />
     <PackageReference Include="Chickensoft.GameTools" Version="3.1.22" />
     <PackageReference Include="Chickensoft.GodotNodeInterfaces" Version="3.0.16" />
+    <PackageReference Include="Chickensoft.Log" Version="2.0.0" />
+    <PackageReference Include="Chickensoft.Log.Godot" Version="1.0.80" />
     <PackageReference Include="Chickensoft.LogicBlocks" Version="6.0.0" />
     <PackageReference Include="ClosedXML" Version="0.104.2" />
     <PackageReference Include="CsvHelper" Version="33.0.1" />
