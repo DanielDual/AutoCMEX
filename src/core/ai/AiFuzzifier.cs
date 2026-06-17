@@ -2,11 +2,14 @@ namespace AutoCMEX.Core.Ai;
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using AutoCMEX.Core.Logging;
 using AutoCMEX.Models;
+using Chickensoft.Log;
 
 /// <summary>
 /// AI 模糊化处理：将非严格格式猜测文本转为严格格式，别名转主名
@@ -17,6 +20,7 @@ public class AiFuzzifier
   private readonly List<CreatorAlias> _aliasTable;
   private readonly List<Boss> _bosses;
   private readonly Boss _currentBoss;
+  private readonly ILog _log;
 
   public AiFuzzifier(
     IAiService aiService,
@@ -24,11 +28,27 @@ public class AiFuzzifier
     List<Boss> bosses,
     Boss currentBoss
   )
+    : this(
+      aiService,
+      aliasTable,
+      bosses,
+      currentBoss,
+      AppLogs.GetOrCreate().GetLogger(nameof(AiFuzzifier))
+    ) { }
+
+  public AiFuzzifier(
+    IAiService aiService,
+    List<CreatorAlias> aliasTable,
+    List<Boss> bosses,
+    Boss currentBoss,
+    ILog log
+  )
   {
     _aiService = aiService;
     _aliasTable = aliasTable;
     _bosses = bosses;
     _currentBoss = currentBoss;
+    _log = log;
   }
 
   /// <summary>
@@ -38,9 +58,27 @@ public class AiFuzzifier
   /// <returns>严格格式文本</returns>
   public async Task<string> FuzzifyAsync(string rawText)
   {
-    var systemPrompt = BuildSystemPrompt();
-    var result = await _aiService.ChatAsync(systemPrompt, rawText);
-    return result.Trim();
+    _log.Print($"AiFuzzifier.FuzzifyAsync: input_len={rawText?.Length ?? 0}");
+    var sw = Stopwatch.StartNew();
+    try
+    {
+      var systemPrompt = BuildSystemPrompt();
+      var result = await _aiService.ChatAsync(systemPrompt, rawText);
+      sw.Stop();
+      _log.Print(
+        $"AiFuzzifier.FuzzifyAsync completed in {sw.ElapsedMilliseconds}ms, output_len={result.Length}"
+      );
+      return result.Trim();
+    }
+    catch (Exception ex)
+    {
+      sw.Stop();
+      _log.Err(
+        $"AiFuzzifier.FuzzifyAsync failed after {sw.ElapsedMilliseconds}ms: "
+          + $"{ex.GetType().Name}: {ex.Message}"
+      );
+      throw;
+    }
   }
 
   /// <summary>
