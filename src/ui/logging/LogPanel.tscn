@@ -1,0 +1,91 @@
+[gd_scene format=3 uid="uid://b4urpmt0s8fl6"]
+
+[ext_resource type="Script" uid="uid://dqi1jkjb7r7xb" path="res://src/ui/logging/LogPanel.cs" id="1_rrnkb"]
+
+[node name="Control" type="Control" unique_id=487608559]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_rrnkb")
+metadata/_custom_type_script = "res://src/ui/logging/LogPanel.cs"
+
+[node name="MainContainer" type="VBoxContainer" parent="." unique_id=1760719818]
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="ToolbarRow" type="HBoxContainer" parent="MainContainer" unique_id=437764138]
+layout_mode = 2
+
+[node name="LevelLabel" type="Label" parent="MainContainer/ToolbarRow" unique_id=2092505310]
+layout_mode = 2
+text = "级别:"
+
+[node name="LevelFilter" type="OptionButton" parent="MainContainer/ToolbarRow" unique_id=1996925215]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="ModuleLabel" type="Label" parent="MainContainer/ToolbarRow" unique_id=1779491888]
+layout_mode = 2
+text = "模块:"
+
+[node name="ModuleFilter" type="OptionButton" parent="MainContainer/ToolbarRow" unique_id=1098208074]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="PauseBtn" type="Button" parent="MainContainer/ToolbarRow" unique_id=2106643967]
+unique_name_in_owner = true
+layout_mode = 2
+toggle_mode = true
+text = "暂停"
+
+[node name="ClearBtn" type="Button" parent="MainContainer/ToolbarRow" unique_id=1495242814]
+unique_name_in_owner = true
+layout_mode = 2
+text = "清空"
+
+[node name="LogView" type="RichTextLabel" parent="MainContainer" unique_id=124425322]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+focus_mode = 2
+bbcode_enabled = true
+scroll_following = true
+selection_enabled = true
+
+[node name="ConfigRow" type="HBoxContainer" parent="MainContainer" unique_id=1499779739]
+layout_mode = 2
+
+[node name="MaxFileCountLabel" type="Label" parent="MainContainer/ConfigRow" unique_id=283979142]
+layout_mode = 2
+text = "保留文件数:"
+
+[node name="MaxFileCountInput" type="SpinBox" parent="MainContainer/ConfigRow" unique_id=322486682]
+unique_name_in_owner = true
+layout_mode = 2
+min_value = 1.0
+max_value = 1000.0
+value = 30.0
+
+[node name="MinLevelLabel" type="Label" parent="MainContainer/ConfigRow" unique_id=596544727]
+layout_mode = 2
+text = "输出等级:"
+
+[node name="MinLevelOption" type="OptionButton" parent="MainContainer/ConfigRow" unique_id=597071260]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="ApplyConfigBtn" type="Button" parent="MainContainer/ConfigRow" unique_id=651215406]
+unique_name_in_owner = true
+layout_mode = 2
+text = "应用配置"
+
+[node name="StatusLabel" type="Label" parent="MainContainer" unique_id=798160472]
+unique_name_in_owner = true
+layout_mode = 2
+text = "就绪"

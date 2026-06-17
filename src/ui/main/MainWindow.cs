@@ -1,9 +1,12 @@
 namespace AutoCMEX.UI.Main;
 
 using System.Collections.Generic;
+using AutoCMEX;
 using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Guessing;
+using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
+using AutoCMEX.UI.Logging;
 using Chickensoft.AutoInject;
 using Chickensoft.Introspection;
 using Godot;
@@ -43,6 +46,9 @@ public partial class MainWindow
 
   [Node("MainContainer/LeftPanel/HelpBtn")]
   public Button HelpBtn { get; set; } = default!;
+
+  [Node("MainContainer/LeftPanel/LogBtn")]
+  public Button LogBtn { get; set; } = default!;
 
   #endregion
 
@@ -95,6 +101,7 @@ public partial class MainWindow
     _navButtons["info"] = InfoBtn;
     _navButtons["settings"] = SettingsBtn;
     _navButtons["help"] = HelpBtn;
+    _navButtons["logging"] = LogBtn;
 
     // 连接信号
     IntegrationBtn.Pressed += () => SwitchPanel("integration");
@@ -102,8 +109,10 @@ public partial class MainWindow
     InfoBtn.Pressed += () => SwitchPanel("info");
     SettingsBtn.Pressed += () => SwitchPanel("settings");
     HelpBtn.Pressed += () => SwitchPanel("help");
+    LogBtn.Pressed += () => SwitchPanel("logging");
 
     PreloadPanels();
+    SetupLogPanel();
     SwitchPanel(DefaultPanel);
   }
 
@@ -117,6 +126,24 @@ public partial class MainWindow
     LoadPanel("info", "res://src/ui/info/InfoPanel.tscn");
     LoadPanel("settings", "res://src/ui/settings/SettingsPanel.tscn");
     LoadPanel("help", "res://src/ui/help/HelpPanel.tscn");
+  }
+
+  /// <summary>
+  /// 实例化并绑定日志面板。
+  /// </summary>
+  private void SetupLogPanel()
+  {
+    var path = "res://src/ui/logging/LogPanel.tscn";
+    if (!ResourceLoader.Exists(path))
+      return;
+    var scene = ResourceLoader.Load<PackedScene>(path);
+    var panel = scene.Instantiate<LogPanel>();
+    panel.Visible = false;
+    panel.SetAnchorsPreset(LayoutPreset.FullRect);
+    RightPanel.AddChild(panel);
+    _panels["logging"] = panel;
+    var logService = AppLogs.GetOrCreate();
+    panel.BindToService(logService);
   }
 
   /// <summary>

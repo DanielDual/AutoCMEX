@@ -73,6 +73,11 @@ layout_mode = 2
 text = "v0.0.1"
 horizontal_alignment = 1
 
+[node name="LogBtn" type="Button" parent="MainContainer/LeftPanel" unique_id=1543099073]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "日志"
+
 [node name="RightPanel" type="Control" parent="MainContainer" unique_id=1925822448]
 layout_mode = 2
 size_flags_horizontal = 3
