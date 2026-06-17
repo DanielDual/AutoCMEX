@@ -1,479 +1,346 @@
-# AutoCMEX — 开发实现方案
+# AutoCMEX — 日志系统实现方案
 
 ## 1. 需求核心目标与可量化验收标准
 
 ### 1.1 整体目标
 
-完成 AutoCMEX 项目的整体 UI 布局、猜测板块（UI + 功能）、设置板块（UI + 功能）的开发，使项目具备可运行的基础 GUI 应用形态。
+基于 **Chickensoft.Log** 和 **Chickensoft.Log.Godot** 库，构建统一的日志系统，实现各模块运行时行为的可观测性，提供日志显示界面供用户实时查看。
 
 ### 1.2 验收标准
 
-| 板块         | 验收标准                                                                                                                                                                                                                                                                                                                           |
-| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| 整体 UI 布局 | 主窗口启动后显示左窄右宽两栏布局；左栏含 Logo（占位）、5 个板块按钮（整合/猜测/信息/设置/帮助）、版本号；点击板块按钮右栏切换对应内容；窗口缩放时右栏自适应、左栏固定宽度                                                                                                                                                          |
-| 猜测板块 UI  | 右栏顶部显示 Boss 下拉框（默认选中第一个）；左侧上方显示符卡—创作者对应表（Tree 控件）；左侧下方显示创作者别名表；左上/左下之间可拖拽分割线；右侧上方为猜测文本输入框+模糊化处理按钮，下方为回应显示栏；功能按钮（导入/导出/添加/删除）放置于对应栏目旁                                                                            |
-| 猜测板块功能 | 支持 CSV/Excel 导入符卡—创作者对应表和别名表，导入失败弹窗提示具体错误；支持对应表和别名表的可视化编辑（CRUD）；支持严格格式猜测文本解析与回应策略（≥3张返回猜对个数，=2张全对回"对"有错回"错"，≤1张不回应）；已揭晓符卡跳过并注明；AI 模糊化处理（需配置 AI 模型）；群聊消息自动抓取（需 Koishi 插件）；数据自动保存（1-2秒防抖） |
-| 设置板块 UI  | 右栏顶部显示搜索栏（横跨左右）；左侧显示配置类别列表（AI模型/群聊/猜测/整合/信息/帮助/通用）；右侧显示当前类别下的具体配置项                                                                                                                                                                                                       |
-| 设置板块功能 | AI 模型配置支持 CRUD 和多模型管理，含"测试连接"按钮；API 密钥 AES 加密存储、UI 掩码显示、日志不输出明文；群聊机器人配置支持一键安装 Koishi 插件；配置搜索功能可用                                                                                                                                                                  |
+| 模块           | 验收标准                                                                             |
+| -------------- | ------------------------------------------------------------------------------------ |
+| **日志核心**   | 基于 `Chickensoft.Log` 实现 `ILog` 接口的日志服务，支持多 `ILogWriter` 输出          |
+| **Godot 集成** | 使用 `GDWriter` 输出到 Godot 控制台，`GDFileWriter` 输出到 `user://logs/app.log`     |
+| **日志存储**   | 日志文件按数量轮转，保留文件数量可用户配置（默认 30 个），单文件无大小限制           |
+| **日志面板**   | UI 面板支持实时滚动显示日志，提供日志级别过滤（Info/Warn/Error）、模块筛选、清空按钮 |
+| **模块覆盖**   | 高优先级模块（AI 服务、WebSocket、猜测管道）100% 埋点；中优先级模块 80% 埋点         |
 
 ---
 
 ## 2. 技术选型与依赖说明
 
-### 2.1 框架与运行时
+### 2.1 核心日志库
 
-| 项       | 选型                    | 说明               |
-| -------- | ----------------------- | ------------------ |
-| GUI 框架 | Godot 4.x + .NET 8      | 项目既定技术栈     |
-| 脚本语言 | C#                      | 项目既定语言       |
-| UI 方案  | Godot 原生 Control 节点 | 不使用第三方 UI 库 |
+| 包名                    | 版本   | 用途                                                                |
+| ----------------------- | ------ | ------------------------------------------------------------------- |
+| `Chickensoft.Log`       | Latest | 核心日志接口与实现（`ILog`, `Log`, `ConsoleWriter`, `TraceWriter`） |
+| `Chickensoft.Log.Godot` | Latest | Godot 专用输出器（`GDWriter`, `GDFileWriter`）                      |
 
-### 2.2 NuGet 包依赖
+### 2.2 架构设计
 
-| 包名                           | 兼容 .NET 版本 | 核心用途               |
-| ------------------------------ | -------------- | ---------------------- |
-| `ClosedXML`                    | .NET 8         | Excel (.xlsx) 文件读写 |
-| `CsvHelper`                    | .NET 8         | CSV 文件读写           |
-| `System.Security.Cryptography` | .NET 8（内置） | AES 加密敏感信息       |
-| `System.Net.WebSockets`        | .NET 8（内置） | WebSocket 服务端实现   |
-| `System.Text.Json`             | .NET 8（内置） | JSON 序列化/反序列化   |
-
-### 2.3 外部集成
-
-| 集成项      | 说明                                                                             |
-| ----------- | -------------------------------------------------------------------------------- |
-| AI 模型 API | 支持 OpenAI 兼容格式（`/chat/completions`）和 Anthropic 原生格式（Messages API） |
-| Koishi v4   | 群聊机器人框架，通过 WebSocket 与本项目通信                                      |
+```
+┌─────────────────────────────────────────────────────────────┐
+│                        日志系统架构                          │
+├─────────────────────────────────────────────────────────────┤
+│                                                             │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐       │
+│  │  AI 服务    │    │ WebSocket   │    │ 猜测管道    │       │
+│  │ (ILog _log) │    │ (ILog _log) │    │ (ILog _log) │       │
+│  └──────┬──────┘    └──────┬──────┘    └──────┬──────┘       │
+│         │                  │                  │              │
+│         └──────────────────┼──────────────────┘              │
+│                            ▼                                │
+│              ┌─────────────────────────┐                    │
+│              │     ILogFormatter       │                    │
+│              │  (默认格式: [时间][级别][模块] 消息)         │
+│              └─────────────────────────┘                    │
+│                            │                                │
+│         ┌──────────────────┼──────────────────┐              │
+│         ▼                  ▼                  ▼              │
+│  ┌─────────────┐    ┌─────────────┐    ┌─────────────┐       │
+│  │  GDWriter   │    │ GDFileWriter│    │ 内存缓冲区   │       │
+│  │(Godot控制台) │    │(user://logs)│    │(UI实时显示) │       │
+│  └─────────────┘    └─────────────┘    └─────────────┘       │
+│                                         │                    │
+│                                         ▼                    │
+│                              ┌──────────────────┐              │
+│                              │   日志面板 UI    │              │
+    │                              │ (LogPanel.tscn)  │              │
+    │                              │ 独立板块         │              │
+    │                              └──────────────────┘              │
+    │                                                             │
+    └─────────────────────────────────────────────────────────────┘
+```
 
 ---
 
 ## 3. 代码结构与模块划分
 
-### 3.1 目录结构
+### 3.1 新增文件
 
 ```
-AutoCMEX/
-├── src/
-│   ├── ui/
-│   │   ├── main/
-│   │   │   ├── MainWindow.tscn          # 主窗口场景（左右两栏布局）
-│   │   │   └── MainWindow.cs            # 主窗口脚本（板块切换逻辑）
-│   │   ├── guessing/
-│   │   │   ├── GuessingPanel.tscn       # 猜测板块场景
-│   │   │   └── GuessingPanel.cs         # 猜测板块脚本（UI 交互逻辑）
-│   │   ├── settings/
-│   │   │   ├── SettingsPanel.tscn       # 设置板块场景
-│   │   │   └── SettingsPanel.cs         # 设置板块脚本（UI 交互逻辑）
-│   │   ├── integration/
-│   │   │   └── IntegrationPanel.tscn    # 整合板块占位场景
-│   │   ├── info/
-│   │   │   └── InfoPanel.tscn           # 信息板块占位场景
-│   │   └── help/
-│   │       └── HelpPanel.tscn           # 帮助板块占位场景
-│   ├── core/
-│   │   ├── guessing/
-│   │   │   ├── GuessParser.cs           # 猜测文本严格格式解析
-│   │   │   ├── GuessResponseHandler.cs  # 回应策略（IGuessResponseHandler 接口 + 默认实现）
-│   │   │   ├── IGuessResponseHandler.cs # 回应策略接口
-│   │   │   └── GuessPipeline.cs         # 猜测处理管道（统一入口）
-│   │   ├── ai/
-│   │   │   ├── IAiService.cs            # AI 服务接口
-│   │   │   ├── OpenAiService.cs         # OpenAI 兼容格式实现
-│   │   │   ├── AnthropicService.cs      # Anthropic 原生格式实现
-│   │   │   └── AiFuzzifier.cs           # AI 模糊化处理（别名转换 + 格式转换）
-│   │   ├── storage/
-│   │   │   ├── DataManager.cs           # 数据持久化管理（JSON 读写 + 自动保存防抖）
-│   │   │   ├── AesEncryptor.cs          # AES 加密/解密工具
-│   │   │   ├── CsvImporter.cs           # CSV 导入工具
-│   │   │   └── ExcelImporter.cs         # Excel 导入工具
-│   │   └── websocket/
-│   │       ├── WebSocketServer.cs       # WebSocket 服务端
-│   │       └── MessageHandler.cs        # WebSocket 消息分发
-│   ├── models/
-│   │   ├── Boss.cs                      # Boss 数据模型
-│   │   ├── SpellCard.cs                 # 符卡数据模型
-│   │   ├── CreatorAlias.cs              # 创作者别名数据模型
-│   │   ├── AiModelConfig.cs             # AI 模型配置数据模型
-│   │   └── AppSettings.cs               # 应用全局配置数据模型
-│   └── plugin/
-│       └── koishi/                      # Koishi v4 插件代码
-└── doc/
-    └── plan/
-        └── plan.md                      # 本文件
+src/
+├── core/
+│   └── logging/                    # 日志核心模块
+│       ├── ILogService.cs          # 日志服务接口
+│       ├── LogService.cs           # 日志服务实现
+│       ├── InMemoryLogWriter.cs    # 内存日志写入器（供UI读取）
+│       ├── LogEntry.cs             # 日志条目数据模型
+│       └── LogLevel.cs             # 日志级别枚举
+├── ui/
+│   └── logging/                    # 日志UI面板
+│       ├── LogPanel.tscn           # 日志面板场景
+│       └── LogPanel.cs             # 日志面板逻辑
+└── Main.cs                         # 修改：初始化日志服务
 ```
 
-### 3.2 模块职责
+### 3.2 修改文件（日志埋点）
 
-| 模块         | 路径                  | 职责                                                                             |
-| ------------ | --------------------- | -------------------------------------------------------------------------------- |
-| 主窗口       | `src/ui/main/`        | 左右两栏布局、板块切换（显隐控制）、板块预加载                                   |
-| 猜测板块 UI  | `src/ui/guessing/`    | Boss 下拉框、符卡—创作者对应表（Tree）、别名表、猜测输入框、回应显示栏、按钮交互 |
-| 设置板块 UI  | `src/ui/settings/`    | 搜索栏、配置类别列表、配置项表单、按钮交互                                       |
-| 猜测处理引擎 | `src/core/guessing/`  | 严格格式解析、回应策略（策略模式）、处理管道                                     |
-| AI 服务      | `src/core/ai/`        | OpenAI/Anthropic API 调用、模糊化处理                                            |
-| 数据存储     | `src/core/storage/`   | JSON 持久化、AES 加密、CSV/Excel 导入、自动保存防抖                              |
-| WebSocket    | `src/core/websocket/` | WebSocket 服务端、消息分发                                                       |
-| 数据模型     | `src/models/`         | Boss、SpellCard、CreatorAlias、AiModelConfig、AppSettings                        |
-| Koishi 插件  | `src/plugin/koishi/`  | 群聊消息转发插件                                                                 |
+| 文件路径                                | 埋点内容                        |
+| --------------------------------------- | ------------------------------- |
+| `src/core/ai/OpenAiService.cs`          | API 请求/响应、超时、错误       |
+| `src/core/ai/AnthropicService.cs`       | API 请求/响应、超时、错误       |
+| `src/core/websocket/WebSocketServer.cs` | 客户端连接/断开、消息收发、错误 |
+| `src/core/websocket/MessageHandler.cs`  | 消息处理、分发结果              |
+| `src/core/guessing/GuessPipeline.cs`    | 管道执行、各环节耗时            |
+| `src/core/guessing/GuessParser.cs`      | 解析成功/失败、错误类型         |
+| `src/core/storage/DataManager.cs`       | 自动保存触发、成功/失败         |
 
 ---
 
-## 4. 核心业务逻辑与执行链路
+## 4. 核心业务逻辑
 
-### 4.1 整体 UI 布局
+### 4.1 日志服务初始化流程
 
-1. 应用启动 → `MainWindow._Ready()` → 预加载所有板块场景（`IntegrationPanel.tscn`、`GuessingPanel.tscn`、`InfoPanel.tscn`、`SettingsPanel.tscn`、`HelpPanel.tscn`）→ 默认显示猜测板块
-2. 左栏按钮点击 → `MainWindow` 切换右栏可见场景（隐藏当前、显示目标）
-3. 窗口缩放 → 右栏 `Control` 自适应（`size_flags_horizontal = Expand | Fill`），左栏固定宽度
+```
+应用启动
+  │
+  ▼
+Main._Ready()
+  │
+  ├── 检查 NuGet 包：Chickensoft.Log、Chickensoft.Log.Godot
+  │
+  ├── 创建 LogService 单例
+  │   ├── ILogFormatter：默认格式
+  │   ├── Writers：
+  │   │   ├── GDWriter → Godot 控制台
+  │   │   ├── GDFileWriter → user://logs/app.log
+  │   │   └── InMemoryLogWriter → 内存缓冲区（供UI读取）
+  │   └── 配置：日志文件轮转（10MB/7天）
+  │
+  └── 注册到依赖注入容器
+```
 
-### 4.2 猜测板块
+### 4.2 日志记录流程
 
-#### 4.2.1 数据导入
+```
+业务代码调用：_log.Print("AI API request sent")
+  │
+  ▼
+Log.Print(string message)
+  │
+  ├── 构建 LogEntry
+  │   ├── Timestamp: DateTime.UtcNow
+  │   ├── Level: Info
+  │   ├── Module: "OpenAiService"
+  │   ├── Message: "AI API request sent"
+  │   └── Context: 可选上下文数据
+  │
+  ├── ILogFormatter.Format(LogEntry) → string
+  │   └── 输出: "[2025-01-20 14:32:10][Info][OpenAiService] AI API request sent"
+  │
+  └── 遍历所有 ILogWriter，调用 Write(formattedMessage)
+      ├── GDWriter.Write() → Godot 控制台
+      ├── GDFileWriter.Write() → 文件（自动轮转）
+      └── InMemoryLogWriter.Write() → 内存队列（供UI读取）
+```
 
-1. 用户点击"导入对应表"按钮 → 弹出文件选择对话框（过滤 `.csv`、`.xlsx`）
-2. 读取文件 → 校验格式（必须含 Boss、符卡名、创作者三列）→ 校验失败弹窗提示具体错误（列缺失、编码问题等）
-3. 校验通过 → 解析为 `List<Boss>` → 更新 Tree 控件显示 → 触发自动保存
-4. 别名表导入同理（格式：主名 + 不定长别名列）
+### 4.3 日志面板实时刷新流程
 
-#### 4.2.2 数据编辑
-
-1. Boss 名称/符卡名称：双击 Tree 单元格进入编辑模式 → 确认后更新数据模型 → 触发自动保存
-2. 创作者栏：点击单元格弹出下拉列表（来源为别名表主名）→ 选择后更新 → 触发自动保存
-3. 添加 Boss：点击"添加 Boss"按钮 → 新增空 Boss 节点 → 刷新 Tree
-4. 删除 Boss/符卡：选中节点 → 点击"删除"按钮 → 确认弹窗 → 删除 → 刷新 Tree
-5. 别名表 CRUD：通过表状控件直接编辑，支持添加行/删除行
-
-#### 4.2.3 猜测文本处理
-
-1. 用户输入猜测文本 → 点击"处理"按钮（或群聊消息到达）
-2. 进入处理管道：
-   - 可选：模糊化处理（调用 AI 服务，将非严格格式转为严格格式，别名转主名）
-   - 别名转换：依据别名表将别名替换为主名
-   - 格式校验：正则匹配 `<数字><创作者>` 空格分隔格式，校验失败返回错误提示
-   - 匹配对错：遍历每个符卡下标—创作者对，与当前 Boss 的对应表比对
-   - 已揭晓符卡跳过，回应中注明"符卡 X 已揭晓"
-   - 生成回应：调用 `IGuessResponseHandler.Handle()`
-3. 回应显示在回应显示栏
-
-#### 4.2.4 回应策略
-
-- 接口 `IGuessResponseHandler` 定义 `string Handle(int totalCards, int correctCount, List<string> details)`
-- 默认实现 `DefaultGuessResponseHandler`：
-  - 猜测符卡数 ≥ 3 → 返回"猜对 X/Y 张"
-  - 猜测符卡数 = 2 → 全对回"对"，有错回"错"
-  - 猜测符卡数 ≤ 1 → 返回空字符串（不回应）
-
-#### 4.2.5 AI 模糊化处理
-
-1. 检查 AI 模型是否已配置 → 未配置则按钮禁用，hover 提示"请先配置 AI 模型"
-2. 构造提示词：系统提示（任务说明 + 别名表 + 符卡列表）+ 用户消息（猜测文本）
-3. 调用 AI API → 解析返回的严格格式文本 → 失败返回错误并通知用户
-4. 别名表中不存在的别名由 AI 推断对应主名；别名表为空时完全依赖 AI 推断
-
-#### 4.2.6 群聊消息抓取
-
-1. WebSocket 服务端启动 → 监听配置端口
-2. Koishi 插件连接 → 收到 `guess_message` 类型消息 → 进入处理管道
-3. 消息筛选（可配置）：仅严格格式匹配 / 仅 AI 智能匹配 / 先严格再 AI
-4. 生成回应 → 通过 WebSocket 返回 `response` 类型消息
-5. 断线时 Koishi 插件自动重连，断开期间消息缓存到内存队列
-
-#### 4.2.7 自动保存
-
-1. 数据变更事件触发 → 启动 1-2 秒防抖计时器
-2. 计时器到期 → 将当前数据模型序列化为 JSON → 写入文件
-3. 敏感字段（API 密钥）写入前 AES 加密
-
-### 4.3 设置板块
-
-#### 4.3.1 配置类别切换
-
-1. 用户点击左侧类别列表项 → 右侧加载对应类别的配置项表单
-2. 搜索栏输入 → 过滤左侧类别列表和右侧配置项（模糊匹配）
-
-#### 4.3.2 AI 模型配置
-
-1. 显示已配置的模型列表 → 支持添加/编辑/删除
-2. 每个模型配置项：API 格式（下拉选择 OpenAI/Anthropic）、请求地址、模型 ID、API 密钥（掩码显示 `****`）
-3. "测试连接"按钮 → 使用当前配置调用 API 简单请求 → 成功/失败反馈
-4. 保存时 API 密钥 AES 加密后写入 JSON
-
-#### 4.3.3 群聊机器人配置
-
-1. 显示 Koishi 插件安装状态
-2. "一键安装"按钮 → 复制 `src/plugin/koishi/` 到用户指定的 Koishi plugins 目录
-3. WebSocket 端口配置
+```
+LogPanel._Ready()
+  │
+  ├── 获取 InMemoryLogWriter 实例
+  ├── 订阅 OnNewLogEntry 事件
+  └── 启动 Timer（0.5秒间隔批量刷新）
+  │
+  OnNewLogEntry(LogEntry entry)
+    │
+    ├── 添加到待显示队列
+    └── 触发 Timer 立即刷新（防抖）
+  │
+  Timer.Timeout()
+    │
+    ├── 获取待显示队列
+    ├── 根据当前过滤条件筛选
+    │   ├── 日志级别过滤（Info/Warn/Error）
+    │   └── 模块筛选（AI/WebSocket/猜测等）
+    ├── 添加到 RichTextLabel
+    └── 自动滚动到底部
+  │
+  用户点击"清空"按钮
+    │
+    ├── 清空 RichTextLabel
+    └── InMemoryLogWriter.Clear()
+```
 
 ---
 
-## 5. 边界与风险处理
+## 5. 数据模型
 
-### 5.1 入参校验
+### 5.1 核心日志模型
 
-| 场景           | 校验规则                                                                            | 异常处理                                       |
-| -------------- | ----------------------------------------------------------------------------------- | ---------------------------------------------- |
-| CSV/Excel 导入 | 必须含指定列（对应表：Boss/符卡名/创作者；别名表：主名+至少一列别名）；编码为 UTF-8 | 弹窗提示具体错误（列缺失、格式错误、编码问题） |
-| 猜测文本输入   | 严格格式：正则 `^(\d+\S+)(\s+\d+\S+)*$`；符卡下标必须在当前 Boss 范围内             | 回应显示栏提示格式错误或下标越界               |
-| AI 模型配置    | API 地址必须为有效 URL；模型 ID 非空；API 密钥非空                                  | 保存前校验，不通过禁止保存                     |
-| WebSocket 端口 | 1-65535 范围内有效端口号                                                            | 启动失败弹窗提示                               |
+```csharp
+// 日志级别 - 与 Chickensoft.Log 原生对齐
+public enum LogLevel
+{
+    Info,    // 一般信息 (对应 ILog.Print)
+    Warn,    // 警告 (对应 ILog.Warn)
+    Error    // 错误 (对应 ILog.Err)
+}
 
-### 5.2 异常场景
+// 日志条目
+public class LogEntry
+{
+    public DateTime Timestamp { get; set; }     // UTC 时间戳
+    public LogLevel Level { get; set; }          // 日志级别
+    public string Module { get; set; }           // 模块名称
+    public string Message { get; set; }          // 日志消息
+    public Dictionary<string, object> Context { get; set; }  // 可选上下文
+}
 
-| 场景                           | 处理方案                                                         |
-| ------------------------------ | ---------------------------------------------------------------- |
-| AI API 调用失败                | 返回错误信息并通知用户，不自动重试                               |
-| 未配置 AI 模型时使用模糊化处理 | 按钮禁用，hover 提示"请先配置 AI 模型"                           |
-| 文件读写失败                   | 弹窗提示具体错误（权限不足、文件被占用等）                       |
-| WebSocket 连接断开             | Koishi 插件自动重连，断开期间消息缓存到内存队列，重连后批量发送  |
-| 数据文件损坏                   | 启动时校验 JSON 结构，损坏时提示并重置为默认配置                 |
-| 别名表中不存在某别名           | 模糊化处理时由 AI 推断；严格格式处理时视为未知创作者，回应中注明 |
+// 日志配置
+public class LogConfig
+{
+    public LogLevel MinLevel { get; set; } = LogLevel.Info;  // 最低记录级别（用户可配置）
+    public string FilePath { get; set; } = "user://logs/app.log";  // 当前日志文件路径
+    public int MaxFileCount { get; set; } = 30;  // 最大保留日志文件数量（用户可配置，默认30个）
+    public int InMemoryBufferSize { get; set; } = 1000;  // 内存缓冲区条目数
 
-### 5.3 权限控制
-
-- 本项目为本地桌面应用，无多用户权限体系
-- API 密钥 AES 加密存储，密钥文件存放于用户目录
-- 日志不输出 API 密钥明文
-- 导出配置时排除或加密密钥字段
+    // 运行时行为：当检测到日志文件数量超过 MaxFileCount 时，自动删除最旧的文件
+}
+```
 
 ---
 
-## 6. 测试覆盖方案
+## 6. 接口契约定义
 
-### 6.1 测试层级与覆盖目标
+### 6.1 ILogService
 
-| 层级     | 框架                          | 覆盖目标                  |
-| -------- | ----------------------------- | ------------------------- |
-| 单元测试 | xUnit / NUnit（项目现有框架） | 核心业务逻辑 ≥ 80% 覆盖率 |
-| 集成测试 | Godot 测试框架                | UI 交互与数据流           |
+```csharp
+public interface ILogService
+{
+    // 获取模块特定的 ILog 实例
+    ILog GetLogger(string moduleName);
 
-### 6.2 核心测试场景
+    // 获取内存日志写入器（供UI读取）
+    InMemoryLogWriter GetInMemoryWriter();
 
-#### 猜测处理引擎
+    // 刷新所有写入器
+    void Flush();
 
-| 场景                  | 输入                              | 预期输出                              |
-| --------------------- | --------------------------------- | ------------------------------------- |
-| 严格格式解析—正常     | `"1Alice 2Bob 3Charlie"`          | 解析为 3 个符卡—创作者对              |
-| 严格格式解析—格式错误 | `"1 Alice 2Bob"`（多余空格）      | 返回格式错误                          |
-| 严格格式解析—下标越界 | `"99Alice"`（Boss 仅 3 张符卡）   | 返回下标越界错误                      |
-| 回应策略—≥3张全对     | 猜测 3 张，全对                   | 返回"猜对 3/3 张"                     |
-| 回应策略—≥3张部分对   | 猜测 3 张，对 1 张                | 返回"猜对 1/3 张"                     |
-| 回应策略—=2张全对     | 猜测 2 张，全对                   | 返回"对"                              |
-| 回应策略—=2张有错     | 猜测 2 张，对 1 张                | 返回"错"                              |
-| 回应策略—≤1张         | 猜测 1 张                         | 返回空（不回应）                      |
-| 已揭晓符卡跳过        | 猜测含已揭晓符卡                  | 回应注明"符卡 X 已揭晓"，不计入猜测数 |
-| 别名转换              | 别名表中"Alice"→"A"，输入"1Alice" | 转换为"1A"后匹配                      |
+    // 关闭日志服务
+    void Shutdown();
+}
+```
 
-#### 数据导入
+### 6.2 InMemoryLogWriter
 
-| 场景                  | 输入              | 预期输出             |
-| --------------------- | ----------------- | -------------------- |
-| CSV 导入对应表—正常   | 合法三列 CSV      | 成功导入，Tree 刷新  |
-| CSV 导入对应表—列缺失 | 仅两列 CSV        | 弹窗提示列缺失       |
-| Excel 导入别名表—正常 | 合法多列 Excel    | 成功导入，别名表刷新 |
-| 文件编码错误          | 非 UTF-8 编码文件 | 弹窗提示编码问题     |
+```csharp
+public class InMemoryLogWriter : ILogWriter
+{
+    // 新日志条目事件（供UI订阅）
+    public event Action<LogEntry> OnNewLogEntry;
 
-#### AI 模型配置
+    // 获取最近 N 条日志
+    public IEnumerable<LogEntry> GetRecentEntries(int count);
 
-| 场景          | 输入              | 预期输出                       |
-| ------------- | ----------------- | ------------------------------ |
-| 测试连接—成功 | 有效 API 配置     | 提示连接成功                   |
-| 测试连接—失败 | 无效 API 密钥     | 提示连接失败及原因             |
-| 保存配置      | 含 API 密钥的配置 | JSON 文件中密钥为 AES 加密密文 |
-| 加载配置      | 已保存的配置      | UI 中密钥字段显示 `****`       |
+    // 获取指定级别及以上的日志
+    public IEnumerable<LogEntry> GetEntriesByLevel(LogLevel minLevel);
 
-#### 数据持久化
-
-| 场景         | 输入               | 预期输出               |
-| ------------ | ------------------ | ---------------------- |
-| 自动保存触发 | 编辑数据后停止操作 | 1-2 秒后自动写入文件   |
-| 防抖         | 连续快速编辑       | 仅最后一次编辑触发保存 |
-| 启动加载     | 已有数据文件       | 正确加载并显示         |
-| 文件损坏     | JSON 结构异常      | 提示错误并重置默认配置 |
+    // 清空缓冲区
+    public void Clear();
+}
+```
 
 ---
 
-## 7. 数据模型变更
+## 7. 权限与安全设计
 
-### 7.1 新增数据模型
-
-#### Boss
-
-```
-class Boss
-  - string Name
-  - List<SpellCard> SpellCards
-```
-
-#### SpellCard
-
-```
-class SpellCard
-  - string Name
-  - string Creator  // 可为空（未揭晓）
-```
-
-#### CreatorAlias
-
-```
-class CreatorAlias
-  - string MainName
-  - List<string> Aliases
-```
-
-#### AiModelConfig
-
-```
-class AiModelConfig
-  - string Id
-  - string ApiFormat       // "OpenAI" | "Anthropic"
-  - string EndpointUrl
-  - string ModelId
-  - string EncryptedApiKey // AES 加密后的密钥
-```
-
-#### AppSettings
-
-```
-class AppSettings
-  - List<AiModelConfig> AiModels
-  - int WebSocketPort
-  - string MessageFilterMode  // "strict" | "ai" | "strict_then_ai"
-  - string KoishiPluginPath
-```
-
-### 7.2 存储文件
-
-| 文件                               | 内容                       | 加密                          |
-| ---------------------------------- | -------------------------- | ----------------------------- |
-| `user://data/spellcard_table.json` | 符卡—创作者对应表          | 否                            |
-| `user://data/alias_table.json`     | 创作者别名表               | 否                            |
-| `user://data/app_settings.json`    | 应用配置（含 AI 模型配置） | 部分（API 密钥字段 AES 加密） |
+| 安全项         | 方案                                                         |
+| -------------- | ------------------------------------------------------------ |
+| 敏感信息过滤   | 自动检测并脱敏 API 密钥、密码等敏感字段，替换为 `[REDACTED]` |
+| 日志文件权限   | 存储于 `user://logs/` 目录，遵循 Godot 沙箱权限              |
+| 内存缓冲区限制 | 最大保留 1000 条，防止内存无限增长                           |
+| 日志级别控制   | 用户可配置输出等级，默认为 Info，低于设置级别的日志不输出    |
+| 应用关闭处理   | 程序关闭时强制将缓存中的日志写入硬盘，防止丢失               |
 
 ---
 
-## 8. 接口契约定义
+## 8. 测试覆盖方案
 
-### 8.1 IGuessResponseHandler
+### 8.1 单元测试
 
-```
-interface IGuessResponseHandler
-  string Handle(int totalCards, int correctCount, List<string> details)
-  // totalCards: 猜测的未揭晓符卡总数
-  // correctCount: 猜对的符卡数
-  // details: 每条符卡的匹配详情（含已揭晓标注）
-  // 返回: 回应文本，空字符串表示不回应
-```
+| 测试类                  | 覆盖场景                                   |
+| ----------------------- | ------------------------------------------ |
+| `LogServiceTest`        | 服务初始化、获取 Logger、Flush、Shutdown   |
+| `InMemoryLogWriterTest` | 写入、事件触发、获取条目、清空、缓冲区溢出 |
+| `LogEntryTest`          | 条目创建、属性设置、序列化                 |
 
-### 8.2 IAiService
+### 8.2 集成测试
 
-```
-interface IAiService
-  Task<string> ChatAsync(string systemPrompt, string userMessage)
-  Task<bool> TestConnectionAsync()
-```
-
-### 8.3 WebSocket 消息协议
-
-| type            | 方向              | payload                                                  |
-| --------------- | ----------------- | -------------------------------------------------------- |
-| `guess_message` | Koishi → AutoCMEX | `{ "text": "...", "sender": "...", "timestamp": "..." }` |
-| `response`      | AutoCMEX → Koishi | `{ "text": "...", "original_message_id": "..." }`        |
-| `heartbeat`     | 双向              | `{ "timestamp": "..." }`                                 |
-
----
-
-## 9. 权限与安全设计
-
-| 安全项       | 方案                                             |
-| ------------ | ------------------------------------------------ |
-| API 密钥存储 | AES-256-CBC 加密，密钥文件存放于 `user://` 目录  |
-| API 密钥显示 | UI 中以 `****` 掩码显示，提供"显示/隐藏"切换按钮 |
-| API 密钥日志 | 日志输出前过滤 API 密钥字段，替换为 `[REDACTED]` |
-| 配置导出     | 导出时排除 `EncryptedApiKey` 字段                |
-| WebSocket    | 仅监听本地回环地址（`127.0.0.1`），不对外暴露    |
-
----
-
-## 10. 兼容性与回滚方案
-
-### 10.1 兼容性
-
-- 本项目为全新开发，无破坏性变更风险
-- 数据文件格式向前兼容：JSON 结构新增字段使用默认值
-- Godot 4.x 版本锁定：使用 `project.godot` 中指定的版本
-
-### 10.2 回滚方案
-
-- 数据文件存储于 `user://` 目录，与项目代码分离
-- 代码回滚不影响已保存的用户数据
-- 数据文件格式变更时，启动时自动迁移旧格式到新格式
+| 测试场景         | 验证点                                     |
+| ---------------- | ------------------------------------------ |
+| 日志面板实时刷新 | UI 正确显示新日志、自动滚动、过滤生效      |
+| 文件轮转         | 每天创建新文件、按用户配置保留天数自动清理 |
+| 多模块并发写入   | 线程安全、无重复/丢失日志                  |
+| 程序关闭时刷新   | 确保缓存中的日志全部写入硬盘               |
+| 日志级别过滤     | 设置输出等级后，低级别日志不输出           |
 
 ---
 
 ## 附录：任务清单
 
-### A. 整体 UI 布局（5 项）
+### A. 日志核心模块（7 项）
 
-| #   | 任务                                                                                   | 优先级 |
-| --- | -------------------------------------------------------------------------------------- | ------ |
-| A1  | 创建 `MainWindow.tscn` + `MainWindow.cs`，实现左右两栏布局（左窄右宽，窗口可自由缩放） | 高     |
-| A2  | 实现左栏导航：Logo（占位）、功能板块按钮（整合/猜测/信息/设置/帮助）、版本号           | 高     |
-| A3  | 实现右栏内容区：板块场景预加载，切换时显隐控制                                         | 高     |
-| A4  | 响应式适配：右栏自适应缩放，左栏固定宽度                                               | 中     |
-| A5  | 不可用功能按钮以禁用态展示，hover 给出提示                                             | 中     |
+| #   | 任务                                                                 | 优先级 |
+| --- | -------------------------------------------------------------------- | ------ |
+| A1  | 添加 NuGet 包 `Chickensoft.Log` 和 `Chickensoft.Log.Godot`           | 高     |
+| A2  | 创建 `LogLevel.cs` 日志级别枚举                                      | 高     |
+| A3  | 创建 `LogEntry.cs` 日志条目数据模型                                  | 高     |
+| A4  | 创建 `InMemoryLogWriter.cs` 内存日志写入器（供UI读取）               | 高     |
+| A5  | 创建 `ILogService.cs` 接口和 `LogService.cs` 实现                    | 高     |
+| A6  | 修改 `Main.cs` 初始化日志服务，配置多 Writer                         | 高     |
+| A7  | 创建 `LogConfig.cs` 日志配置文件模型，支持用户配置保留天数和输出等级 | 中     |
+| A8  | 实现应用关闭时的日志强制刷新机制                                     | 高     |
 
-### B. 猜测板块 UI（8 项）
+### B. 日志面板 UI（8 项）
 
-| #   | 任务                                                                                         | 优先级 |
-| --- | -------------------------------------------------------------------------------------------- | ------ |
-| B1  | 创建 `GuessingPanel.tscn` + `GuessingPanel.cs`，实现 Boss 下拉选择框（顶部，默认选中第一个） | 高     |
-| B2  | 实现左上区域：符卡—创作者对应表（Tree 控件，仅显示当前 Boss 的符卡）                         | 高     |
-| B3  | 实现左下区域：创作者别名表（表状结构）                                                       | 高     |
-| B4  | 实现左上/左下之间可拖拽分割线（VSplitContainer）                                             | 中     |
-| B5  | 实现右侧区域：猜测文本输入框 + 模糊化处理按钮（上），回应显示栏（下）                        | 高     |
-| B6  | 功能按钮放置于对应栏目旁（导入/导出/添加/删除）                                              | 中     |
-| B7  | "从工程文件导入"按钮预留但禁用，hover 提示"功能开发中"                                       | 低     |
-| B8  | 未配置 AI 模型时模糊化处理按钮禁用，hover 提示"请先配置 AI 模型"                             | 中     |
+| #   | 任务                                                                            | 优先级 |
+| --- | ------------------------------------------------------------------------------- | ------ |
+| B1  | 创建 `LogPanel.tscn` 场景，作为独立板块面板，包含 RichTextLabel、过滤控件、按钮 | 高     |
+| B2  | 实现 `LogPanel.cs`，订阅 `InMemoryLogWriter.OnNewLogEntry` 事件                 | 高     |
+| B3  | 在 `MainWindow` 左栏导航添加「日志」按钮，与整合/猜测/信息/设置/帮助并列        | 高     |
+| B4  | 实现日志级别过滤按钮（Info/Warn/Error）                                         | 中     |
+| B5  | 实现模块筛选下拉框（All/AI/WebSocket/Guessing/Storage）                         | 中     |
+| B6  | 实现自动滚动到底部和手动暂停功能                                                | 中     |
+| B7  | 实现清空日志按钮（仅清空UI显示，不影响文件）                                    | 低     |
+| B8  | 在日志面板内提供「日志配置」子区域或跳转按钮，配置 MinLevel/MaxFileCount        | 中     |
 
-### C. 猜测板块功能（15 项）
+### C. 模块日志埋点（11 项）
 
-| #   | 任务                                                                                                             | 优先级 |
-| --- | ---------------------------------------------------------------------------------------------------------------- | ------ |
-| C1  | 创建数据模型：`Boss.cs`、`SpellCard.cs`、`CreatorAlias.cs`                                                       | 高     |
-| C2  | 实现 `CsvImporter.cs` + `ExcelImporter.cs`：CSV/Excel 导入符卡—创作者对应表，失败弹窗提示                        | 高     |
-| C3  | 实现符卡—创作者对应表可视化编辑（Boss/符卡名称可编辑，创作者栏下拉选择别名表主名，添加/删除按钮）                | 高     |
-| C4  | 实现 CSV/Excel 导入创作者别名表，失败弹窗提示                                                                    | 高     |
-| C5  | 实现创作者别名表完整 CRUD                                                                                        | 高     |
-| C6  | 实现 `GuessParser.cs`：猜测文本严格格式解析                                                                      | 高     |
-| C7  | 实现 `IGuessResponseHandler.cs` + `GuessResponseHandler.cs`：回应策略（策略模式）                                | 高     |
-| C8  | 实现 `GuessPipeline.cs`：猜测处理管道（手动输入和群聊抓取统一管道）                                              | 高     |
-| C9  | 已揭晓符卡跳过不参与判断，回应中注明已揭晓                                                                       | 中     |
-| C10 | 实现 `IAiService.cs` + `OpenAiService.cs` + `AnthropicService.cs`：AI API 调用                                   | 中     |
-| C11 | 实现 `AiFuzzifier.cs`：AI 模糊化处理（非严格格式→严格格式，别名→主名转换，AI 推断未知别名）                      | 中     |
-| C12 | 实现 `WebSocketServer.cs` + `MessageHandler.cs`：WebSocket 服务端（JSON 消息，guess_message/response/heartbeat） | 中     |
-| C13 | 实现消息筛选方式配置（仅严格格式/仅AI智能匹配/先严格再AI）                                                       | 中     |
-| C14 | 编写 Koishi v4 插件代码（`src/plugin/koishi/`），实现消息转发                                                    | 低     |
-| C15 | 实现 `DataManager.cs`：数据自动保存（1-2秒防抖延迟）                                                             | 高     |
-
-### D. 设置板块 UI（3 项）
-
-| #   | 任务                                                                         | 优先级 |
-| --- | ---------------------------------------------------------------------------- | ------ |
-| D1  | 创建 `SettingsPanel.tscn` + `SettingsPanel.cs`，实现搜索栏（顶部，横跨左右） | 高     |
-| D2  | 实现左栏配置类别列表（AI模型/群聊/猜测/整合/信息/帮助/通用）                 | 高     |
-| D3  | 实现右栏具体配置项展示区（随选中类别切换）                                   | 高     |
-
-### E. 设置板块功能（6 项）
-
-| #   | 任务                                                                              | 优先级 |
-| --- | --------------------------------------------------------------------------------- | ------ |
-| E1  | 创建 `AiModelConfig.cs` + `AppSettings.cs` 数据模型                               | 高     |
-| E2  | 实现 AI 模型配置 CRUD（API格式/请求地址/模型ID/API密钥），支持多模型              | 高     |
-| E3  | 实现"测试连接"按钮验证 API 连通性                                                 | 中     |
-| E4  | 实现 `AesEncryptor.cs`：API 密钥安全存储（AES 加密，UI 掩码显示，日志不输出明文） | 高     |
-| E5  | 实现群聊机器人服务配置（一键安装 Koishi 插件到 plugins 目录）                     | 低     |
-| E6  | 实现配置搜索功能                                                                  | 中     |
+| #   | 任务                                                                | 优先级 |
+| --- | ------------------------------------------------------------------- | ------ |
+| C1  | `OpenAiService.cs` 埋点：请求发送、响应接收、超时、错误             | 高     |
+| C2  | `AnthropicService.cs` 埋点：请求发送、响应接收、超时、错误          | 高     |
+| C3  | `WebSocketServer.cs` 埋点：服务启动/停止、客户端连接/断开、消息收发 | 高     |
+| C4  | `MessageHandler.cs` 埋点：消息处理开始/结束、异常                   | 高     |
+| C5  | `GuessPipeline.cs` 埋点：管道执行开始/结束、各环节耗时              | 高     |
+| C6  | `GuessParser.cs` 埋点：解析成功/失败、错误类型                      | 中     |
+| C7  | `DataManager.cs` 埋点：自动保存触发、成功/失败                      | 中     |
+| C8  | `AiFuzzifier.cs` 埋点：模糊化处理开始/结束、耗时                    | 中     |
+| C9  | `GuessingPanel.cs` 埋点：用户操作（导入/编辑/猜测）                 | 低     |
+| C10 | `SettingsPanel.cs` 埋点：配置变更                                   | 低     |
+| C11 | `Main.cs` 埋点：应用启动/关闭、场景加载                             | 中     |
 
 ---
 
-**总计 37 项任务**，按优先级分布：高 22 项 / 中 12 项 / 低 3 项
+**总计 25 项任务**，按优先级分布：高 19 项 / 中 5 项 / 低 1 项
+
+---
+
+## 参考文档
+
+- [Chickensoft.Log](https://github.com/chickensoft-games/Log) - 核心日志库
+- [Chickensoft.Log.Godot](https://github.com/chickensoft-games/Log.Godot) - Godot 专用输出器
