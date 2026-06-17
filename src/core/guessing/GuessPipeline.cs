@@ -1,9 +1,12 @@
 namespace AutoCMEX.Core.Guessing;
 
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Text.RegularExpressions;
+using AutoCMEX.Core.Logging;
 using AutoCMEX.Models;
+using Chickensoft.Log;
 
 /// <summary>
 /// 猜测处理管道：统一入口，处理手动输入和群聊抓取的猜测文本
@@ -12,11 +15,20 @@ public partial class GuessPipeline
 {
   private readonly IGuessResponseHandler _responseHandler;
   private readonly List<CreatorAlias> _aliasTable;
+  private readonly ILog _log;
 
   public GuessPipeline(IGuessResponseHandler responseHandler, List<CreatorAlias> aliasTable)
+    : this(responseHandler, aliasTable, AppLogs.GetOrCreate().GetLogger(nameof(GuessPipeline))) { }
+
+  public GuessPipeline(
+    IGuessResponseHandler responseHandler,
+    List<CreatorAlias> aliasTable,
+    ILog log
+  )
   {
     _responseHandler = responseHandler;
     _aliasTable = aliasTable;
+    _log = log;
   }
 
   /// <summary>
@@ -27,13 +39,31 @@ public partial class GuessPipeline
   /// <returns>处理结果</returns>
   public PipelineResult Process(string text, Boss currentBoss)
   {
+    _log.Print(
+      $"GuessPipeline.Process: text_len={text?.Length ?? 0}, boss={currentBoss?.Name ?? "(null)"}"
+    );
+    var totalSw = Stopwatch.StartNew();
+
     // 1. 别名转换
+    var aliasSw = Stopwatch.StartNew();
     text = ConvertAliases(text);
+    aliasSw.Stop();
+    _log.Print($"GuessPipeline: alias conversion {aliasSw.ElapsedMilliseconds}ms");
 
     // 2. 格式校验与解析
+    var parseSw = Stopwatch.StartNew();
     var parseResult = GuessParser.Parse(text, currentBoss.SpellCards.Count);
+    parseSw.Stop();
+    _log.Print(
+      $"GuessPipeline: parse {parseSw.ElapsedMilliseconds}ms, success={parseResult.IsSuccess}"
+    );
     if (!parseResult.IsSuccess)
+    {
+      _log.Warn($"GuessPipeline: parse error: {parseResult.ErrorMessage}");
+      totalSw.Stop();
+      _log.Print($"GuessPipeline.Process failed after {totalSw.ElapsedMilliseconds}ms.");
       return PipelineResult.Error(parseResult.ErrorMessage);
+    }
 
     // 3. 匹配对错
     var details = new List<string>();
@@ -82,6 +112,11 @@ public partial class GuessPipeline
     // 4. 生成回应
     var response = _responseHandler.Handle(totalCards, correctCount, details);
 
+    totalSw.Stop();
+    _log.Print(
+      $"GuessPipeline.Process done in {totalSw.ElapsedMilliseconds}ms: "
+        + $"{correctCount}/{totalCards} correct"
+    );
     return PipelineResult.Success(response, details);
   }
 

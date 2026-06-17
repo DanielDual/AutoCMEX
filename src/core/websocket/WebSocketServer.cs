@@ -7,6 +7,8 @@ using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using AutoCMEX.Core.Logging;
+using Chickensoft.Log;
 
 /// <summary>
 /// WebSocket 服务端
@@ -14,6 +16,7 @@ using System.Threading.Tasks;
 public class WebSocketServer : IDisposable
 {
   private readonly int _port;
+  private readonly ILog _log;
   private HttpListener? _listener;
   private CancellationTokenSource? _cts;
   private readonly ConcurrentQueue<string> _messageQueue = new();
@@ -25,8 +28,12 @@ public class WebSocketServer : IDisposable
   public bool IsRunning { get; private set; }
 
   public WebSocketServer(int port)
+    : this(port, AppLogs.GetOrCreate().GetLogger(nameof(WebSocketServer))) { }
+
+  public WebSocketServer(int port, ILog log)
   {
     _port = port;
+    _log = log;
   }
 
   /// <summary>
@@ -42,6 +49,7 @@ public class WebSocketServer : IDisposable
     _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
     _listener.Start();
     IsRunning = true;
+    _log.Print($"WebSocketServer started on port {_port}.");
 
     _ = Task.Run(() => ListenLoop(_cts.Token));
   }
@@ -51,6 +59,8 @@ public class WebSocketServer : IDisposable
   /// </summary>
   public void Stop()
   {
+    if (!IsRunning)
+      return;
     IsRunning = false;
     _cts?.Cancel();
 
@@ -62,6 +72,7 @@ public class WebSocketServer : IDisposable
 
     _listener?.Stop();
     _listener?.Close();
+    _log.Print($"WebSocketServer stopped on port {_port}.");
   }
 
   /// <summary>
@@ -77,17 +88,29 @@ public class WebSocketServer : IDisposable
 
     if (socket == null || socket.State != WebSocketState.Open)
     {
+      _log.Warn(
+        $"WebSocketServer.SendAsync: no open client, queueing message (len={message?.Length ?? 0})."
+      );
       _messageQueue.Enqueue(message);
       return;
     }
 
-    var bytes = Encoding.UTF8.GetBytes(message);
-    await socket.SendAsync(
-      new ArraySegment<byte>(bytes),
-      WebSocketMessageType.Text,
-      true,
-      CancellationToken.None
-    );
+    try
+    {
+      var bytes = Encoding.UTF8.GetBytes(message);
+      await socket.SendAsync(
+        new ArraySegment<byte>(bytes),
+        WebSocketMessageType.Text,
+        true,
+        CancellationToken.None
+      );
+      _log.Print($"WebSocketServer.SendAsync: sent {bytes.Length} bytes.");
+    }
+    catch (Exception ex)
+    {
+      _log.Err($"WebSocketServer.SendAsync failed: {ex.GetType().Name}: {ex.Message}");
+      throw;
+    }
   }
 
   /// <inheritdoc/>
@@ -121,8 +144,10 @@ public class WebSocketServer : IDisposable
             _connectedSocket?.Dispose();
             _connectedSocket = ws;
           }
+          _log.Print("WebSocket client connected.");
 
           // 发送缓存消息
+          int flushed = 0;
           while (_messageQueue.TryDequeue(out var msg))
           {
             var bytes = Encoding.UTF8.GetBytes(msg);
@@ -132,12 +157,16 @@ public class WebSocketServer : IDisposable
               true,
               token
             );
+            flushed++;
           }
+          if (flushed > 0)
+            _log.Print($"Flushed {flushed} queued messages to client.");
 
           await ReceiveLoop(ws, token);
         }
         else
         {
+          _log.Warn("WebSocketServer: rejected non-WS request.");
           context.Response.StatusCode = 400;
           context.Response.Close();
         }
@@ -146,9 +175,17 @@ public class WebSocketServer : IDisposable
       {
         break;
       }
-      catch (Exception)
+      catch (Exception ex)
       {
-        await Task.Delay(1000, token);
+        _log.Err($"WebSocketServer.ListenLoop error: {ex.GetType().Name}: {ex.Message}");
+        try
+        {
+          await Task.Delay(1000, token);
+        }
+        catch (OperationCanceledException)
+        {
+          break;
+        }
       }
     }
   }
@@ -165,6 +202,7 @@ public class WebSocketServer : IDisposable
 
         if (result.MessageType == WebSocketMessageType.Close)
         {
+          _log.Print("WebSocket client closed the connection.");
           await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "", token);
           break;
         }
@@ -172,6 +210,7 @@ public class WebSocketServer : IDisposable
         if (result.MessageType == WebSocketMessageType.Text)
         {
           var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
+          _log.Print($"WebSocket received {text.Length} chars.");
           OnMessageReceived?.Invoke(text);
         }
       }
@@ -179,8 +218,9 @@ public class WebSocketServer : IDisposable
       {
         break;
       }
-      catch (WebSocketException)
+      catch (WebSocketException ex)
       {
+        _log.Warn($"WebSocket receive error: {ex.GetType().Name}: {ex.Message}");
         break;
       }
     }
@@ -190,5 +230,6 @@ public class WebSocketServer : IDisposable
       if (_connectedSocket == ws)
         _connectedSocket = null;
     }
+    _log.Print("WebSocket client disconnected.");
   }
 }
