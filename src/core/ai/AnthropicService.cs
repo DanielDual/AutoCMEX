@@ -19,14 +19,14 @@ public class AnthropicService : IAiService, IDisposable
   private readonly ILog _log;
   private bool _disposed;
 
-  public AnthropicService(AiModelConfig config)
-    : this(config, AppLogs.GetOrCreate().GetLogger(nameof(AnthropicService))) { }
+  public AnthropicService(AiModelConfig config, int timeoutSeconds = 100)
+    : this(config, AppLogs.GetOrCreate().GetLogger(nameof(AnthropicService)), timeoutSeconds) { }
 
-  public AnthropicService(AiModelConfig config, ILog log)
+  public AnthropicService(AiModelConfig config, ILog log, int timeoutSeconds = 100)
   {
     _config = config;
     _log = log;
-    _httpClient = new HttpClient();
+    _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
     _httpClient.DefaultRequestHeaders.Add("x-api-key", config.EncryptedApiKey);
     _httpClient.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
   }

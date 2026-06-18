@@ -19,14 +19,14 @@ public class OpenAiService : IAiService, IDisposable
   private readonly ILog _log;
   private bool _disposed;
 
-  public OpenAiService(AiModelConfig config)
-    : this(config, AppLogs.GetOrCreate().GetLogger(nameof(OpenAiService))) { }
+  public OpenAiService(AiModelConfig config, int timeoutSeconds = 100)
+    : this(config, AppLogs.GetOrCreate().GetLogger(nameof(OpenAiService)), timeoutSeconds) { }
 
-  public OpenAiService(AiModelConfig config, ILog log)
+  public OpenAiService(AiModelConfig config, ILog log, int timeoutSeconds = 100)
   {
     _config = config;
     _log = log;
-    _httpClient = new HttpClient();
+    _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
     _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {config.EncryptedApiKey}");
   }
 

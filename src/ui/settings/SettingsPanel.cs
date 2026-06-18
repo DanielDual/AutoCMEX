@@ -180,6 +180,26 @@ public partial class SettingsPanel : Control
     };
     activeRow.AddChild(modelSelect);
     container.AddChild(activeRow);
+
+    // 超时时间
+    var timeoutRow = new HBoxContainer();
+    var timeoutLabel = new Label();
+    timeoutLabel.Text = "超时(秒):";
+    timeoutLabel.CustomMinimumSize = new Vector2(100, 0);
+    timeoutRow.AddChild(timeoutLabel);
+
+    var timeoutInput = new SpinBox();
+    timeoutInput.MinValue = 1;
+    timeoutInput.MaxValue = 600;
+    timeoutInput.Value = _settings.AiTimeoutSeconds;
+    timeoutInput.SizeFlagsHorizontal = SizeFlags.Expand | SizeFlags.Fill;
+    timeoutInput.ValueChanged += (value) =>
+    {
+      _settings.AiTimeoutSeconds = (int)value;
+      DataManager?.TriggerAutoSave();
+    };
+    timeoutRow.AddChild(timeoutInput);
+    container.AddChild(timeoutRow);
     container.AddChild(new HSeparator());
 
     // 模型列表

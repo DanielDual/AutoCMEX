@@ -25,7 +25,8 @@ public class AiServiceFactory
   public IAiService GetActiveService()
   {
     var config = GetActiveModelConfig();
-    return CreateService(config);
+    var timeout = _dataManager.Settings.AiTimeoutSeconds;
+    return CreateService(config, timeout);
   }
 
   /// <summary>
@@ -65,10 +66,10 @@ public class AiServiceFactory
   /// <summary>
   /// 根据模型配置创建对应的 AI 服务实例
   /// </summary>
-  public static IAiService CreateService(AiModelConfig config)
+  public static IAiService CreateService(AiModelConfig config, int timeoutSeconds = 100)
   {
     return config.ApiFormat == "Anthropic"
-      ? new AnthropicService(config)
-      : new OpenAiService(config);
+      ? new AnthropicService(config, timeoutSeconds)
+      : new OpenAiService(config, timeoutSeconds);
   }
 }

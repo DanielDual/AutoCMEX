@@ -157,6 +157,7 @@ public class DataManager : IDisposable
       MessageFilterMode = _settings.MessageFilterMode,
       KoishiPluginPath = _settings.KoishiPluginPath,
       ActiveAiModelId = _settings.ActiveAiModelId,
+      AiTimeoutSeconds = _settings.AiTimeoutSeconds,
     };
 
     foreach (var model in _settings.AiModels)

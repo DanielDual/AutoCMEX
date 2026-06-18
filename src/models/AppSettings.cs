@@ -13,6 +13,9 @@ public class AppSettings
   /// <summary>当前激活的 AI 模型 ID，对应 AiModels 中某个模型的 Id</summary>
   public string? ActiveAiModelId { get; set; }
 
+  /// <summary>AI 请求超时时间（秒），默认 100</summary>
+  public int AiTimeoutSeconds { get; set; } = 100;
+
   /// <summary>WebSocket 监听端口</summary>
   public int WebSocketPort { get; set; } = 5140;
 
