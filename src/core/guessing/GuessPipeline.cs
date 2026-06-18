@@ -70,6 +70,12 @@ public partial class GuessPipeline
     int totalCards = 0;
     int correctCount = 0;
 
+    if (currentBoss == null)
+    {
+      totalSw.Stop();
+      _log.Warn("GuessPipeline.Process: currentBoss is null, aborting.");
+      return PipelineResult.Error("当前未选择 Boss");
+    }
     foreach (var (index, creator) in parseResult.Pairs)
     {
       var spellCard = currentBoss.SpellCards[index - 1];

@@ -196,6 +196,16 @@ public partial class GuessingPanel : Control
     RefreshAliasTree();
   }
 
+  /// <summary>
+  /// 注入测试数据管理器并刷新 UI。仅供测试使用。
+  /// </summary>
+  public void InjectTestData(DataManager dm)
+  {
+    _dm = dm;
+    UpdateFuzzifyButtonState();
+    RefreshAll();
+  }
+
   // ==================== 符卡表 ====================
 
   private void RefreshBossSelect()
