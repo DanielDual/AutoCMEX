@@ -3,6 +3,7 @@ namespace AutoCMEX.UI.Settings;
 using System.Collections.Generic;
 using System.Linq;
 using AutoCMEX;
+using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
@@ -132,6 +133,54 @@ public partial class SettingsPanel : Control
     var container = new VBoxContainer();
     container.SetAnchorsPreset(LayoutPreset.FullRect);
     ConfigArea.AddChild(container);
+
+    // 当前使用模型选择
+    var activeRow = new HBoxContainer();
+    var activeLabel = new Label();
+    activeLabel.Text = "当前使用:";
+    activeLabel.CustomMinimumSize = new Vector2(100, 0);
+    activeRow.AddChild(activeLabel);
+
+    var modelSelect = new OptionButton();
+    modelSelect.SizeFlagsHorizontal = SizeFlags.Expand | SizeFlags.Fill;
+    modelSelect.AddItem("(未选择)");
+    modelSelect.SetItemDisabled(0, true);
+
+    int selectedIdx = 0;
+    for (int i = 0; i < _settings.AiModels.Count; i++)
+    {
+      var model = _settings.AiModels[i];
+      var label = $"{model.ModelId} ({model.ApiFormat})";
+      if (string.IsNullOrEmpty(model.ModelId))
+        label = $"(未命名) ({model.ApiFormat})";
+      modelSelect.AddItem(label);
+      var itemIdx = i + 1;
+
+      if (!AiServiceFactory.IsModelValid(model))
+        modelSelect.SetItemDisabled(itemIdx, true);
+
+      if (model.Id == _settings.ActiveAiModelId)
+        selectedIdx = itemIdx;
+    }
+    modelSelect.Select(selectedIdx);
+
+    modelSelect.ItemSelected += (idx) =>
+    {
+      if (idx == 0)
+      {
+        _settings.ActiveAiModelId = null;
+      }
+      else
+      {
+        var modelIdx = (int)idx - 1;
+        if (modelIdx >= 0 && modelIdx < _settings.AiModels.Count)
+          _settings.ActiveAiModelId = _settings.AiModels[modelIdx].Id;
+      }
+      DataManager?.TriggerAutoSave();
+    };
+    activeRow.AddChild(modelSelect);
+    container.AddChild(activeRow);
+    container.AddChild(new HSeparator());
 
     // 模型列表
     var scrollContainer = new ScrollContainer();

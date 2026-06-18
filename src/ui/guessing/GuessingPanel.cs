@@ -104,6 +104,10 @@ public partial class GuessingPanel : Control
     });
 
   [Dependency]
+  public AiServiceFactory AiServiceFactory =>
+    this.DependOn<AiServiceFactory>(() => new AiServiceFactory(DataManager));
+
+  [Dependency]
   public GuessPipeline Pipeline =>
     this.DependOn<GuessPipeline>(() =>
       new GuessPipeline(new GuessResponseHandler(), new List<CreatorAlias>())
@@ -117,7 +121,12 @@ public partial class GuessingPanel : Control
   private bool _rebuildingAliasTree;
   private ILog _log = AppLogs.GetOrCreate().GetLogger(nameof(GuessingPanel));
 
-  public override void _Notification(int what) => this.Notify(what);
+  public override void _Notification(int what)
+  {
+    if (what == NotificationVisibilityChanged && Visible)
+      UpdateFuzzifyButtonState();
+    this.Notify(what);
+  }
 
   public void OnReady()
   {
@@ -177,16 +186,18 @@ public partial class GuessingPanel : Control
 
   private void UpdateFuzzifyButtonState()
   {
-    var hasAi =
-      _dm != null
-      && _dm.Settings.AiModels.Count > 0
-      && _dm.Settings.AiModels.Exists(m =>
-        !string.IsNullOrEmpty(m.EndpointUrl)
-        && !string.IsNullOrEmpty(m.ModelId)
-        && !string.IsNullOrEmpty(m.EncryptedApiKey)
-      );
+    var hasAi = false;
+    if (_dm != null)
+    {
+      var activeId = _dm.Settings.ActiveAiModelId;
+      if (!string.IsNullOrEmpty(activeId))
+      {
+        var activeModel = _dm.Settings.AiModels.Find(m => m.Id == activeId);
+        hasAi = activeModel != null && AiServiceFactory.IsModelValid(activeModel);
+      }
+    }
     FuzzifyBtn.Disabled = !hasAi;
-    FuzzifyBtn.TooltipText = hasAi ? "使用 AI 模糊化" : "请先配置 AI 模型";
+    FuzzifyBtn.TooltipText = hasAi ? "使用 AI 模糊化" : "请先在设置中选择一个有效的 AI 模型";
   }
 
   public void RefreshAll()
@@ -635,23 +646,25 @@ public partial class GuessingPanel : Control
       ResponseDisplay.Text = "[color=red]请输入猜测文本[/color]";
       return;
     }
-    if (_dm == null || _dm.Settings.AiModels.Count == 0)
+    if (_dm == null)
     {
-      _log.Warn("OnFuzzify: no AI model configured.");
-      ResponseDisplay.Text = "[color=yellow]请先配置 AI 模型[/color]";
+      _log.Warn("OnFuzzify: DataManager not available.");
+      ResponseDisplay.Text = "[color=yellow]数据管理器未就绪[/color]";
       return;
     }
-    var mc = _dm.Settings.AiModels.Find(m =>
-      !string.IsNullOrEmpty(m.EndpointUrl)
-      && !string.IsNullOrEmpty(m.ModelId)
-      && !string.IsNullOrEmpty(m.EncryptedApiKey)
-    );
-    if (mc == null)
+
+    AiModelConfig mc;
+    try
     {
-      _log.Warn("OnFuzzify: AI model not fully configured.");
-      ResponseDisplay.Text = "[color=yellow]请完整配置 AI 模型[/color]";
+      mc = AiServiceFactory.GetActiveModelConfig();
+    }
+    catch (InvalidOperationException ex)
+    {
+      _log.Warn($"OnFuzzify: no valid active model - {ex.Message}");
+      ResponseDisplay.Text = $"[color=yellow]{ex.Message}[/color]";
       return;
     }
+
     _log.Print(
       $"OnFuzzify: start, model={mc.ModelId}, format={mc.ApiFormat}, input_len={text.Length}"
     );
@@ -660,9 +673,7 @@ public partial class GuessingPanel : Control
     ResponseDisplay.Text = "[color=gray]正在调用 AI...[/color]";
     try
     {
-      IAiService ai =
-        mc.ApiFormat == "Anthropic" ? new AnthropicService(mc) : new OpenAiService(mc);
-      var fuzzifier = new AiFuzzifier(ai, _dm.Aliases, _dm.Bosses, _currentBoss);
+      var fuzzifier = new AiFuzzifier(AiServiceFactory, _dm.Aliases, _dm.Bosses, _currentBoss);
       var result = await fuzzifier.FuzzifyAsync(text);
       _log.Print($"OnFuzzify: succeeded, output_len={result?.Length ?? 0}");
       GuessInput.Text = result;

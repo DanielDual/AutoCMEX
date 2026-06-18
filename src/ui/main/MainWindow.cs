@@ -18,6 +18,7 @@ using Godot;
 public partial class MainWindow
   : Control,
     IProvide<DataManager>,
+    IProvide<AiServiceFactory>,
     IProvide<GuessPipeline>,
     IProvide<IGuessResponseHandler>
 {
@@ -55,10 +56,13 @@ public partial class MainWindow
   #region Provided Services
 
   private DataManager _dataManager = default!;
+  private AiServiceFactory _aiServiceFactory = default!;
   private GuessPipeline _guessPipeline = default!;
   private GuessResponseHandler _guessResponseHandler = default!;
 
   DataManager IProvide<DataManager>.Value() => _dataManager;
+
+  AiServiceFactory IProvide<AiServiceFactory>.Value() => _aiServiceFactory;
 
   GuessPipeline IProvide<GuessPipeline>.Value() => _guessPipeline;
 
@@ -82,6 +86,8 @@ public partial class MainWindow
     var encryptor = new AesEncryptor(keyPath);
     _dataManager = new DataManager(dataDir, encryptor);
     _dataManager.LoadAll();
+
+    _aiServiceFactory = new AiServiceFactory(_dataManager);
 
     _guessResponseHandler = new GuessResponseHandler();
     _guessPipeline = new GuessPipeline(_guessResponseHandler, _dataManager.Aliases);
