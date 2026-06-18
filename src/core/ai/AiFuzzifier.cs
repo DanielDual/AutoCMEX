@@ -101,6 +101,10 @@ public class AiFuzzifier
     sb.AppendLine("- 每个符卡下标—创作者对之间用空格分隔");
     sb.AppendLine("- 示例：1Alice 2Bob 3Charlie");
     sb.AppendLine();
+    sb.AppendLine("你需要完成你的任务，并且对于猜测文本中的创作者名字，");
+    sb.AppendLine("如果该名字在创作者别名表中，你需要将其转换为主名。");
+    sb.AppendLine("否则，请按照将其转换为最匹配的主名。");
+    sb.AppendLine();
 
     // 别名表
     if (_aliasTable.Count > 0)
