@@ -43,5 +43,8 @@ public class LogEntry
   }
 
   /// <summary>无参构造（用于反序列化）。</summary>
-  public LogEntry() { }
+  public LogEntry()
+  {
+    Timestamp = DateTime.UtcNow;
+  }
 }

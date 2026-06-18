@@ -126,8 +126,7 @@ public partial class LogPanel : Control
   /// </summary>
   public void BindToService(ILogService service)
   {
-    if (service == null)
-      throw new ArgumentNullException(nameof(service));
+    ArgumentNullException.ThrowIfNull(service);
     _service = service;
     _writer = service.InMemoryWriter;
     _writer.OnNewLogEntry -= OnNewLogEntry;

@@ -91,7 +91,8 @@ public class WebSocketServer : IDisposable
       _log.Warn(
         $"WebSocketServer.SendAsync: no open client, queueing message (len={message?.Length ?? 0})."
       );
-      _messageQueue.Enqueue(message);
+      if (message != null)
+        _messageQueue.Enqueue(message);
       return;
     }
 

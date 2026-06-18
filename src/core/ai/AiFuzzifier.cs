@@ -63,7 +63,7 @@ public class AiFuzzifier
     try
     {
       var systemPrompt = BuildSystemPrompt();
-      var result = await _aiService.ChatAsync(systemPrompt, rawText);
+      var result = await _aiService.ChatAsync(systemPrompt, rawText ?? string.Empty);
       sw.Stop();
       _log.Print(
         $"AiFuzzifier.FuzzifyAsync completed in {sw.ElapsedMilliseconds}ms, output_len={result.Length}"

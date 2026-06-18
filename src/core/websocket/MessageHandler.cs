@@ -45,7 +45,7 @@ public class MessageHandler
     _log.Print($"MessageHandler received message: len={rawMessage?.Length ?? 0}");
     try
     {
-      using var doc = JsonDocument.Parse(rawMessage);
+      using var doc = JsonDocument.Parse(rawMessage ?? "{}");
       var root = doc.RootElement;
 
       var type = root.GetProperty("type").GetString();

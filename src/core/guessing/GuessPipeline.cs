@@ -46,13 +46,13 @@ public partial class GuessPipeline
 
     // 1. 别名转换
     var aliasSw = Stopwatch.StartNew();
-    text = ConvertAliases(text);
+    text = ConvertAliases(text ?? string.Empty);
     aliasSw.Stop();
     _log.Print($"GuessPipeline: alias conversion {aliasSw.ElapsedMilliseconds}ms");
 
     // 2. 格式校验与解析
     var parseSw = Stopwatch.StartNew();
-    var parseResult = GuessParser.Parse(text, currentBoss.SpellCards.Count);
+    var parseResult = GuessParser.Parse(text, currentBoss?.SpellCards?.Count ?? 0);
     parseSw.Stop();
     _log.Print(
       $"GuessPipeline: parse {parseSw.ElapsedMilliseconds}ms, success={parseResult.IsSuccess}"
