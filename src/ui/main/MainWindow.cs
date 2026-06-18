@@ -1,12 +1,15 @@
 namespace AutoCMEX.UI.Main;
 
+using System;
 using System.Collections.Generic;
 using AutoCMEX;
 using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Guessing;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
+using AutoCMEX.Core.WebSocket;
 using AutoCMEX.UI.Logging;
+using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
 using Chickensoft.Introspection;
 using Godot;
@@ -20,7 +23,8 @@ public partial class MainWindow
     IProvide<DataManager>,
     IProvide<AiServiceFactory>,
     IProvide<GuessPipeline>,
-    IProvide<IGuessResponseHandler>
+    IProvide<IGuessResponseHandler>,
+    IProvide<IWebSocketServer>
 {
   [Export]
   public int LeftPanelWidth { get; set; } = 200;
@@ -51,6 +55,9 @@ public partial class MainWindow
   [Node("MainContainer/LeftPanel/LogBtn")]
   public Button LogBtn { get; set; } = default!;
 
+  [Node("MainContainer/LeftPanel/WebSocketBtn")]
+  public Button WebSocketBtn { get; set; } = default!;
+
   #endregion
 
   #region Provided Services
@@ -59,6 +66,7 @@ public partial class MainWindow
   private AiServiceFactory _aiServiceFactory = default!;
   private GuessPipeline _guessPipeline = default!;
   private GuessResponseHandler _guessResponseHandler = default!;
+  private IWebSocketServer _webSocketServer = default!;
 
   DataManager IProvide<DataManager>.Value() => _dataManager;
 
@@ -67,6 +75,8 @@ public partial class MainWindow
   GuessPipeline IProvide<GuessPipeline>.Value() => _guessPipeline;
 
   IGuessResponseHandler IProvide<IGuessResponseHandler>.Value() => _guessResponseHandler;
+
+  IWebSocketServer IProvide<IWebSocketServer>.Value() => _webSocketServer;
 
   #endregion
 
@@ -92,6 +102,55 @@ public partial class MainWindow
     _guessResponseHandler = new GuessResponseHandler();
     _guessPipeline = new GuessPipeline(_guessResponseHandler, _dataManager.Aliases);
 
+    // 初始化 WebSocket（Server 或 Client 模式）
+    var settings = _dataManager.Settings;
+    var wsLog = AppLogs.GetOrCreate().GetLogger("WebSocket");
+    var protocolHandler = new ProtocolHandler();
+    var messageRouter = new MessageRouter(wsLog);
+
+    var commandHandler = new CommandHandler(wsLog);
+    var eventHandler = new AutoCMEX.Core.WebSocket.EventHandler(wsLog);
+    messageRouter.RegisterHandler(commandHandler);
+    messageRouter.RegisterHandler(eventHandler);
+
+    var isClientMode = string.Equals(
+      settings.WebSocketMode,
+      "Client",
+      StringComparison.OrdinalIgnoreCase
+    );
+
+    if (isClientMode && !string.IsNullOrEmpty(settings.KoishiWebSocketUrl))
+    {
+      _webSocketServer = new WebSocketClient(
+        settings.KoishiWebSocketUrl,
+        protocolHandler,
+        messageRouter,
+        reconnectIntervalMs: 5000,
+        heartbeatIntervalMs: settings.WebSocketHeartbeatIntervalMs,
+        wsLog
+      );
+    }
+    else
+    {
+      var connectionManager = new ConnectionManager(settings.WebSocketMaxConnections);
+      var heartbeatService = new HeartbeatService(
+        settings.WebSocketHeartbeatIntervalMs,
+        settings.WebSocketHeartbeatTimeoutMs,
+        wsLog
+      );
+
+      _webSocketServer = new WebSocketServer(
+        settings.WebSocketPort,
+        connectionManager,
+        protocolHandler,
+        messageRouter,
+        heartbeatService,
+        settings.WebSocketEnableAuth,
+        settings.WebSocketAuthToken,
+        wsLog
+      );
+    }
+
     // 通知 AutoInject 依赖已就绪
     this.Provide();
   }
@@ -108,6 +167,7 @@ public partial class MainWindow
     _navButtons["settings"] = SettingsBtn;
     _navButtons["help"] = HelpBtn;
     _navButtons["logging"] = LogBtn;
+    _navButtons["websocket"] = WebSocketBtn;
 
     // 连接信号
     IntegrationBtn.Pressed += () => SwitchPanel("integration");
@@ -116,10 +176,15 @@ public partial class MainWindow
     SettingsBtn.Pressed += () => SwitchPanel("settings");
     HelpBtn.Pressed += () => SwitchPanel("help");
     LogBtn.Pressed += () => SwitchPanel("logging");
+    WebSocketBtn.Pressed += () => SwitchPanel("websocket");
 
     PreloadPanels();
     SetupLogPanel();
+    SetupWebSocketPanel();
     SwitchPanel(DefaultPanel);
+
+    // 启动 WebSocket 服务器
+    _ = _webSocketServer.StartAsync();
   }
 
   /// <summary>
@@ -150,6 +215,23 @@ public partial class MainWindow
     _panels["logging"] = panel;
     var logService = AppLogs.GetOrCreate();
     panel.BindToService(logService);
+  }
+
+  /// <summary>
+  /// 实例化并绑定 WebSocket 面板。
+  /// </summary>
+  private void SetupWebSocketPanel()
+  {
+    var path = "res://src/ui/websocket/WebSocketPanel.tscn";
+    if (!ResourceLoader.Exists(path))
+      return;
+    var scene = ResourceLoader.Load<PackedScene>(path);
+    var panel = scene.Instantiate<WebSocketPanel>();
+    panel.Visible = false;
+    panel.SetAnchorsPreset(LayoutPreset.FullRect);
+    panel.SetServer(_webSocketServer);
+    RightPanel.AddChild(panel);
+    _panels["websocket"] = panel;
   }
 
   /// <summary>

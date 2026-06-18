@@ -1,17 +1,28 @@
 // AutoCMEX Koishi v4 Plugin
 // 将此文件夹复制到 Koishi 的 plugins 目录即可安装
 // 功能：将群聊消息通过 WebSocket 转发到 AutoCMEX，并返回处理结果
+// 协议：command / event / error / ack
 
 const { Schema } = require("koishi");
 const WebSocket = require("ws");
+const crypto = require("crypto");
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 5140;
 const RECONNECT_INTERVAL = 5000;
+const HEARTBEAT_INTERVAL = 30000;
 
 let ws = null;
 let messageQueue = [];
 let reconnectTimer = null;
+let heartbeatTimer = null;
+
+/**
+ * 生成 UUID v4
+ */
+function generateId() {
+  return crypto.randomUUID();
+}
 
 /**
  * 插件配置项
@@ -23,6 +34,9 @@ module.exports.Config = Schema.object({
   port: Schema.number()
     .default(DEFAULT_PORT)
     .description("AutoCMEX WebSocket 服务端口"),
+  token: Schema.string()
+    .default("")
+    .description("WebSocket 鉴权 Token（留空则不启用鉴权）"),
 }).description("AutoCMEX 配置");
 
 /**
@@ -33,19 +47,29 @@ module.exports.name = "auto-cmex";
 module.exports.apply = (ctx, config) => {
   const host = config.host || DEFAULT_HOST;
   const port = config.port || DEFAULT_PORT;
+  const token = config.token || "";
 
-  ctx.logger.info(`[AutoCMEX] Connecting to ws://${host}:${port}`);
+  const wsUrl = token
+    ? `ws://${host}:${port}/?token=${encodeURIComponent(token)}`
+    : `ws://${host}:${port}`;
 
-  connect(ctx, host, port);
+  ctx.logger.info(`[AutoCMEX] Connecting to ${wsUrl}`);
+
+  connect(ctx, wsUrl);
 
   // 监听所有群聊消息
   ctx.on("message", (session) => {
     const message = {
-      type: "guess_message",
+      id: generateId(),
+      type: "command",
+      timestamp: Date.now(),
       payload: {
-        text: session.content || "",
-        sender: session.username || session.userId || "",
-        timestamp: new Date().toISOString(),
+        action: "guess",
+        params: {
+          message: session.content || "",
+          sender: session.username || session.userId || "",
+          timestamp: new Date().toISOString(),
+        },
       },
     };
 
@@ -72,12 +96,12 @@ module.exports.apply = (ctx, config) => {
 /**
  * 连接到 AutoCMEX WebSocket 服务
  */
-function connect(ctx, host, port) {
+function connect(ctx, wsUrl) {
   if (ws) {
     ws.close();
   }
 
-  ws = new WebSocket(`ws://${host}:${port}`);
+  ws = new WebSocket(wsUrl);
 
   ws.on("open", () => {
     ctx.logger.info("[AutoCMEX] Connected");
@@ -93,14 +117,47 @@ function connect(ctx, host, port) {
       clearInterval(reconnectTimer);
       reconnectTimer = null;
     }
+
+    // 启动心跳
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+    }
+    heartbeatTimer = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        const ping = {
+          id: generateId(),
+          type: "command",
+          timestamp: Date.now(),
+          payload: {
+            action: "ping",
+          },
+        };
+        ws.send(JSON.stringify(ping));
+      }
+    }, HEARTBEAT_INTERVAL);
   });
 
   ws.on("message", (data) => {
     try {
       const msg = JSON.parse(data.toString());
-      if (msg.type === "response") {
-        // 回应消息由 AutoCMEX 处理，此处仅记录
-        ctx.logger.debug(`[AutoCMEX] Response: ${msg.payload?.text}`);
+      switch (msg.type) {
+        case "ack":
+          ctx.logger.debug(
+            `[AutoCMEX] ACK: id=${msg.payload?.originalId}, status=${msg.payload?.status}`
+          );
+          break;
+        case "event":
+          ctx.logger.info(
+            `[AutoCMEX] Event: ${msg.payload?.event}`
+          );
+          break;
+        case "error":
+          ctx.logger.warn(
+            `[AutoCMEX] Error: [${msg.payload?.code}] ${msg.payload?.message}`
+          );
+          break;
+        default:
+          ctx.logger.debug(`[AutoCMEX] Unknown message type: ${msg.type}`);
       }
     } catch (e) {
       ctx.logger.warn(`[AutoCMEX] Failed to parse message: ${e.message}`);
@@ -109,9 +166,13 @@ function connect(ctx, host, port) {
 
   ws.on("close", () => {
     ctx.logger.warn("[AutoCMEX] Disconnected, reconnecting...");
+    if (heartbeatTimer) {
+      clearInterval(heartbeatTimer);
+      heartbeatTimer = null;
+    }
     if (!reconnectTimer) {
       reconnectTimer = setInterval(
-        () => connect(ctx, host, port),
+        () => connect(ctx, wsUrl),
         RECONNECT_INTERVAL,
       );
     }

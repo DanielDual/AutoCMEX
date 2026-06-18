@@ -1,5 +1,6 @@
 namespace AutoCMEX.UI.Settings;
 
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using AutoCMEX;
@@ -415,6 +416,51 @@ public partial class SettingsPanel : Control
     };
     portRow.AddChild(portInput);
     container.AddChild(portRow);
+
+    // WebSocket 运行模式
+    var modeRow = new HBoxContainer();
+    var modeLabel = new Label();
+    modeLabel.Text = "连接模式:";
+    modeLabel.CustomMinimumSize = new Vector2(120, 0);
+    modeRow.AddChild(modeLabel);
+
+    var modeOption = new OptionButton();
+    modeOption.AddItem("Server（等待连接）");
+    modeOption.AddItem("Client（主动连接）");
+    modeOption.Select(
+      string.Equals(_settings.WebSocketMode, "Client", StringComparison.OrdinalIgnoreCase) ? 1 : 0
+    );
+    modeOption.ItemSelected += (idx) =>
+    {
+      _settings.WebSocketMode = idx == 1 ? "Client" : "Server";
+      DataManager?.TriggerAutoSave();
+      // 刷新 UI 以显示/隐藏 URL 输入
+      RefreshConfigArea();
+    };
+    modeRow.AddChild(modeOption);
+    container.AddChild(modeRow);
+
+    // Koishi WebSocket URL（仅 Client 模式显示）
+    if (string.Equals(_settings.WebSocketMode, "Client", StringComparison.OrdinalIgnoreCase))
+    {
+      var urlRow = new HBoxContainer();
+      var urlLabel = new Label();
+      urlLabel.Text = "Koishi 地址:";
+      urlLabel.CustomMinimumSize = new Vector2(120, 0);
+      urlRow.AddChild(urlLabel);
+
+      var urlInput = new LineEdit();
+      urlInput.PlaceholderText = "ws://localhost:5140";
+      urlInput.Text = _settings.KoishiWebSocketUrl;
+      urlInput.SizeFlagsHorizontal = SizeFlags.Expand | SizeFlags.Fill;
+      urlInput.TextChanged += (text) =>
+      {
+        _settings.KoishiWebSocketUrl = text;
+        DataManager?.TriggerAutoSave();
+      };
+      urlRow.AddChild(urlInput);
+      container.AddChild(urlRow);
+    }
 
     // 消息筛选模式
     var filterRow = new HBoxContainer();

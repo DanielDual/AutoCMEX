@@ -70,6 +70,11 @@ layout_mode = 2
 size_flags_horizontal = 3
 text = "日志"
 
+[node name="WebSocketBtn" type="Button" parent="MainContainer/LeftPanel" unique_id=1543099074]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "WebSocket"
+
 [node name="BottomSeparator" type="HSeparator" parent="MainContainer/LeftPanel" unique_id=202181311]
 layout_mode = 2
 

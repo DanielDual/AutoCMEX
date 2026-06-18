@@ -1,7 +1,6 @@
 namespace AutoCMEX.Core.WebSocket;
 
 using System;
-using System.Collections.Concurrent;
 using System.Net;
 using System.Net.WebSockets;
 using System.Text;
@@ -11,107 +10,141 @@ using AutoCMEX.Core.Logging;
 using Chickensoft.Log;
 
 /// <summary>
-/// WebSocket 服务端
+/// WebSocket 服务器：HttpListener 多客户端、消息收发循环、统一异常捕获
 /// </summary>
-public class WebSocketServer : IDisposable
+public class WebSocketServer : IWebSocketServer, IDisposable
 {
   private readonly int _port;
   private readonly ILog _log;
+  private readonly IConnectionManager _connectionManager;
+  private readonly IProtocolHandler _protocolHandler;
+  private readonly MessageRouter _messageRouter;
+  private readonly HeartbeatService _heartbeatService;
+  private readonly bool _enableAuth;
+  private readonly string _authToken;
   private HttpListener? _listener;
   private CancellationTokenSource? _cts;
-  private readonly ConcurrentQueue<string> _messageQueue = new();
-  private System.Net.WebSockets.WebSocket? _connectedSocket;
-  private readonly object _socketLock = new();
   private bool _disposed;
 
-  public event Action<string>? OnMessageReceived;
+  /// <inheritdoc/>
   public bool IsRunning { get; private set; }
 
-  public WebSocketServer(int port)
-    : this(port, AppLogs.GetOrCreate().GetLogger(nameof(WebSocketServer))) { }
+  /// <inheritdoc/>
+  public int ConnectionCount => _connectionManager.Count;
 
-  public WebSocketServer(int port, ILog log)
+  /// <inheritdoc/>
+  public event Action<string>? OnClientConnected;
+
+  /// <inheritdoc/>
+  public event Action<string>? OnClientDisconnected;
+
+  /// <summary>
+  /// 创建 WebSocket 服务器
+  /// </summary>
+  public WebSocketServer(
+    int port,
+    IConnectionManager connectionManager,
+    IProtocolHandler protocolHandler,
+    MessageRouter messageRouter,
+    HeartbeatService heartbeatService,
+    bool enableAuth = false,
+    string authToken = ""
+  )
+    : this(
+      port,
+      connectionManager,
+      protocolHandler,
+      messageRouter,
+      heartbeatService,
+      enableAuth,
+      authToken,
+      AppLogs.GetOrCreate().GetLogger(nameof(WebSocketServer))
+    ) { }
+
+  /// <summary>
+  /// 创建 WebSocket 服务器（带日志注入）
+  /// </summary>
+  public WebSocketServer(
+    int port,
+    IConnectionManager connectionManager,
+    IProtocolHandler protocolHandler,
+    MessageRouter messageRouter,
+    HeartbeatService heartbeatService,
+    bool enableAuth,
+    string authToken,
+    ILog log
+  )
   {
     _port = port;
+    _connectionManager = connectionManager;
+    _protocolHandler = protocolHandler;
+    _messageRouter = messageRouter;
+    _heartbeatService = heartbeatService;
+    _enableAuth = enableAuth;
+    _authToken = authToken;
     _log = log;
+
+    _heartbeatService.OnHeartbeatTimeout += HandleHeartbeatTimeout;
   }
 
-  /// <summary>
-  /// 启动 WebSocket 服务
-  /// </summary>
-  public void Start()
+  /// <inheritdoc/>
+  public Task StartAsync()
   {
     if (IsRunning)
-      return;
+      return Task.CompletedTask;
 
-    _cts = new CancellationTokenSource();
-    _listener = new HttpListener();
-    _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
-    _listener.Start();
-    IsRunning = true;
-    _log.Print($"WebSocketServer started on port {_port}.");
+    try
+    {
+      _cts = new CancellationTokenSource();
+      _listener = new HttpListener();
+      _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
+      _listener.Start();
+      IsRunning = true;
+      _log.Print($"WebSocketServer started on port {_port}.");
 
-    _ = Task.Run(() => ListenLoop(_cts.Token));
+      _ = Task.Run(() => AcceptConnectionsLoop(_cts.Token));
+    }
+    catch (HttpListenerException ex)
+    {
+      _log.Err($"WebSocketServer failed to start on port {_port}: {ex.Message}");
+      IsRunning = false;
+    }
+
+    return Task.CompletedTask;
   }
 
-  /// <summary>
-  /// 停止 WebSocket 服务
-  /// </summary>
-  public void Stop()
+  /// <inheritdoc/>
+  public async Task StopAsync()
   {
     if (!IsRunning)
       return;
+
     IsRunning = false;
     _cts?.Cancel();
 
-    lock (_socketLock)
+    // 关闭所有连接
+    foreach (var conn in _connectionManager.GetAllConnections())
     {
-      _connectedSocket?.Dispose();
-      _connectedSocket = null;
+      try
+      {
+        if (conn.Socket.State == WebSocketState.Open)
+        {
+          await conn.Socket.CloseAsync(
+            WebSocketCloseStatus.NormalClosure,
+            "Server shutting down.",
+            CancellationToken.None
+          );
+        }
+      }
+      catch (Exception ex)
+      {
+        _log.Warn($"Error closing connection {conn.Id}: {ex.Message}");
+      }
     }
 
     _listener?.Stop();
     _listener?.Close();
     _log.Print($"WebSocketServer stopped on port {_port}.");
-  }
-
-  /// <summary>
-  /// 发送消息到客户端
-  /// </summary>
-  public async Task SendAsync(string message)
-  {
-    System.Net.WebSockets.WebSocket? socket;
-    lock (_socketLock)
-    {
-      socket = _connectedSocket;
-    }
-
-    if (socket == null || socket.State != WebSocketState.Open)
-    {
-      _log.Warn(
-        $"WebSocketServer.SendAsync: no open client, queueing message (len={message?.Length ?? 0})."
-      );
-      if (message != null)
-        _messageQueue.Enqueue(message);
-      return;
-    }
-
-    try
-    {
-      var bytes = Encoding.UTF8.GetBytes(message);
-      await socket.SendAsync(
-        new ArraySegment<byte>(bytes),
-        WebSocketMessageType.Text,
-        true,
-        CancellationToken.None
-      );
-      _log.Print($"WebSocketServer.SendAsync: sent {bytes.Length} bytes.");
-    }
-    catch (Exception ex)
-    {
-      _log.Err($"WebSocketServer.SendAsync failed: {ex.GetType().Name}: {ex.Message}");
-      throw;
-    }
   }
 
   /// <inheritdoc/>
@@ -121,13 +154,14 @@ public class WebSocketServer : IDisposable
       return;
 
     _disposed = true;
-    Stop();
+    _heartbeatService.OnHeartbeatTimeout -= HandleHeartbeatTimeout;
+    _cts?.Cancel();
     _cts?.Dispose();
     _listener?.Close();
     GC.SuppressFinalize(this);
   }
 
-  private async Task ListenLoop(CancellationToken token)
+  private async Task AcceptConnectionsLoop(CancellationToken token)
   {
     while (!token.IsCancellationRequested)
     {
@@ -137,33 +171,7 @@ public class WebSocketServer : IDisposable
 
         if (context.Request.IsWebSocketRequest)
         {
-          var wsContext = await context.AcceptWebSocketAsync(null);
-          var ws = wsContext.WebSocket;
-
-          lock (_socketLock)
-          {
-            _connectedSocket?.Dispose();
-            _connectedSocket = ws;
-          }
-          _log.Print("WebSocket client connected.");
-
-          // 发送缓存消息
-          int flushed = 0;
-          while (_messageQueue.TryDequeue(out var msg))
-          {
-            var bytes = Encoding.UTF8.GetBytes(msg);
-            await ws.SendAsync(
-              new ArraySegment<byte>(bytes),
-              WebSocketMessageType.Text,
-              true,
-              token
-            );
-            flushed++;
-          }
-          if (flushed > 0)
-            _log.Print($"Flushed {flushed} queued messages to client.");
-
-          await ReceiveLoop(ws, token);
+          _ = Task.Run(() => HandleConnection(context, token), token);
         }
         else
         {
@@ -176,9 +184,13 @@ public class WebSocketServer : IDisposable
       {
         break;
       }
+      catch (HttpListenerException)
+      {
+        break;
+      }
       catch (Exception ex)
       {
-        _log.Err($"WebSocketServer.ListenLoop error: {ex.GetType().Name}: {ex.Message}");
+        _log.Err($"WebSocketServer.AcceptConnectionsLoop error: {ex.GetType().Name}: {ex.Message}");
         try
         {
           await Task.Delay(1000, token);
@@ -191,7 +203,68 @@ public class WebSocketServer : IDisposable
     }
   }
 
-  private async Task ReceiveLoop(System.Net.WebSockets.WebSocket ws, CancellationToken token)
+  private async Task HandleConnection(HttpListenerContext context, CancellationToken token)
+  {
+    var remoteEndPoint = context.Request.RemoteEndPoint?.ToString() ?? "unknown";
+
+    // Token 鉴权
+    if (_enableAuth)
+    {
+      var tokenFromQuery = context.Request.QueryString["token"];
+      var tokenFromHeader = context.Request.Headers["Authorization"];
+
+      var providedToken =
+        tokenFromQuery
+        ?? (
+          tokenFromHeader?.StartsWith("Bearer ", StringComparison.Ordinal) == true
+            ? tokenFromHeader["Bearer ".Length..]
+            : null
+        );
+
+      if (string.IsNullOrEmpty(providedToken) || providedToken != _authToken)
+      {
+        _log.Warn($"WebSocketServer: auth failed for {remoteEndPoint}.");
+        context.Response.StatusCode = 401;
+        context.Response.Close();
+        return;
+      }
+    }
+
+    // 检查连接数限制
+    if (_connectionManager.IsFull)
+    {
+      _log.Warn(
+        $"WebSocketServer: connection limit reached ({_connectionManager.MaxConnections})."
+      );
+      context.Response.StatusCode = 503;
+      context.Response.Close();
+      return;
+    }
+
+    try
+    {
+      var wsContext = await context.AcceptWebSocketAsync(null);
+      var ws = wsContext.WebSocket;
+
+      var connectionId = _connectionManager.RegisterConnection(ws, remoteEndPoint);
+      _heartbeatService.StartHeartbeat(connectionId, ws);
+
+      _log.Print($"WebSocket client connected: {connectionId} from {remoteEndPoint}.");
+      OnClientConnected?.Invoke(connectionId);
+
+      await ReceiveLoop(connectionId, ws, token);
+    }
+    catch (Exception ex)
+    {
+      _log.Err($"WebSocketServer.HandleConnection error: {ex.GetType().Name}: {ex.Message}");
+    }
+  }
+
+  private async Task ReceiveLoop(
+    string connectionId,
+    System.Net.WebSockets.WebSocket ws,
+    CancellationToken token
+  )
   {
     var buffer = new byte[4096];
 
@@ -203,7 +276,7 @@ public class WebSocketServer : IDisposable
 
         if (result.MessageType == WebSocketMessageType.Close)
         {
-          _log.Print("WebSocket client closed the connection.");
+          _log.Print($"WebSocket client {connectionId} closed the connection.");
           await ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "", token);
           break;
         }
@@ -211,8 +284,9 @@ public class WebSocketServer : IDisposable
         if (result.MessageType == WebSocketMessageType.Text)
         {
           var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
-          _log.Print($"WebSocket received {text.Length} chars.");
-          OnMessageReceived?.Invoke(text);
+          _connectionManager.UpdateLastActive(connectionId);
+
+          await ProcessMessage(connectionId, text);
         }
       }
       catch (OperationCanceledException)
@@ -221,16 +295,54 @@ public class WebSocketServer : IDisposable
       }
       catch (WebSocketException ex)
       {
-        _log.Warn($"WebSocket receive error: {ex.GetType().Name}: {ex.Message}");
+        _log.Warn($"WebSocket receive error for {connectionId}: {ex.GetType().Name}: {ex.Message}");
         break;
       }
     }
 
-    lock (_socketLock)
+    // 清理连接
+    _heartbeatService.StopHeartbeat(connectionId);
+    _connectionManager.UnregisterConnection(connectionId);
+    _log.Print($"WebSocket client disconnected: {connectionId}.");
+    OnClientDisconnected?.Invoke(connectionId);
+  }
+
+  private async Task ProcessMessage(string connectionId, string rawMessage)
+  {
+    try
     {
-      if (_connectedSocket == ws)
-        _connectedSocket = null;
+      var message = _protocolHandler.ParseMessage(rawMessage);
+      _log.Print($"WebSocket received from {connectionId}: type={message.Type}, id={message.Id}");
+
+      var response = await _messageRouter.RouteAsync(message, connectionId);
+
+      if (response != null)
+      {
+        var responseJson = _protocolHandler.SerializeMessage(response);
+        await _connectionManager.SendAsync(connectionId, responseJson);
+      }
     }
-    _log.Print("WebSocket client disconnected.");
+    catch (ProtocolException ex)
+    {
+      _log.Warn($"Protocol error from {connectionId}: [{ex.ErrorCode}] {ex.Message}");
+      var errorMsg = WebSocketMessage.CreateError("unknown", ex.ErrorCode, ex.Message);
+      var errorJson = _protocolHandler.SerializeMessage(errorMsg);
+      await _connectionManager.SendAsync(connectionId, errorJson);
+    }
+    catch (Exception ex)
+    {
+      _log.Err($"Message processing error for {connectionId}: {ex.GetType().Name}: {ex.Message}");
+      var errorMsg = WebSocketMessage.CreateError("unknown", "INTERNAL_ERROR", ex.Message);
+      var errorJson = _protocolHandler.SerializeMessage(errorMsg);
+      await _connectionManager.SendAsync(connectionId, errorJson);
+    }
+  }
+
+  private void HandleHeartbeatTimeout(string connectionId)
+  {
+    _log.Warn($"Heartbeat timeout for {connectionId}, disconnecting.");
+    _heartbeatService.StopHeartbeat(connectionId);
+    _connectionManager.UnregisterConnection(connectionId);
+    OnClientDisconnected?.Invoke(connectionId);
   }
 }

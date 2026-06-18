@@ -24,4 +24,25 @@ public class AppSettings
 
   /// <summary>Koishi 插件安装路径</summary>
   public string KoishiPluginPath { get; set; } = string.Empty;
+
+  /// <summary>是否启用 WebSocket Token 鉴权</summary>
+  public bool WebSocketEnableAuth { get; set; } = false;
+
+  /// <summary>WebSocket 鉴权 Token</summary>
+  public string WebSocketAuthToken { get; set; } = string.Empty;
+
+  /// <summary>WebSocket 最大并发连接数</summary>
+  public int WebSocketMaxConnections { get; set; } = 100;
+
+  /// <summary>WebSocket 心跳间隔（毫秒）</summary>
+  public int WebSocketHeartbeatIntervalMs { get; set; } = 30000;
+
+  /// <summary>WebSocket 心跳超时（毫秒）</summary>
+  public int WebSocketHeartbeatTimeoutMs { get; set; } = 10000;
+
+  /// <summary>WebSocket 运行模式：Server（默认，等待 Koishi 连接）/ Client（主动连接 Koishi）</summary>
+  public string WebSocketMode { get; set; } = "Server";
+
+  /// <summary>ws-reserve 模式下 Koishi WebSocket 服务地址（如 ws://localhost:5140）</summary>
+  public string KoishiWebSocketUrl { get; set; } = string.Empty;
 }
