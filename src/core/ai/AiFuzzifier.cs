@@ -16,20 +16,20 @@ using Chickensoft.Log;
 /// </summary>
 public class AiFuzzifier
 {
-  private readonly IAiService _aiService;
+  private readonly AiServiceFactory _aiServiceFactory;
   private readonly List<CreatorAlias> _aliasTable;
   private readonly List<Boss> _bosses;
   private readonly Boss _currentBoss;
   private readonly ILog _log;
 
   public AiFuzzifier(
-    IAiService aiService,
+    AiServiceFactory aiServiceFactory,
     List<CreatorAlias> aliasTable,
     List<Boss> bosses,
     Boss currentBoss
   )
     : this(
-      aiService,
+      aiServiceFactory,
       aliasTable,
       bosses,
       currentBoss,
@@ -37,14 +37,14 @@ public class AiFuzzifier
     ) { }
 
   public AiFuzzifier(
-    IAiService aiService,
+    AiServiceFactory aiServiceFactory,
     List<CreatorAlias> aliasTable,
     List<Boss> bosses,
     Boss currentBoss,
     ILog log
   )
   {
-    _aiService = aiService;
+    _aiServiceFactory = aiServiceFactory;
     _aliasTable = aliasTable;
     _bosses = bosses;
     _currentBoss = currentBoss;
@@ -60,10 +60,12 @@ public class AiFuzzifier
   {
     _log.Print($"AiFuzzifier.FuzzifyAsync: input_len={rawText?.Length ?? 0}");
     var sw = Stopwatch.StartNew();
+    IAiService? aiService = null;
     try
     {
+      aiService = _aiServiceFactory.GetActiveService();
       var systemPrompt = BuildSystemPrompt();
-      var result = await _aiService.ChatAsync(systemPrompt, rawText ?? string.Empty);
+      var result = await aiService.ChatAsync(systemPrompt, rawText ?? string.Empty);
       sw.Stop();
       _log.Print(
         $"AiFuzzifier.FuzzifyAsync completed in {sw.ElapsedMilliseconds}ms, output_len={result.Length}"
@@ -78,6 +80,10 @@ public class AiFuzzifier
           + $"{ex.GetType().Name}: {ex.Message}"
       );
       throw;
+    }
+    finally
+    {
+      (aiService as IDisposable)?.Dispose();
     }
   }
 

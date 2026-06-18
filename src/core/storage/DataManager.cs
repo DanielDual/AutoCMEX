@@ -156,6 +156,7 @@ public class DataManager : IDisposable
       WebSocketPort = _settings.WebSocketPort,
       MessageFilterMode = _settings.MessageFilterMode,
       KoishiPluginPath = _settings.KoishiPluginPath,
+      ActiveAiModelId = _settings.ActiveAiModelId,
     };
 
     foreach (var model in _settings.AiModels)
