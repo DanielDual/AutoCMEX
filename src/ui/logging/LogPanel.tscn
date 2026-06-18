@@ -85,7 +85,8 @@ unique_name_in_owner = true
 layout_mode = 2
 text = "应用配置"
 
-[node name="StatusLabel" type="Label" parent="MainContainer" unique_id=798160472]
+[node name="StatusLabel" type="RichTextLabel" parent="MainContainer" unique_id=798160472]
 unique_name_in_owner = true
 layout_mode = 2
+bbcode_enabled = true
 text = "就绪"

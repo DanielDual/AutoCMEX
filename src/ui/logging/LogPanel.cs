@@ -2,6 +2,7 @@ namespace AutoCMEX.UI.Logging;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
 using AutoCMEX.Core.Logging;
 using Chickensoft.AutoInject;
 using Chickensoft.Introspection;
@@ -45,7 +46,7 @@ public partial class LogPanel : Control
   public Button ApplyConfigBtn { get; set; } = default!;
 
   [Node]
-  public Label StatusLabel { get; set; } = default!;
+  public RichTextLabel StatusLabel { get; set; } = default!;
 
   #endregion
 
@@ -105,6 +106,9 @@ public partial class LogPanel : Control
     MinLevelOption.AddItem("Error", 2);
     MinLevelOption.Selected = 0;
 
+    // 点击日志目录路径时打开文件资源管理器
+    StatusLabel.MetaClicked += OnStatusMetaClicked;
+
     _suppressEvents = false;
   }
 
@@ -141,7 +145,7 @@ public partial class LogPanel : Control
     // 初次显示历史条目
     RefreshFromBuffer();
     SetStatus(
-      $"日志目录: {service.Config.LogDirectory}  ·  缓冲 {service.Config.InMemoryBufferSize} 条"
+      $"日志目录: [url=file://{service.Config.LogDirectory}]{service.Config.LogDirectory}[/url]  ·  缓冲 {service.Config.InMemoryBufferSize} 条"
     );
   }
 
@@ -284,8 +288,26 @@ public partial class LogPanel : Control
 
   private void SetStatus(string message)
   {
-    if (StatusLabel != null)
-      StatusLabel.Text = message;
+    if (StatusLabel == null)
+      return;
+    StatusLabel.Clear();
+    StatusLabel.AppendText(message);
+  }
+
+  private void OnStatusMetaClicked(Variant meta)
+  {
+    var url = meta.AsString();
+    if (string.IsNullOrEmpty(url))
+      return;
+    // 去掉 file:// 前缀
+    var path = url.StartsWith("file://", StringComparison.Ordinal) ? url[7..] : url;
+    path = path.Replace('/', '\\');
+    if (Directory.Exists(path) || File.Exists(path))
+      OS.ShellOpen(ProjectSettings.GlobalizePath(path));
+    else
+      OS.ShellOpen(ProjectSettings.GlobalizePath(
+        Path.GetDirectoryName(path) ?? path
+      ));
   }
 
   private static string EscapeBbcode(string s)
