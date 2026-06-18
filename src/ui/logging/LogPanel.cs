@@ -305,9 +305,7 @@ public partial class LogPanel : Control
     if (Directory.Exists(path) || File.Exists(path))
       OS.ShellOpen(ProjectSettings.GlobalizePath(path));
     else
-      OS.ShellOpen(ProjectSettings.GlobalizePath(
-        Path.GetDirectoryName(path) ?? path
-      ));
+      OS.ShellOpen(ProjectSettings.GlobalizePath(Path.GetDirectoryName(path) ?? path));
   }
 
   private static string EscapeBbcode(string s)

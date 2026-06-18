@@ -222,7 +222,11 @@ public class GuessingPanelTest : TestClass
     creator = root.GetChild(0);
     creator.GetChildCount().ShouldBeGreaterThan(initialChildCount);
 
-    try { Directory.Delete(tmpDir, recursive: true); } catch { }
+    try
+    {
+      Directory.Delete(tmpDir, recursive: true);
+    }
+    catch { }
   }
 
   [Test]
@@ -241,7 +245,11 @@ public class GuessingPanelTest : TestClass
 
     _panel.BossSelect.ItemCount.ShouldBeGreaterThan(initialCount);
 
-    try { Directory.Delete(tmpDir, recursive: true); } catch { }
+    try
+    {
+      Directory.Delete(tmpDir, recursive: true);
+    }
+    catch { }
   }
 
   [Test]
@@ -261,7 +269,11 @@ public class GuessingPanelTest : TestClass
     root.ShouldNotBeNull();
     root.GetChildCount().ShouldBeGreaterThan(0);
 
-    try { Directory.Delete(tmpDir, recursive: true); } catch { }
+    try
+    {
+      Directory.Delete(tmpDir, recursive: true);
+    }
+    catch { }
   }
 
   [Test]
@@ -282,6 +294,10 @@ public class GuessingPanelTest : TestClass
 
     _panel.BossSelect.ItemCount.ShouldBeLessThan(initialCount);
 
-    try { Directory.Delete(tmpDir, recursive: true); } catch { }
+    try
+    {
+      Directory.Delete(tmpDir, recursive: true);
+    }
+    catch { }
   }
 }
