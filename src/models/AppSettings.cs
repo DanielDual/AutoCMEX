@@ -10,6 +10,9 @@ public class AppSettings
   /// <summary>AI 模型配置列表</summary>
   public List<AiModelConfig> AiModels { get; set; } = new();
 
+  /// <summary>当前激活的 AI 模型 ID，对应 AiModels 中某个模型的 Id</summary>
+  public string? ActiveAiModelId { get; set; }
+
   /// <summary>WebSocket 监听端口</summary>
   public int WebSocketPort { get; set; } = 5140;
 
