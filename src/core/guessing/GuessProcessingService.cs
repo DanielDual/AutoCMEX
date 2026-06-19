@@ -61,7 +61,7 @@ public class GuessProcessingService : IGuessProcessingService
 
   /// <inheritdoc/>
   public Task<GuessProcessingResult> ProcessManualAsync(string rawText, Boss? currentBoss) =>
-    ProcessAsync(rawText, currentBoss, enableAiFallback: false, treatFailureAsNotGuess: false);
+    ProcessAsync(rawText, currentBoss, filterMode: "strict", treatFailureAsNotGuess: false);
 
   /// <inheritdoc/>
   public Task<GuessProcessingResult> ProcessManagedAsync(string rawText)
@@ -70,7 +70,7 @@ public class GuessProcessingService : IGuessProcessingService
     return ProcessAsync(
       rawText,
       currentBoss,
-      enableAiFallback: ShouldUseAiFallback(),
+      filterMode: _dataManager.Settings.MessageFilterMode ?? "strict",
       treatFailureAsNotGuess: true
     );
   }
@@ -78,7 +78,7 @@ public class GuessProcessingService : IGuessProcessingService
   private async Task<GuessProcessingResult> ProcessAsync(
     string rawText,
     Boss? currentBoss,
-    bool enableAiFallback,
+    string filterMode,
     bool treatFailureAsNotGuess
   )
   {
@@ -97,12 +97,18 @@ public class GuessProcessingService : IGuessProcessingService
         : GuessProcessingResult.Error("当前未选择 Boss");
     }
 
-    var directResult = RunPipeline(input, currentBoss);
-    if (directResult.IsGuess)
-      return directResult;
+    var skipStrict = string.Equals(filterMode, "ai", StringComparison.OrdinalIgnoreCase);
+    var enableAi = !string.Equals(filterMode, "strict", StringComparison.OrdinalIgnoreCase);
 
-    if (!enableAiFallback)
-      return directResult;
+    if (!skipStrict)
+    {
+      var directResult = RunPipeline(input, currentBoss);
+      if (directResult.IsGuess)
+        return directResult;
+
+      if (!enableAi)
+        return directResult;
+    }
 
     if (!HasAvailableAiModel(out var aiError))
       return GuessProcessingResult.NotGuess(aiError);
@@ -172,11 +178,4 @@ public class GuessProcessingService : IGuessProcessingService
       return false;
     }
   }
-
-  private bool ShouldUseAiFallback() =>
-    !string.Equals(
-      _dataManager.Settings.MessageFilterMode,
-      "strict",
-      StringComparison.OrdinalIgnoreCase
-    );
 }
