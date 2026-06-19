@@ -226,10 +226,13 @@ public class WebSocketClient : IWebSocketServer, IDisposable
       var message = _protocolHandler.ParseMessage(rawMessage);
       _log.Print($"WebSocketClient received: type={message.Type}, id={message.Id}");
 
-      var response = await _messageRouter.RouteAsync(message, connectionId);
+      var responses = await _messageRouter.RouteAsync(message, connectionId);
 
-      if (response != null && _ws?.State == WebSocketState.Open)
+      foreach (var response in responses)
       {
+        if (_ws?.State != WebSocketState.Open)
+          break;
+
         var responseJson = _protocolHandler.SerializeMessage(response);
         var bytes = Encoding.UTF8.GetBytes(responseJson);
         await _ws.SendAsync(

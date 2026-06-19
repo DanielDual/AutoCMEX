@@ -35,7 +35,10 @@ public class MessageRouter
   /// <summary>
   /// 路由消息到对应处理器
   /// </summary>
-  public async Task<WebSocketMessage?> RouteAsync(WebSocketMessage message, string connectionId)
+  public async Task<IReadOnlyList<WebSocketMessage>> RouteAsync(
+    WebSocketMessage message,
+    string connectionId
+  )
   {
     foreach (var handler in _handlers)
     {
@@ -47,10 +50,13 @@ public class MessageRouter
     }
 
     _log.Warn($"MessageRouter: no handler for message type '{message.Type}'.");
-    return WebSocketMessage.CreateError(
-      message.Id,
-      "UNKNOWN_TYPE",
-      $"No handler registered for message type '{message.Type}'."
-    );
+    return new[]
+    {
+      WebSocketMessage.CreateError(
+        message.Id,
+        "UNKNOWN_TYPE",
+        $"No handler registered for message type '{message.Type}'."
+      ),
+    };
   }
 }

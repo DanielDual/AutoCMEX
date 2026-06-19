@@ -1,6 +1,7 @@
 namespace AutoCMEX.Core.WebSocket;
 
 using System;
+using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
 using Chickensoft.Log;
@@ -24,19 +25,25 @@ public class EventHandler : IMessageHandler
   public bool CanHandle(string messageType) => messageType == "event";
 
   /// <inheritdoc/>
-  public Task<WebSocketMessage?> HandleAsync(WebSocketMessage message, string connectionId)
+  public Task<IReadOnlyList<WebSocketMessage>> HandleAsync(
+    WebSocketMessage message,
+    string connectionId
+  )
   {
     var payload = message.Payload;
 
     if (!payload.TryGetProperty("event", out var eventEl))
     {
       _log.Warn($"EventHandler: missing 'event' field in event {message.Id}.");
-      return Task.FromResult<WebSocketMessage?>(
-        WebSocketMessage.CreateError(
-          message.Id,
-          "INVALID_COMMAND",
-          "Missing required field 'event'."
-        )
+      return Task.FromResult<IReadOnlyList<WebSocketMessage>>(
+        new[]
+        {
+          WebSocketMessage.CreateError(
+            message.Id,
+            "INVALID_COMMAND",
+            "Missing required field 'event'."
+          ),
+        }
       );
     }
 
@@ -51,23 +58,26 @@ public class EventHandler : IMessageHandler
 
       default:
         _log.Warn($"EventHandler: unknown event '{eventName}' from {connectionId}.");
-        return Task.FromResult<WebSocketMessage?>(
-          WebSocketMessage.CreateError(
-            message.Id,
-            "INVALID_COMMAND",
-            $"Unknown event '{eventName}'."
-          )
+        return Task.FromResult<IReadOnlyList<WebSocketMessage>>(
+          new[]
+          {
+            WebSocketMessage.CreateError(
+              message.Id,
+              "INVALID_COMMAND",
+              $"Unknown event '{eventName}'."
+            ),
+          }
         );
     }
   }
 
-  private static Task<WebSocketMessage?> HandleStatusQuery(WebSocketMessage message)
+  private static Task<IReadOnlyList<WebSocketMessage>> HandleStatusQuery(WebSocketMessage message)
   {
     var response = WebSocketMessage.CreateEvent(
       "status_response",
       new { status = "running", timestamp = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() }
     );
 
-    return Task.FromResult<WebSocketMessage?>(response);
+    return Task.FromResult<IReadOnlyList<WebSocketMessage>>(new[] { response });
   }
 }

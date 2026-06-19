@@ -314,9 +314,9 @@ public class WebSocketServer : IWebSocketServer, IDisposable
       var message = _protocolHandler.ParseMessage(rawMessage);
       _log.Print($"WebSocket received from {connectionId}: type={message.Type}, id={message.Id}");
 
-      var response = await _messageRouter.RouteAsync(message, connectionId);
+      var responses = await _messageRouter.RouteAsync(message, connectionId);
 
-      if (response != null)
+      foreach (var response in responses)
       {
         var responseJson = _protocolHandler.SerializeMessage(response);
         await _connectionManager.SendAsync(connectionId, responseJson);
