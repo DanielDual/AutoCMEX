@@ -234,6 +234,7 @@ public class WebSocketClient : IWebSocketServer, IDisposable
           break;
 
         var responseJson = _protocolHandler.SerializeMessage(response);
+        _log.Print($"WebSocketClient sending: type={response.Type}, id={response.Id}");
         var bytes = Encoding.UTF8.GetBytes(responseJson);
         await _ws.SendAsync(
           new ArraySegment<byte>(bytes),

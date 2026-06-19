@@ -70,7 +70,8 @@ public class AiFuzzifier
       var result = await aiService.ChatAsync(systemPrompt, rawText ?? string.Empty);
       sw.Stop();
       _log.Print(
-        $"AiFuzzifier.FuzzifyAsync completed in {sw.ElapsedMilliseconds}ms, output_len={result.Length}"
+        $"AiFuzzifier.FuzzifyAsync completed in {sw.ElapsedMilliseconds}ms, "
+          + $"output_len={result.Length}, output={result.Trim()}"
       );
       return result.Trim();
     }

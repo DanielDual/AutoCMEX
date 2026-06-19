@@ -319,6 +319,7 @@ public class WebSocketServer : IWebSocketServer, IDisposable
       foreach (var response in responses)
       {
         var responseJson = _protocolHandler.SerializeMessage(response);
+        _log.Print($"WebSocket sending to {connectionId}: type={response.Type}, id={response.Id}");
         await _connectionManager.SendAsync(connectionId, responseJson);
       }
     }

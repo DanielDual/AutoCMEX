@@ -111,7 +111,9 @@ public class CommandHandler : IMessageHandler
     var text = msgEl.GetString() ?? string.Empty;
     var sender = paramsEl.TryGetProperty("sender", out var sEl) ? sEl.GetString() ?? "" : "";
 
-    _log.Print($"CommandHandler: dispatching guess from {sender} (conn={connectionId}).");
+    _log.Print(
+      $"CommandHandler: dispatching guess from {sender} (conn={connectionId}), text={text}"
+    );
 
     var result = await _guessProcessingService.ProcessManagedAsync(text);
     var responses = new List<WebSocketMessage>
