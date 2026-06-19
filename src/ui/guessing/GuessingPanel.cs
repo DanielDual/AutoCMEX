@@ -82,7 +82,7 @@ public partial class GuessingPanel : Control
 
   #region Programmatic UI
 
-  private Label? _droppedLabel;
+  private ItemList? _droppedList;
   private Button? _retryDroppedBtn;
   private Button? _clearDroppedBtn;
 
@@ -135,7 +135,10 @@ public partial class GuessingPanel : Control
   public override void _Notification(int what)
   {
     if (what == NotificationVisibilityChanged && Visible)
+    {
       UpdateFuzzifyButtonState();
+      RefreshDroppedUI();
+    }
     this.Notify(what);
   }
 
@@ -166,12 +169,26 @@ public partial class GuessingPanel : Control
     FuzzifyBtn.Disabled = true;
     FuzzifyBtn.TooltipText = "请先配置 AI 模型";
 
-    // 丢包重试 UI
+    // 丢包重试 UI（延迟到场景树构建完成后添加）
+    CallDeferred(nameof(SetupDroppedUI));
+  }
+
+  private void SetupDroppedUI()
+  {
+    var parent = ResponseDisplay.GetParent();
+    if (parent == null)
+      return;
+
     var droppedSection = new VBoxContainer();
+    droppedSection.SizeFlagsVertical = SizeFlags.ExpandFill;
     droppedSection.AddChild(new HSeparator());
 
-    _droppedLabel = new Label { Text = "丢包列表：无" };
-    droppedSection.AddChild(_droppedLabel);
+    var header = new Label { Text = "丢包列表" };
+    droppedSection.AddChild(header);
+
+    _droppedList = new ItemList();
+    _droppedList.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
+    droppedSection.AddChild(_droppedList);
 
     var btnRow = new HBoxContainer();
     _retryDroppedBtn = new Button { Text = "重试全部丢包", Disabled = true };
@@ -184,9 +201,8 @@ public partial class GuessingPanel : Control
 
     droppedSection.AddChild(btnRow);
 
-    var parent = ResponseDisplay.GetParent();
-    if (parent != null)
-      parent.AddChild(droppedSection);
+    parent.AddChild(droppedSection);
+    RefreshDroppedUI();
   }
 
   public void OnResolved()
@@ -665,6 +681,7 @@ public partial class GuessingPanel : Control
       );
 
     var result = await service.ProcessManualAsync(text, _currentBoss);
+    RefreshDroppedUI();
     if (!result.IsGuess)
     {
       _log.Warn($"OnProcessGuess: processing returned failure: {result.FailureReason}");
@@ -742,6 +759,7 @@ public partial class GuessingPanel : Control
     {
       FuzzifyBtn.Disabled = false;
       FuzzifyBtn.Text = "模糊化";
+      RefreshDroppedUI();
     }
   }
 
@@ -749,26 +767,27 @@ public partial class GuessingPanel : Control
 
   private void RefreshDroppedUI()
   {
-    if (_droppedLabel == null || _retryDroppedBtn == null || _clearDroppedBtn == null)
+    if (_droppedList == null || _retryDroppedBtn == null || _clearDroppedBtn == null)
       return;
 
     var service = _guessProcessingService;
     if (service == null)
-    {
-      _droppedLabel.Text = "丢包列表：服务未就绪";
       return;
-    }
 
+    _droppedList.Clear();
     var dropped = service.GetDroppedGuesses();
     if (dropped.Count == 0)
     {
-      _droppedLabel.Text = "丢包列表：无";
       _retryDroppedBtn.Disabled = true;
       _clearDroppedBtn.Disabled = true;
       return;
     }
 
-    _droppedLabel.Text = $"丢包列表：{dropped.Count} 条";
+    foreach (var d in dropped)
+    {
+      _droppedList.AddItem($"[{d.Id}] {d.RawText}");
+    }
+
     _retryDroppedBtn.Disabled = false;
     _clearDroppedBtn.Disabled = false;
   }

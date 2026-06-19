@@ -17,6 +17,6 @@ public class GuessResponseHandler : IGuessResponseHandler
       return correctCount == 2 ? "对" : "错";
 
     // totalCards <= 1: 不回应
-    return string.Empty;
+    return "不能只猜一个";
   }
 }
