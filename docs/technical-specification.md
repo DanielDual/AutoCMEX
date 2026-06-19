@@ -102,20 +102,23 @@ Koishi v4。
 
 ### WebSocket 协议
 
-- **消息格式**：JSON，`type` + `payload` 结构。
+- **消息格式**：JSON，`id` + `type` + `timestamp` + `payload` 结构。
 - **消息类型**：
 
-| type            | 方向              | 说明         |
-| --------------- | ----------------- | ------------ |
-| `guess_message` | Koishi → AutoCMEX | 群聊猜测消息 |
-| `response`      | AutoCMEX → Koishi | 猜测处理回应 |
-| `heartbeat`     | 双向              | 心跳保活     |
+| type      | 方向              | 说明                       |
+| --------- | ----------------- | -------------------------- |
+| `command` | Koishi → AutoCMEX | 命令（如 `guess`、`ping`） |
+| `event`   | AutoCMEX → Koishi | 事件（如 `guess_result`）  |
+| `ack`     | AutoCMEX → Koishi | 命令确认                   |
+| `error`   | AutoCMEX → Koishi | 错误响应                   |
 
+- **托管猜测流程**：Koishi 发送 `command: guess` → AutoCMEX 返回 `ack` + `event: guess_result` → Koishi 回复原消息。
 - **断线处理**：Koishi 插件自动重连，断开期间消息缓存到内存队列，重连后批量发送。
 
 ### 插件说明
 
 - 插件代码放在 `src/plugin/koishi/`。
+- 插件维护 `requestId → session` 映射，收到 `guess_result` 事件后优先引用回复，失败降级普通回复。
 - 插件离开本项目无法使用，不对外发布。
 - 一键安装：复制插件文件夹到 Koishi 的 plugins 目录。
 
