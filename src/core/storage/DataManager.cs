@@ -158,6 +158,13 @@ public class DataManager : IDisposable
       KoishiPluginPath = _settings.KoishiPluginPath,
       ActiveAiModelId = _settings.ActiveAiModelId,
       AiTimeoutSeconds = _settings.AiTimeoutSeconds,
+      WebSocketEnableAuth = _settings.WebSocketEnableAuth,
+      WebSocketAuthToken = _settings.WebSocketAuthToken,
+      WebSocketMaxConnections = _settings.WebSocketMaxConnections,
+      WebSocketHeartbeatIntervalMs = _settings.WebSocketHeartbeatIntervalMs,
+      WebSocketHeartbeatTimeoutMs = _settings.WebSocketHeartbeatTimeoutMs,
+      WebSocketMode = _settings.WebSocketMode,
+      KoishiWebSocketUrl = _settings.KoishiWebSocketUrl,
     };
 
     foreach (var model in _settings.AiModels)

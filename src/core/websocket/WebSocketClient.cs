@@ -194,7 +194,10 @@ public class WebSocketClient : IWebSocketServer, IDisposable
 
         if (result.MessageType == WebSocketMessageType.Close)
         {
-          _log.Print("WebSocketClient: server closed the connection.");
+          _log.Print(
+            $"WebSocketClient: server closed connection. "
+              + $"Status={result.CloseStatus}, Desc={result.CloseStatusDescription}"
+          );
           break;
         }
 

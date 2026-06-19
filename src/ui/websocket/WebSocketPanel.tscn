@@ -1,9 +1,70 @@
 [gd_scene format=3 uid="uid://wsdpnl001"]
 
-[ext_resource type="Script" uid="uid://wsdpnlscr" path="res://src/ui/websocket/WebSocketPanel.cs" id="1_script"]
+[ext_resource type="Script" uid="uid://jk08wt8jy0bg" path="res://src/ui/websocket/WebSocketPanel.cs" id="1_script"]
 
-[node name="WebSocketPanel" type="Control" unique_id=2000000001]
+[node name="WebSocketPanel" type="Control" unique_id=1281588750]
 layout_mode = 3
 anchors_preset = 15
 anchor_right = 1.0
-anchor_bottom
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_script")
+
+[node name="MainContainer" type="VBoxContainer" parent="." unique_id=648586269]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="HeaderLabel" type="Label" parent="MainContainer" unique_id=1035071125]
+layout_mode = 2
+text = "WebSocket 服务器"
+horizontal_alignment = 1
+
+[node name="HeaderSeparator" type="HSeparator" parent="MainContainer" unique_id=2013851908]
+layout_mode = 2
+
+[node name="ModeLabel" type="Label" parent="MainContainer" unique_id=2007068886]
+layout_mode = 2
+text = "模式: Server（等待连接）"
+
+[node name="StatusContainer" type="HBoxContainer" parent="MainContainer" unique_id=73099480]
+layout_mode = 2
+
+[node name="StatusTitleLabel" type="Label" parent="MainContainer/StatusContainer" unique_id=222678488]
+layout_mode = 2
+text = "状态: "
+
+[node name="StatusLabel" type="Label" parent="MainContainer/StatusContainer" unique_id=853976923]
+layout_mode = 2
+text = "已停止"
+
+[node name="PortLabel" type="Label" parent="MainContainer" unique_id=1245692162]
+layout_mode = 2
+text = "端口: 5140"
+
+[node name="ConnectionCountLabel" type="Label" parent="MainContainer" unique_id=1223413047]
+layout_mode = 2
+text = "连接数: 0"
+
+[node name="EventLabel" type="Label" parent="MainContainer" unique_id=511592569]
+layout_mode = 2
+
+[node name="StartStopBtn" type="Button" parent="MainContainer" unique_id=956913253]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "启动"
+
+[node name="Separator" type="HSeparator" parent="MainContainer" unique_id=83097598]
+layout_mode = 2
+
+[node name="ClientListLabel" type="Label" parent="MainContainer" unique_id=594023392]
+layout_mode = 2
+text = "已连接客户端:"
+
+[node name="ClientList" type="ItemList" parent="MainContainer" unique_id=136469654]
+layout_mode = 2
+size_flags_vertical = 3
