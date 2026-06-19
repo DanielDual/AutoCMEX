@@ -1,5 +1,6 @@
 namespace AutoCMEX.Core.Guessing;
 
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using AutoCMEX.Models;
 
@@ -22,4 +23,19 @@ public interface IGuessProcessingService
   /// 处理手动输入的猜测消息
   /// </summary>
   Task<GuessProcessingResult> ProcessManualAsync(string rawText, Boss? currentBoss);
+
+  /// <summary>
+  /// 获取丢包列表（只读）
+  /// </summary>
+  IReadOnlyList<DroppedGuess> GetDroppedGuesses();
+
+  /// <summary>
+  /// 重试指定丢包猜测
+  /// </summary>
+  Task<GuessProcessingResult> RetryDroppedGuessAsync(string droppedId);
+
+  /// <summary>
+  /// 移除指定丢包记录
+  /// </summary>
+  void RemoveDroppedGuess(string droppedId);
 }

@@ -1,6 +1,8 @@
 namespace AutoCMEX.Core.Guessing;
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Logging;
@@ -17,6 +19,8 @@ public class GuessProcessingService : IGuessProcessingService
   private readonly AiServiceFactory _aiServiceFactory;
   private readonly IGuessResponseHandler _responseHandler;
   private readonly ILog _log;
+  private readonly List<DroppedGuess> _droppedGuesses = new();
+  private readonly object _droppedLock = new();
 
   public GuessProcessingService(
     DataManager dataManager,
@@ -148,6 +152,15 @@ public class GuessProcessingService : IGuessProcessingService
       _log.Err(
         $"GuessProcessingService.ProcessAsync AI fallback failed: {ex.GetType().Name}: {ex.Message}"
       );
+
+      lock (_droppedLock)
+      {
+        _droppedGuesses.Add(new DroppedGuess(input, ex.Message));
+        _log.Print(
+          $"GuessProcessingService: added to dropped list (total={_droppedGuesses.Count}), id={_droppedGuesses[^1].Id}"
+        );
+      }
+
       return treatFailureAsNotGuess
         ? GuessProcessingResult.NotGuess(ex.Message)
         : GuessProcessingResult.Error(ex.Message);
@@ -177,5 +190,60 @@ public class GuessProcessingService : IGuessProcessingService
       error = ex.Message;
       return false;
     }
+  }
+
+  /// <inheritdoc/>
+  public IReadOnlyList<DroppedGuess> GetDroppedGuesses()
+  {
+    lock (_droppedLock)
+    {
+      return _droppedGuesses.ToList();
+    }
+  }
+
+  /// <inheritdoc/>
+  public async Task<GuessProcessingResult> RetryDroppedGuessAsync(string droppedId)
+  {
+    DroppedGuess? dropped;
+    lock (_droppedLock)
+    {
+      dropped = _droppedGuesses.FirstOrDefault(d => d.Id == droppedId);
+    }
+
+    if (dropped == null)
+      return GuessProcessingResult.Error($"丢包记录 {droppedId} 不存在。");
+
+    _log.Print($"GuessProcessingService: retrying dropped guess {droppedId}: {dropped.RawText}");
+
+    var currentBoss = ResolveCurrentBoss();
+    var result = await ProcessAsync(
+      dropped.RawText,
+      currentBoss,
+      filterMode: _dataManager.Settings.MessageFilterMode ?? "strict",
+      treatFailureAsNotGuess: true
+    );
+
+    if (result.Status != GuessProcessingStatus.Error)
+    {
+      lock (_droppedLock)
+      {
+        _droppedGuesses.RemoveAll(d => d.Id == droppedId);
+      }
+
+      _log.Print($"GuessProcessingService: dropped guess {droppedId} retried successfully.");
+    }
+
+    return result;
+  }
+
+  /// <inheritdoc/>
+  public void RemoveDroppedGuess(string droppedId)
+  {
+    lock (_droppedLock)
+    {
+      _droppedGuesses.RemoveAll(d => d.Id == droppedId);
+    }
+
+    _log.Print($"GuessProcessingService: removed dropped guess {droppedId}.");
   }
 }

@@ -204,7 +204,7 @@ public class WebSocketClient : IWebSocketServer, IDisposable
         if (result.MessageType == WebSocketMessageType.Text)
         {
           var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
-          await ProcessMessage(connectionId, text);
+          _ = Task.Run(() => ProcessMessage(connectionId, text));
         }
       }
       catch (OperationCanceledException)

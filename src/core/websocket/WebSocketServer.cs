@@ -286,7 +286,7 @@ public class WebSocketServer : IWebSocketServer, IDisposable
           var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
           _connectionManager.UpdateLastActive(connectionId);
 
-          await ProcessMessage(connectionId, text);
+          _ = Task.Run(() => ProcessMessage(connectionId, text));
         }
       }
       catch (OperationCanceledException)
