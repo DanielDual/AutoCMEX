@@ -1,5 +1,8 @@
 namespace AutoCMEX;
 
+using System.Collections.Generic;
+using System.Text.Json;
+using System.Threading.Tasks;
 using AutoCMEX.Core.WebSocket;
 using Chickensoft.GoDotTest;
 using Godot;
@@ -78,5 +81,60 @@ public class WebSocketTest : TestClass
   {
     var msg = WebSocketMessage.CreateEvent("status_changed", new { status = "running" });
     msg.Type.ShouldBe("event");
+  }
+
+  [Test]
+  public async Task CommandHandler_Ping_ReturnsAck()
+  {
+    var handler = new PingHandler();
+    var msg = new WebSocketMessage
+    {
+      Id = "ping-1",
+      Type = "command",
+      Payload = JsonSerializer.SerializeToElement(new { action = "ping" }),
+    };
+
+    var responses = await handler.HandleAsync(msg, "conn-1");
+    responses.Count.ShouldBe(1);
+    responses[0].Type.ShouldBe("ack");
+  }
+
+  [Test]
+  public async Task CommandHandler_MissingAction_ReturnsError()
+  {
+    var handler = new PingHandler();
+    var msg = new WebSocketMessage
+    {
+      Id = "err-1",
+      Type = "command",
+      Payload = JsonSerializer.SerializeToElement(new { }),
+    };
+
+    var responses = await handler.HandleAsync(msg, "conn-1");
+    responses.Count.ShouldBe(1);
+    responses[0].Type.ShouldBe("error");
+  }
+
+  private sealed class PingHandler : IMessageHandler
+  {
+    public bool CanHandle(string messageType) => messageType == "command";
+
+    public Task<IReadOnlyList<WebSocketMessage>> HandleAsync(
+      WebSocketMessage message,
+      string connectionId
+    )
+    {
+      var payload = message.Payload;
+      if (!payload.TryGetProperty("action", out _))
+      {
+        return Task.FromResult<IReadOnlyList<WebSocketMessage>>(
+          new[] { WebSocketMessage.CreateError(message.Id, "INVALID_COMMAND", "Missing action.") }
+        );
+      }
+
+      return Task.FromResult<IReadOnlyList<WebSocketMessage>>(
+        new[] { WebSocketMessage.CreateAck(message.Id, "success") }
+      );
+    }
   }
 }

@@ -4,7 +4,7 @@
 // 协议：command / event / error / ack
 // 模式：client（连接 AutoCMEX）/ server（等待 AutoCMEX 连接）
 
-const { Schema } = require("koishi");
+const { Schema, h } = require("koishi");
 const WebSocket = require("ws");
 const crypto = require("crypto");
 
@@ -12,12 +12,14 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 5140;
 const RECONNECT_INTERVAL = 5000;
 const HEARTBEAT_INTERVAL = 30000;
+const REQUEST_TTL = 5 * 60 * 1000;
 
 // Client mode state
 let ws = null;
 let messageQueue = [];
 let reconnectTimer = null;
 let heartbeatTimer = null;
+let pendingRequests = new Map();
 
 // Server mode state
 let wss = null;
@@ -34,8 +36,9 @@ function generateId() {
  * 构建 guess 命令消息
  */
 function buildGuessMessage(session) {
+  const requestId = generateId();
   return {
-    id: generateId(),
+    id: requestId,
     type: "command",
     timestamp: Date.now(),
     payload: {
@@ -44,9 +47,48 @@ function buildGuessMessage(session) {
         message: session.content || "",
         sender: session.username || session.userId || "",
         timestamp: new Date().toISOString(),
+        sessionId: session.sid || "",
+        channelId: session.channelId || "",
+        guildId: session.guildId || "",
+        messageId: session.messageId || "",
       },
     },
   };
+}
+
+function rememberRequest(requestId, session) {
+  pendingRequests.set(requestId, {
+    session,
+    createdAt: Date.now(),
+  });
+  cleanupExpiredRequests();
+}
+
+function cleanupExpiredRequests() {
+  const now = Date.now();
+  for (const [requestId, entry] of pendingRequests.entries()) {
+    if (!entry || now - entry.createdAt > REQUEST_TTL) {
+      pendingRequests.delete(requestId);
+    }
+  }
+}
+
+async function replyToSession(ctx, session, replyText) {
+  if (!session || !replyText) return;
+
+  const messageId = session.messageId || "";
+  if (messageId) {
+    try {
+      await session.send(`${h.quote(messageId)}${replyText}`);
+      return;
+    } catch (err) {
+      ctx.logger.warn(
+        `[AutoCMEX] Quote reply failed, fallback to normal reply: ${err.message}`
+      );
+    }
+  }
+
+  await session.send(replyText);
 }
 
 /**
@@ -87,6 +129,7 @@ module.exports.apply = (ctx, config) => {
   // 监听所有群聊消息
   ctx.on("message", (session) => {
     const message = buildGuessMessage(session);
+    rememberRequest(message.id, session);
 
     if (mode === "server") {
       if (autoCmexClient && autoCmexClient.readyState === WebSocket.OPEN) {
@@ -255,7 +298,7 @@ function startServer(ctx, token) {
 /**
  * 处理收到的消息
  */
-function handleMessage(ctx, data) {
+async function handleMessage(ctx, data) {
   try {
     const msg = JSON.parse(data.toString());
     switch (msg.type) {
@@ -265,6 +308,36 @@ function handleMessage(ctx, data) {
         );
         break;
       case "event":
+        if (msg.payload?.event === "guess_result") {
+          const requestId = msg.payload?.data?.requestId;
+          const replyText = msg.payload?.data?.replyText || "";
+          const pending = requestId ? pendingRequests.get(requestId) : null;
+
+          if (!requestId) {
+            ctx.logger.warn("[AutoCMEX] guess_result missing requestId");
+            break;
+          }
+
+          if (!pending || !pending.session) {
+            ctx.logger.warn(`[AutoCMEX] No pending session for request ${requestId}`);
+            pendingRequests.delete(requestId);
+            break;
+          }
+
+          if (!replyText) {
+            ctx.logger.info(
+              `[AutoCMEX] guess_result for ${requestId} contains empty replyText, skipped`
+            );
+            pendingRequests.delete(requestId);
+            break;
+          }
+
+          await replyToSession(ctx, pending.session, replyText);
+          ctx.logger.info(`[AutoCMEX] Replied to request ${requestId}`);
+          pendingRequests.delete(requestId);
+          break;
+        }
+
         ctx.logger.info(`[AutoCMEX] Event: ${msg.payload?.event}`);
         break;
       case "error":
