@@ -13,4 +13,7 @@ public class SpellCard
 
   /// <summary>是否已揭晓</summary>
   public bool IsRevealed { get; set; }
+
+  /// <summary>是否已被猜出（猜测全部正确后标记）</summary>
+  public bool IsGuessedOut { get; set; }
 }
