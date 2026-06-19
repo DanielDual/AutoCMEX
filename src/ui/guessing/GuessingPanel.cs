@@ -108,15 +108,15 @@ public partial class GuessingPanel : Control
     this.DependOn<AiServiceFactory>(() => new AiServiceFactory(DataManager));
 
   [Dependency]
-  public GuessPipeline Pipeline =>
-    this.DependOn<GuessPipeline>(() =>
-      new GuessPipeline(new GuessResponseHandler(), new List<CreatorAlias>())
+  public IGuessProcessingService GuessProcessingService =>
+    this.DependOn<IGuessProcessingService>(() =>
+      new GuessProcessingService(DataManager, AiServiceFactory, new GuessResponseHandler())
     );
 
   #endregion
 
   private DataManager? _dm;
-  private GuessPipeline? _pipeline;
+  private IGuessProcessingService? _guessProcessingService;
   private Boss? _currentBoss;
   private bool _rebuildingAliasTree;
   private ILog _log = AppLogs.GetOrCreate().GetLogger(nameof(GuessingPanel));
@@ -169,11 +169,11 @@ public partial class GuessingPanel : Control
     }
     try
     {
-      _pipeline = Pipeline;
+      _guessProcessingService = GuessProcessingService;
     }
     catch
     {
-      _pipeline = null;
+      _guessProcessingService = null;
     }
 
     if (_dm != null)
@@ -228,8 +228,15 @@ public partial class GuessingPanel : Control
       BossSelect.AddItem(boss.Name);
     if (_dm.Bosses.Count > 0)
     {
-      BossSelect.Select(0);
-      _currentBoss = _dm.Bosses[0];
+      var selectedIndex = _dm.Settings.SelectedBossIndex;
+      if (selectedIndex < 0 || selectedIndex >= _dm.Bosses.Count)
+      {
+        selectedIndex = 0;
+        _dm.Settings.SelectedBossIndex = 0;
+      }
+
+      BossSelect.Select(selectedIndex);
+      _currentBoss = _dm.Bosses[selectedIndex];
     }
     else
       _currentBoss = null;
@@ -292,7 +299,9 @@ public partial class GuessingPanel : Control
   {
     if (_dm != null && index >= 0 && index < _dm.Bosses.Count)
     {
+      _dm.Settings.SelectedBossIndex = (int)index;
       _currentBoss = _dm.Bosses[(int)index];
+      _dm.TriggerAutoSave();
       RefreshSpellCardTree();
     }
   }
@@ -594,7 +603,7 @@ public partial class GuessingPanel : Control
 
   // ==================== 猜测处理 ====================
 
-  private void OnProcessGuess()
+  private async void OnProcessGuess()
   {
     if (_currentBoss == null)
     {
@@ -612,20 +621,24 @@ public partial class GuessingPanel : Control
     _log.Print(
       $"OnProcessGuess: processing guess (len={text.Length}) for boss '{_currentBoss.Name}'."
     );
-    var pipeline =
-      _dm != null
-        ? new GuessPipeline(new GuessResponseHandler(), _dm.Aliases)
-        : _pipeline ?? Pipeline;
-    var result = pipeline.Process(text, _currentBoss);
-    if (!result.IsSuccess)
+    var service =
+      _guessProcessingService
+      ?? (
+        _dm != null
+          ? new GuessProcessingService(_dm, AiServiceFactory, new GuessResponseHandler())
+          : GuessProcessingService
+      );
+
+    var result = await service.ProcessManualAsync(text, _currentBoss);
+    if (!result.IsGuess)
     {
-      _log.Warn($"OnProcessGuess: pipeline returned error: {result.ErrorMessage}");
-      ResponseDisplay.Text = $"[color=red]{result.ErrorMessage}[/color]";
+      _log.Warn($"OnProcessGuess: processing returned failure: {result.FailureReason}");
+      ResponseDisplay.Text = $"[color=red]{result.FailureReason}[/color]";
       return;
     }
     var display = "";
-    if (!string.IsNullOrEmpty(result.Response))
-      display += $"[b]{result.Response}[/b]\n\n";
+    if (!string.IsNullOrEmpty(result.ReplyText))
+      display += $"[b]{result.ReplyText}[/b]\n\n";
     foreach (var d in result.Details)
       display += $"{d}\n";
     ResponseDisplay.Text = display;
@@ -675,6 +688,12 @@ public partial class GuessingPanel : Control
     {
       var fuzzifier = new AiFuzzifier(AiServiceFactory, _dm.Aliases, _dm.Bosses, _currentBoss);
       var result = await fuzzifier.FuzzifyAsync(text);
+      if (AiFuzzifier.IsNotAGuessResult(result))
+      {
+        _log.Print("OnFuzzify: AI judged current input as not a guess.");
+        ResponseDisplay.Text = "[color=yellow]AI 判定该输入不像猜测文本[/color]";
+        return;
+      }
       _log.Print($"OnFuzzify: succeeded, output_len={result?.Length ?? 0}");
       GuessInput.Text = result;
       ResponseDisplay.Text = $"[color=green]完成[/color]\n\n{result}";

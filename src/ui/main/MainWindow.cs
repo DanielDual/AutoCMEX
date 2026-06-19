@@ -25,6 +25,7 @@ public partial class MainWindow
     IProvide<AiServiceFactory>,
     IProvide<GuessPipeline>,
     IProvide<IGuessResponseHandler>,
+    IProvide<IGuessProcessingService>,
     IProvide<IWebSocketServer>
 {
   [Export]
@@ -67,6 +68,7 @@ public partial class MainWindow
   private AiServiceFactory _aiServiceFactory = default!;
   private GuessPipeline _guessPipeline = default!;
   private GuessResponseHandler _guessResponseHandler = default!;
+  private IGuessProcessingService _guessProcessingService = default!;
   private IWebSocketServer _webSocketServer = default!;
 
   DataManager IProvide<DataManager>.Value() => _dataManager;
@@ -76,6 +78,8 @@ public partial class MainWindow
   GuessPipeline IProvide<GuessPipeline>.Value() => _guessPipeline;
 
   IGuessResponseHandler IProvide<IGuessResponseHandler>.Value() => _guessResponseHandler;
+
+  IGuessProcessingService IProvide<IGuessProcessingService>.Value() => _guessProcessingService;
 
   IWebSocketServer IProvide<IWebSocketServer>.Value() => _webSocketServer;
 
@@ -102,6 +106,11 @@ public partial class MainWindow
 
     _guessResponseHandler = new GuessResponseHandler();
     _guessPipeline = new GuessPipeline(_guessResponseHandler, _dataManager.Aliases);
+    _guessProcessingService = new GuessProcessingService(
+      _dataManager,
+      _aiServiceFactory,
+      _guessResponseHandler
+    );
 
     // 初始化 WebSocket（Server 或 Client 模式）
     var settings = _dataManager.Settings;
@@ -109,7 +118,7 @@ public partial class MainWindow
     var protocolHandler = new ProtocolHandler();
     var messageRouter = new MessageRouter(wsLog);
 
-    var commandHandler = new CommandHandler(wsLog);
+    var commandHandler = new CommandHandler(wsLog, _guessProcessingService);
     var eventHandler = new AutoCMEX.Core.WebSocket.EventHandler(wsLog);
     messageRouter.RegisterHandler(commandHandler);
     messageRouter.RegisterHandler(eventHandler);
@@ -251,7 +260,7 @@ public partial class MainWindow
     var protocolHandler = new ProtocolHandler();
     var messageRouter = new MessageRouter(wsLog);
 
-    var commandHandler = new CommandHandler(wsLog);
+    var commandHandler = new CommandHandler(wsLog, _guessProcessingService);
     var eventHandler = new AutoCMEX.Core.WebSocket.EventHandler(wsLog);
     messageRouter.RegisterHandler(commandHandler);
     messageRouter.RegisterHandler(eventHandler);
