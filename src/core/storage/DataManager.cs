@@ -165,6 +165,7 @@ public class DataManager : IDisposable
       WebSocketHeartbeatTimeoutMs = _settings.WebSocketHeartbeatTimeoutMs,
       WebSocketMode = _settings.WebSocketMode,
       KoishiWebSocketUrl = _settings.KoishiWebSocketUrl,
+      SelectedBossIndex = _settings.SelectedBossIndex,
     };
 
     foreach (var model in _settings.AiModels)

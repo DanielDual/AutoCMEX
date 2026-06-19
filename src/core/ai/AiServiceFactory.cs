@@ -22,7 +22,7 @@ public class AiServiceFactory
   /// </summary>
   /// <returns>IAiService 实例</returns>
   /// <exception cref="InvalidOperationException">没有配置有效的 AI 模型时抛出</exception>
-  public IAiService GetActiveService()
+  public virtual IAiService GetActiveService()
   {
     var config = GetActiveModelConfig();
     var timeout = _dataManager.Settings.AiTimeoutSeconds;
@@ -33,7 +33,7 @@ public class AiServiceFactory
   /// 获取当前激活的模型配置
   /// </summary>
   /// <exception cref="InvalidOperationException">没有选中模型或选中模型无效时抛出</exception>
-  public AiModelConfig GetActiveModelConfig()
+  public virtual AiModelConfig GetActiveModelConfig()
   {
     var settings = _dataManager.Settings;
 

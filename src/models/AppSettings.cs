@@ -45,4 +45,7 @@ public class AppSettings
 
   /// <summary>ws-reserve 模式下 Koishi WebSocket 服务地址（如 ws://localhost:5140）</summary>
   public string KoishiWebSocketUrl { get; set; } = string.Empty;
+
+  /// <summary>当前选中的 Boss 下标，用于共享手动与托管猜测流程的上下文</summary>
+  public int SelectedBossIndex { get; set; } = 0;
 }
