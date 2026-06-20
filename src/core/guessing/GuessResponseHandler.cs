@@ -19,13 +19,13 @@ public class GuessResponseHandler : IGuessResponseHandler
     string baseResponse;
 
     if (totalCards >= 3)
-      baseResponse = $"猜对 {correctCount}/{totalCards} 张";
+      baseResponse = $"{correctCount}/{totalCards}";
     else if (totalCards == 2)
-      baseResponse = correctCount == 2 ? "对" : "错";
+      baseResponse = correctCount == 2 ? "✔️" : "❌️";
     else if (totalCards == 0 && guessedOutCount > 0)
-      baseResponse = "所有猜测的符卡均已被猜出，已跳过";
+      baseResponse = "所有猜测的符卡均已被猜出";
     else
-      baseResponse = "不能只猜一个";
+      baseResponse = "必须猜两个以上";
 
     if (guessedOutCount > 0 && totalCards > 0)
     {
