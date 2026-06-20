@@ -56,18 +56,24 @@ function buildGuessMessage(session) {
   };
 }
 
-function rememberRequest(requestId, session) {
+function rememberRequest(ctx, requestId, session) {
   pendingRequests.set(requestId, {
     session,
     createdAt: Date.now(),
   });
-  cleanupExpiredRequests();
+  ctx.logger.info(
+    `[AutoCMEX] Stored pending request ${requestId} (total=${pendingRequests.size})`
+  );
+  cleanupExpiredRequests(ctx);
 }
 
-function cleanupExpiredRequests() {
+function cleanupExpiredRequests(ctx) {
   const now = Date.now();
   for (const [requestId, entry] of pendingRequests.entries()) {
     if (!entry || now - entry.createdAt > REQUEST_TTL) {
+      ctx.logger.info(
+        `[AutoCMEX] Expired pending request ${requestId} (age=${now - entry.createdAt}ms)`
+      );
       pendingRequests.delete(requestId);
     }
   }
@@ -129,21 +135,37 @@ module.exports.apply = (ctx, config) => {
   // 监听所有群聊消息
   ctx.on("message", (session) => {
     const message = buildGuessMessage(session);
-    rememberRequest(message.id, session);
+    rememberRequest(ctx, message.id, session);
 
     if (mode === "server") {
       if (autoCmexClient && autoCmexClient.readyState === WebSocket.OPEN) {
         autoCmexClient.send(JSON.stringify(message));
       } else {
         messageQueue.push(message);
-        if (messageQueue.length > 100) messageQueue.shift();
+        ctx.logger.info(
+          `[AutoCMEX] Queued message ${message.id} (queue=${messageQueue.length})`
+        );
+        if (messageQueue.length > 1000) {
+          const dropped = messageQueue.shift();
+          ctx.logger.warn(
+            `[AutoCMEX] Queue full, dropped oldest message ${dropped?.id}`
+          );
+        }
       }
     } else {
       if (ws && ws.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify(message));
       } else {
         messageQueue.push(message);
-        if (messageQueue.length > 100) messageQueue.shift();
+        ctx.logger.info(
+          `[AutoCMEX] Queued message ${message.id} (queue=${messageQueue.length})`
+        );
+        if (messageQueue.length > 1000) {
+          const dropped = messageQueue.shift();
+          ctx.logger.warn(
+            `[AutoCMEX] Queue full, dropped oldest message ${dropped?.id}`
+          );
+        }
       }
     }
   });
@@ -179,6 +201,10 @@ function startClient(ctx, host, port, token) {
 
     ws.on("open", () => {
       ctx.logger.info("[AutoCMEX] Connected to server");
+      const queuedCount = messageQueue.length;
+      if (queuedCount > 0) {
+        ctx.logger.info(`[AutoCMEX] Flushing ${queuedCount} queued messages`);
+      }
       while (messageQueue.length > 0) {
         ws.send(JSON.stringify(messageQueue.shift()));
       }
@@ -274,6 +300,10 @@ function startServer(ctx, token) {
     );
 
     // 发送缓存消息
+    const queuedCount = messageQueue.length;
+    if (queuedCount > 0) {
+      ctx.logger.info(`[AutoCMEX] Flushing ${queuedCount} queued messages`);
+    }
     while (messageQueue.length > 0) {
       if (client.readyState === WebSocket.OPEN) {
         client.send(JSON.stringify(messageQueue.shift()));
