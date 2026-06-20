@@ -162,6 +162,11 @@ public partial class GuessingPanel : Control
     ProcessBtn.Pressed += OnProcessGuess;
     FuzzifyBtn.Pressed += OnFuzzify;
 
+    SpellCardTree.Columns = 3;
+    SpellCardTree.SetColumnTitle(0, "符卡名");
+    SpellCardTree.SetColumnTitle(1, "创作者");
+    SpellCardTree.SetColumnTitle(2, "已猜出");
+
     AliasTree.Columns = 1;
     AliasTree.SetColumnTitle(0, "创作者 / 别名");
     AliasTree.HideRoot = true;
@@ -228,6 +233,7 @@ public partial class GuessingPanel : Control
     if (_dm != null)
     {
       _dm.LoadAll();
+      _dm.DataChanged += () => CallDeferred(nameof(RefreshSpellCardTree));
       UpdateFuzzifyButtonState();
       RefreshAll();
     }
@@ -311,8 +317,11 @@ public partial class GuessingPanel : Control
       var cardItem = SpellCardTree.CreateItem(bossItem);
       cardItem.SetText(0, card.Name);
       cardItem.SetText(1, string.IsNullOrEmpty(card.Creator) ? "(未揭晓)" : card.Creator);
+      cardItem.SetCellMode(2, TreeItem.TreeCellMode.Check);
+      cardItem.SetChecked(2, card.IsGuessedOut);
       cardItem.SetEditable(0, true);
       cardItem.SetEditable(1, true);
+      cardItem.SetEditable(2, true);
       cardItem.SetMetadata(0, i);
     }
   }
@@ -341,6 +350,10 @@ public partial class GuessingPanel : Control
       {
         var t = edited.GetText(1);
         card.Creator = t == "(未揭晓)" ? "" : t;
+      }
+      else if (column == 2)
+      {
+        card.IsGuessedOut = edited.IsChecked(2);
       }
     }
     _dm?.TriggerAutoSave();
@@ -688,6 +701,7 @@ public partial class GuessingPanel : Control
       ResponseDisplay.Text = $"[color=red]{result.FailureReason}[/color]";
       return;
     }
+    RefreshSpellCardTree();
     var display = "";
     if (!string.IsNullOrEmpty(result.ReplyText))
       display += $"[b]{result.ReplyText}[/b]\n\n";
