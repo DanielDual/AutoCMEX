@@ -92,11 +92,13 @@ public class GuessEngineTest : TestClass
 
   // ==================== GuessResponseHandler Tests ====================
 
+  private static List<string> EmptyNames() => new();
+
   [Test]
   public void ResponseHandler_ThreeOrMore_AllCorrect()
   {
     var handler = new GuessResponseHandler();
-    var result = handler.Handle(3, 3, new List<string>());
+    var result = handler.Handle(3, 3, new List<string>(), 0, EmptyNames());
     result.ShouldBe("猜对 3/3 张");
   }
 
@@ -104,7 +106,7 @@ public class GuessEngineTest : TestClass
   public void ResponseHandler_ThreeOrMore_PartialCorrect()
   {
     var handler = new GuessResponseHandler();
-    var result = handler.Handle(3, 1, new List<string>());
+    var result = handler.Handle(3, 1, new List<string>(), 0, EmptyNames());
     result.ShouldBe("猜对 1/3 张");
   }
 
@@ -112,7 +114,7 @@ public class GuessEngineTest : TestClass
   public void ResponseHandler_ThreeOrMore_NoneCorrect()
   {
     var handler = new GuessResponseHandler();
-    var result = handler.Handle(4, 0, new List<string>());
+    var result = handler.Handle(4, 0, new List<string>(), 0, EmptyNames());
     result.ShouldBe("猜对 0/4 张");
   }
 
@@ -120,7 +122,7 @@ public class GuessEngineTest : TestClass
   public void ResponseHandler_TwoCards_BothCorrect()
   {
     var handler = new GuessResponseHandler();
-    var result = handler.Handle(2, 2, new List<string>());
+    var result = handler.Handle(2, 2, new List<string>(), 0, EmptyNames());
     result.ShouldBe("对");
   }
 
@@ -128,7 +130,7 @@ public class GuessEngineTest : TestClass
   public void ResponseHandler_TwoCards_OneCorrect()
   {
     var handler = new GuessResponseHandler();
-    var result = handler.Handle(2, 1, new List<string>());
+    var result = handler.Handle(2, 1, new List<string>(), 0, EmptyNames());
     result.ShouldBe("错");
   }
 
@@ -136,7 +138,7 @@ public class GuessEngineTest : TestClass
   public void ResponseHandler_TwoCards_NoneCorrect()
   {
     var handler = new GuessResponseHandler();
-    var result = handler.Handle(2, 0, new List<string>());
+    var result = handler.Handle(2, 0, new List<string>(), 0, EmptyNames());
     result.ShouldBe("错");
   }
 
@@ -144,16 +146,34 @@ public class GuessEngineTest : TestClass
   public void ResponseHandler_OneCard_NoResponse()
   {
     var handler = new GuessResponseHandler();
-    var result = handler.Handle(1, 1, new List<string>());
-    result.ShouldBe(string.Empty);
+    var result = handler.Handle(1, 1, new List<string>(), 0, EmptyNames());
+    result.ShouldBe("不能只猜一个");
   }
 
   [Test]
   public void ResponseHandler_ZeroCards_NoResponse()
   {
     var handler = new GuessResponseHandler();
-    var result = handler.Handle(0, 0, new List<string>());
-    result.ShouldBe(string.Empty);
+    var result = handler.Handle(0, 0, new List<string>(), 0, EmptyNames());
+    result.ShouldBe("不能只猜一个");
+  }
+
+  [Test]
+  public void ResponseHandler_WithGuessedOutCards()
+  {
+    var handler = new GuessResponseHandler();
+    var guessedOutNames = new List<string> { "符卡1（Card1）", "符卡3（Card3）" };
+    var result = handler.Handle(2, 2, new List<string>(), 2, guessedOutNames);
+    result.ShouldBe("对（符卡1（Card1）、符卡3（Card3） 已被猜出，已跳过）");
+  }
+
+  [Test]
+  public void ResponseHandler_AllGuessedOut()
+  {
+    var handler = new GuessResponseHandler();
+    var guessedOutNames = new List<string> { "符卡1（Card1）" };
+    var result = handler.Handle(0, 0, new List<string>(), 1, guessedOutNames);
+    result.ShouldBe("所有猜测的符卡均已被猜出，已跳过");
   }
 
   // ==================== GuessPipeline Tests ====================
@@ -312,6 +332,141 @@ public class GuessEngineTest : TestClass
     var result = pipeline.Process("1Alice", boss);
 
     result.IsSuccess.ShouldBeTrue();
-    result.Response.ShouldBe(string.Empty);
+    result.Response.ShouldBe("不能只猜一个");
+    // 单张猜测不标记为已猜出
+    boss.SpellCards[0].IsGuessedOut.ShouldBeFalse();
+  }
+
+  [Test]
+  public void Pipeline_GuessedOutCard_Skipped()
+  {
+    var boss = new Boss
+    {
+      Name = "TestBoss",
+      SpellCards = new List<SpellCard>
+      {
+        new()
+        {
+          Name = "Card1",
+          Creator = "Alice",
+          IsGuessedOut = true,
+        },
+        new() { Name = "Card2", Creator = "Bob" },
+        new() { Name = "Card3", Creator = "Charlie" },
+      },
+    };
+
+    var pipeline = new GuessPipeline(new GuessResponseHandler(), new List<CreatorAlias>());
+    var result = pipeline.Process("1Alice 2Bob 3Charlie", boss);
+
+    result.IsSuccess.ShouldBeTrue();
+    result.Details.ShouldContain(d => d.Contains("已被猜出"));
+    // Card1 is guessed out, so only 2 cards count
+    result.Response.ShouldBe("对（符卡1（Card1） 已被猜出，已跳过）");
+  }
+
+  [Test]
+  public void Pipeline_AllCorrect_MarksAsGuessedOut()
+  {
+    var boss = new Boss
+    {
+      Name = "TestBoss",
+      SpellCards = new List<SpellCard>
+      {
+        new() { Name = "Card1", Creator = "Alice" },
+        new() { Name = "Card2", Creator = "Bob" },
+        new() { Name = "Card3", Creator = "Charlie" },
+      },
+    };
+
+    var pipeline = new GuessPipeline(new GuessResponseHandler(), new List<CreatorAlias>());
+    var result = pipeline.Process("1Alice 2Bob 3Charlie", boss);
+
+    result.IsSuccess.ShouldBeTrue();
+    result.Response.ShouldBe("猜对 3/3 张");
+
+    // All three should now be marked as guessed out
+    boss.SpellCards[0].IsGuessedOut.ShouldBeTrue();
+    boss.SpellCards[1].IsGuessedOut.ShouldBeTrue();
+    boss.SpellCards[2].IsGuessedOut.ShouldBeTrue();
+  }
+
+  [Test]
+  public void Pipeline_PartialCorrect_DoesNotMarkGuessedOut()
+  {
+    var boss = new Boss
+    {
+      Name = "TestBoss",
+      SpellCards = new List<SpellCard>
+      {
+        new() { Name = "Card1", Creator = "Alice" },
+        new() { Name = "Card2", Creator = "Bob" },
+        new() { Name = "Card3", Creator = "Charlie" },
+      },
+    };
+
+    var pipeline = new GuessPipeline(new GuessResponseHandler(), new List<CreatorAlias>());
+    var result = pipeline.Process("1Alice 2Wrong 3Charlie", boss);
+
+    result.IsSuccess.ShouldBeTrue();
+    result.Response.ShouldBe("猜对 2/3 张");
+
+    // None should be marked as guessed out (only 2/3 correct)
+    boss.SpellCards[0].IsGuessedOut.ShouldBeFalse();
+    boss.SpellCards[1].IsGuessedOut.ShouldBeFalse();
+    boss.SpellCards[2].IsGuessedOut.ShouldBeFalse();
+  }
+
+  [Test]
+  public void Pipeline_AllGuessedOut_ReturnsSkipMessage()
+  {
+    var boss = new Boss
+    {
+      Name = "TestBoss",
+      SpellCards = new List<SpellCard>
+      {
+        new()
+        {
+          Name = "Card1",
+          Creator = "Alice",
+          IsGuessedOut = true,
+        },
+        new()
+        {
+          Name = "Card2",
+          Creator = "Bob",
+          IsGuessedOut = true,
+        },
+      },
+    };
+
+    var pipeline = new GuessPipeline(new GuessResponseHandler(), new List<CreatorAlias>());
+    var result = pipeline.Process("1Alice 2Bob", boss);
+
+    result.IsSuccess.ShouldBeTrue();
+    result.Response.ShouldBe("所有猜测的符卡均已被猜出，已跳过");
+  }
+
+  [Test]
+  public void Pipeline_DuplicatePairs_Deduplicated()
+  {
+    var boss = new Boss
+    {
+      Name = "TestBoss",
+      SpellCards = new List<SpellCard>
+      {
+        new() { Name = "Card1", Creator = "Alice" },
+        new() { Name = "Card2", Creator = "Bob" },
+        new() { Name = "Card3", Creator = "Charlie" },
+      },
+    };
+
+    var pipeline = new GuessPipeline(new GuessResponseHandler(), new List<CreatorAlias>());
+    var result = pipeline.Process("1Alice 2Bob 2Bob 2Bob 3Charlie", boss);
+
+    result.IsSuccess.ShouldBeTrue();
+    // 2Bob appears 3 times but only counts once → 3 unique cards
+    result.Response.ShouldBe("猜对 3/3 张");
+    result.Details.ShouldContain(d => d.Contains("重复猜测"));
   }
 }
