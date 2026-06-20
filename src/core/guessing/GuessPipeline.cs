@@ -65,10 +65,13 @@ public partial class GuessPipeline
       return PipelineResult.Error(parseResult.ErrorMessage);
     }
 
-    // 3. 匹配对错
+    // 3. 匹配对错（先过滤重复猜测）
     var details = new List<string>();
     int totalCards = 0;
     int correctCount = 0;
+    int guessedOutCount = 0;
+    var guessedOutNames = new List<string>();
+    var seenPairs = new HashSet<(int, string)>();
 
     if (currentBoss == null)
     {
@@ -80,10 +83,26 @@ public partial class GuessPipeline
     {
       var spellCard = currentBoss.SpellCards[index - 1];
 
+      // 过滤重复猜测
+      if (!seenPairs.Add((index, creator)))
+      {
+        details.Add($"符卡 {index}（{spellCard.Name}）：重复猜测 {creator}，已跳过");
+        continue;
+      }
+
       // 已揭晓符卡跳过
       if (spellCard.IsRevealed)
       {
         details.Add($"符卡 {index}（{spellCard.Name}）已揭晓，创作者为 {spellCard.Creator}");
+        continue;
+      }
+
+      // 已被猜出的符卡跳过
+      if (spellCard.IsGuessedOut)
+      {
+        guessedOutCount++;
+        guessedOutNames.Add($"{index}");
+        details.Add($"符卡 {index}（{spellCard.Name}）已被猜出，跳过");
         continue;
       }
 
@@ -115,8 +134,27 @@ public partial class GuessPipeline
       }
     }
 
+    // 如果本次猜测全部正确且猜测数量合法（≥2），将涉及的符卡标记为已猜出
+    if (totalCards >= 2 && correctCount == totalCards)
+    {
+      foreach (var (index, _) in parseResult.Pairs)
+      {
+        var spellCard = currentBoss.SpellCards[index - 1];
+        if (!spellCard.IsRevealed && !spellCard.IsGuessedOut)
+        {
+          spellCard.IsGuessedOut = true;
+        }
+      }
+    }
+
     // 4. 生成回应
-    var response = _responseHandler.Handle(totalCards, correctCount, details);
+    var response = _responseHandler.Handle(
+      totalCards,
+      correctCount,
+      details,
+      guessedOutCount,
+      guessedOutNames
+    );
 
     totalSw.Stop();
     _log.Print(

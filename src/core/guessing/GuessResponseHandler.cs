@@ -8,15 +8,31 @@ using System.Collections.Generic;
 public class GuessResponseHandler : IGuessResponseHandler
 {
   /// <inheritdoc/>
-  public string Handle(int totalCards, int correctCount, List<string> details)
+  public string Handle(
+    int totalCards,
+    int correctCount,
+    List<string> details,
+    int guessedOutCount,
+    List<string> guessedOutNames
+  )
   {
+    string baseResponse;
+
     if (totalCards >= 3)
-      return $"猜对 {correctCount}/{totalCards} 张";
+      baseResponse = $"猜对 {correctCount}/{totalCards} 张";
+    else if (totalCards == 2)
+      baseResponse = correctCount == 2 ? "对" : "错";
+    else if (totalCards == 0 && guessedOutCount > 0)
+      baseResponse = "所有猜测的符卡均已被猜出，已跳过";
+    else
+      baseResponse = "不能只猜一个";
 
-    if (totalCards == 2)
-      return correctCount == 2 ? "对" : "错";
+    if (guessedOutCount > 0 && totalCards > 0)
+    {
+      var names = string.Join("、", guessedOutNames);
+      baseResponse += $"（{names} 已被猜出，已跳过）";
+    }
 
-    // totalCards <= 1: 不回应
-    return "不能只猜一个";
+    return baseResponse;
   }
 }
