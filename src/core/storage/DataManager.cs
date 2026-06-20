@@ -33,6 +33,12 @@ public class DataManager : IDisposable
   public List<CreatorAlias> Aliases => _aliases;
   public AppSettings Settings => _settings;
 
+  /// <summary>数据变更事件（用于 UI 刷新）</summary>
+  public event Action? DataChanged;
+
+  /// <summary>触发数据变更通知</summary>
+  public void NotifyDataChanged() => DataChanged?.Invoke();
+
   public DataManager(string dataDir, AesEncryptor encryptor)
     : this(dataDir, encryptor, AppLogs.GetOrCreate().GetLogger(nameof(DataManager))) { }
 

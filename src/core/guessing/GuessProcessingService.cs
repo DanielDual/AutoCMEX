@@ -174,6 +174,8 @@ public class GuessProcessingService : IGuessProcessingService
     if (!pipelineResult.IsSuccess)
       return GuessProcessingResult.Error(pipelineResult.ErrorMessage);
 
+    _dataManager.TriggerAutoSave();
+    _dataManager.NotifyDataChanged();
     return GuessProcessingResult.Success(text, pipelineResult.Response, pipelineResult.Details);
   }
 
