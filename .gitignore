@@ -4,6 +4,7 @@
 .agents/skills/
 .trae/skills/
 .trae/skill-config.json
+.codebuddy/skills/
 **/addons/auto_reload/
 **/addons/godot_mcp_editor/
 **/addons/godot_mcp_runtime/
