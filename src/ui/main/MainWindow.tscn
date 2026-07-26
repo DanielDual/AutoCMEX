@@ -5,7 +5,7 @@
 [ext_resource type="PackedScene" uid="uid://gihori8we6rx" path="res://src/ui/settings/SettingsPanel.tscn" id="3_settings"]
 [ext_resource type="PackedScene" uid="uid://b4urpmt0s8fl6" path="res://src/ui/logging/LogPanel.tscn" id="4_log"]
 [ext_resource type="PackedScene" uid="uid://wsdpnl001" path="res://src/ui/websocket/WebSocketPanel.tscn" id="5_ws"]
-[ext_resource type="PackedScene" uid="uid://xa0vkqnpj1n0" path="res://src/ui/integration/IntegrationPanel.tscn" id="6_integration"]
+[ext_resource type="PackedScene" uid="uid://xa0vkqnpj1n0" path="res://src/ui/merge/MergePanel.tscn" id="6_merge"]
 [ext_resource type="PackedScene" uid="uid://cmb8ndpqvxtot" path="res://src/ui/info/InfoPanel.tscn" id="7_info"]
 [ext_resource type="PackedScene" uid="uid://lpqr6wef3tj8" path="res://src/ui/help/HelpPanel.tscn" id="8_help"]
 
@@ -40,7 +40,7 @@ horizontal_alignment = 1
 [node name="LogoSeparator" type="HSeparator" parent="MainContainer/LeftPanel" unique_id=708768049]
 layout_mode = 2
 
-[node name="IntegrationBtn" type="Button" parent="MainContainer/LeftPanel" unique_id=1541808589]
+[node name="MergeBtn" type="Button" parent="MainContainer/LeftPanel" unique_id=1541808589]
 layout_mode = 2
 size_flags_horizontal = 3
 text = "整合"
@@ -94,7 +94,7 @@ horizontal_alignment = 1
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="IntegrationPanel" parent="MainContainer/RightPanel" unique_id=1266187082 instance=ExtResource("6_integration")]
+[node name="MergePanel" parent="MainContainer/RightPanel" unique_id=1266187082 instance=ExtResource("6_merge")]
 visible = false
 anchors_preset = 15
 anchor_right = 1.0

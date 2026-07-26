@@ -191,7 +191,7 @@ AutoCMEX/
 ├── src/                    # 业务代码
 │   ├── ui/                 # UI 场景与脚本（各板块独立 .tscn）
 │   │   ├── main/           # 主窗口布局
-│   │   ├── integration/    # 整合板块
+│   │   ├── merge/          # 整合板块
 │   │   ├── guessing/       # 猜测板块
 │   │   ├── info/           # 信息板块
 │   │   ├── settings/       # 设置板块

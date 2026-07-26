@@ -38,8 +38,8 @@ public partial class MainWindow
   [Node("MainContainer/RightPanel")]
   public Control RightPanel { get; set; } = default!;
 
-  [Node("MainContainer/LeftPanel/IntegrationBtn")]
-  public Button IntegrationBtn { get; set; } = default!;
+  [Node("MainContainer/LeftPanel/MergeBtn")]
+  public Button MergeBtn { get; set; } = default!;
 
   [Node("MainContainer/LeftPanel/GuessingBtn")]
   public Button GuessingBtn { get; set; } = default!;
@@ -63,8 +63,8 @@ public partial class MainWindow
 
   #region Panel Nodes (instanced in scene)
 
-  [Node("MainContainer/RightPanel/IntegrationPanel")]
-  public Control IntegrationPanelNode { get; set; } = default!;
+  [Node("MainContainer/RightPanel/MergePanel")]
+  public Control MergePanelNode { get; set; } = default!;
 
   [Node("MainContainer/RightPanel/GuessingPanel")]
   public Control GuessingPanelNode { get; set; } = default!;
@@ -151,7 +151,7 @@ public partial class MainWindow
     LeftPanel.CustomMinimumSize = new Vector2(LeftPanelWidth, 0);
 
     // 注册导航按钮
-    _navButtons["integration"] = IntegrationBtn;
+    _navButtons["merge"] = MergeBtn;
     _navButtons["guessing"] = GuessingBtn;
     _navButtons["info"] = InfoBtn;
     _navButtons["settings"] = SettingsBtn;
@@ -160,7 +160,7 @@ public partial class MainWindow
     _navButtons["websocket"] = WebSocketBtn;
 
     // 连接信号
-    IntegrationBtn.Pressed += () => SwitchPanel("integration");
+    MergeBtn.Pressed += () => SwitchPanel("merge");
     GuessingBtn.Pressed += () => SwitchPanel("guessing");
     InfoBtn.Pressed += () => SwitchPanel("info");
     SettingsBtn.Pressed += () => SwitchPanel("settings");
@@ -169,7 +169,7 @@ public partial class MainWindow
     WebSocketBtn.Pressed += () => SwitchPanel("websocket");
 
     // 注册场景中的面板
-    _panels["integration"] = IntegrationPanelNode;
+    _panels["merge"] = MergePanelNode;
     _panels["guessing"] = GuessingPanelNode;
     _panels["info"] = InfoPanelNode;
     _panels["settings"] = SettingsPanelNode;
