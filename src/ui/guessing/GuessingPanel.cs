@@ -81,11 +81,16 @@ public partial class GuessingPanel : Control
 
   #endregion
 
-  #region Programmatic UI
+  #region Dropped UI Nodes
 
-  private ItemList? _droppedList;
-  private Button? _retryDroppedBtn;
-  private Button? _clearDroppedBtn;
+  [Node]
+  public ItemList DroppedList { get; set; } = default!;
+
+  [Node]
+  public Button RetryDroppedBtn { get; set; } = default!;
+
+  [Node]
+  public Button ClearDroppedBtn { get; set; } = default!;
 
   #endregion
 
@@ -175,40 +180,9 @@ public partial class GuessingPanel : Control
     FuzzifyBtn.Disabled = true;
     FuzzifyBtn.TooltipText = "请先配置 AI 模型";
 
-    // 丢包重试 UI（延迟到场景树构建完成后添加）
-    CallDeferred(nameof(SetupDroppedUI));
-  }
-
-  private void SetupDroppedUI()
-  {
-    var parent = ResponseDisplay.GetParent();
-    if (parent == null)
-      return;
-
-    var droppedSection = new VBoxContainer();
-    droppedSection.SizeFlagsVertical = SizeFlags.ExpandFill;
-    droppedSection.AddChild(new HSeparator());
-
-    var header = new Label { Text = "丢包列表" };
-    droppedSection.AddChild(header);
-
-    _droppedList = new ItemList();
-    _droppedList.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
-    droppedSection.AddChild(_droppedList);
-
-    var btnRow = new HBoxContainer();
-    _retryDroppedBtn = new Button { Text = "重试全部丢包", Disabled = true };
-    _retryDroppedBtn.Pressed += OnRetryAllDropped;
-    btnRow.AddChild(_retryDroppedBtn);
-
-    _clearDroppedBtn = new Button { Text = "清空丢包", Disabled = true };
-    _clearDroppedBtn.Pressed += OnClearDropped;
-    btnRow.AddChild(_clearDroppedBtn);
-
-    droppedSection.AddChild(btnRow);
-
-    parent.AddChild(droppedSection);
-    RefreshDroppedUI();
+    // 丢包重试 UI 信号连接
+    RetryDroppedBtn.Pressed += OnRetryAllDropped;
+    ClearDroppedBtn.Pressed += OnClearDropped;
   }
 
   public void OnResolved()
@@ -785,29 +759,26 @@ public partial class GuessingPanel : Control
 
   private void RefreshDroppedUI()
   {
-    if (_droppedList == null || _retryDroppedBtn == null || _clearDroppedBtn == null)
-      return;
-
     var service = _guessProcessingService;
     if (service == null)
       return;
 
-    _droppedList.Clear();
+    DroppedList.Clear();
     var dropped = service.GetDroppedGuesses();
     if (dropped.Count == 0)
     {
-      _retryDroppedBtn.Disabled = true;
-      _clearDroppedBtn.Disabled = true;
+      RetryDroppedBtn.Disabled = true;
+      ClearDroppedBtn.Disabled = true;
       return;
     }
 
     foreach (var d in dropped)
     {
-      _droppedList.AddItem($"[{d.Id}] {d.RawText}");
+      DroppedList.AddItem($"[{d.Id}] {d.RawText}");
     }
 
-    _retryDroppedBtn.Disabled = false;
-    _clearDroppedBtn.Disabled = false;
+    RetryDroppedBtn.Disabled = false;
+    ClearDroppedBtn.Disabled = false;
   }
 
   private async void OnRetryAllDropped()
@@ -821,8 +792,8 @@ public partial class GuessingPanel : Control
       return;
 
     _log.Print($"OnRetryAllDropped: retrying {dropped.Count} dropped guesses.");
-    _retryDroppedBtn!.Disabled = true;
-    _retryDroppedBtn.Text = "重试中...";
+    RetryDroppedBtn.Disabled = true;
+    RetryDroppedBtn.Text = "重试中...";
 
     var successCount = 0;
     var failCount = 0;
@@ -840,7 +811,7 @@ public partial class GuessingPanel : Control
     await Task.WhenAll(tasks);
 
     _log.Print($"OnRetryAllDropped: done, success={successCount}, fail={failCount}");
-    _retryDroppedBtn.Text = "重试全部丢包";
+    RetryDroppedBtn.Text = "重试全部丢包";
     RefreshDroppedUI();
   }
 
