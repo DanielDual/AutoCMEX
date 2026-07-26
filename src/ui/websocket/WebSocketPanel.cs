@@ -1,7 +1,6 @@
 namespace AutoCMEX.UI.WebSocket;
 
 using System;
-using System.Timers;
 using AutoCMEX.Core.WebSocket;
 using Godot;
 
@@ -13,7 +12,7 @@ public partial class WebSocketPanel : Control
   private IWebSocketServer? _server;
   private string _mode = "Server";
   private string _lastEvent = "";
-  private System.Timers.Timer? _refreshTimer;
+  private Timer? _refreshTimer;
 
   private Label? _statusLabel;
   private Label? _modeLabel;
@@ -49,24 +48,34 @@ public partial class WebSocketPanel : Control
     _server.OnClientDisconnected += OnDisconnected;
     _startStopBtn.Pressed += OnStartStopPressed;
 
-    _refreshTimer = new System.Timers.Timer(1000);
-    _refreshTimer.Elapsed += (_, _) => CallDeferred(nameof(RefreshUI));
-    _refreshTimer.AutoReset = true;
-    _refreshTimer.Start();
+    // 使用 Godot 原生 Timer 节点替代 System.Timers.Timer，与主循环天然同步
+    _refreshTimer = new Timer();
+    _refreshTimer.WaitTime = 1.0;
+    _refreshTimer.Autostart = true;
+    _refreshTimer.Timeout += OnRefreshTimerTimeout;
+    AddChild(_refreshTimer);
 
     RefreshUI();
   }
 
   public override void _ExitTree()
   {
-    _refreshTimer?.Stop();
-    _refreshTimer?.Dispose();
+    if (_refreshTimer != null)
+    {
+      _refreshTimer.Timeout -= OnRefreshTimerTimeout;
+      _refreshTimer.Stop();
+    }
 
     if (_server != null)
     {
       _server.OnClientConnected -= OnConnected;
       _server.OnClientDisconnected -= OnDisconnected;
     }
+  }
+
+  private void OnRefreshTimerTimeout()
+  {
+    RefreshUI();
   }
 
   private void OnConnected(string id)

@@ -8,7 +8,6 @@ using AutoCMEX.Core.Guessing;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Core.WebSocket;
-using AutoCMEX.Models;
 using AutoCMEX.UI.Logging;
 using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
@@ -113,54 +112,9 @@ public partial class MainWindow
     );
 
     // 初始化 WebSocket（Server 或 Client 模式）
-    var settings = _dataManager.Settings;
     var wsLog = AppLogs.GetOrCreate().GetLogger("WebSocket");
-    var protocolHandler = new ProtocolHandler();
-    var messageRouter = new MessageRouter(wsLog);
-
-    var commandHandler = new CommandHandler(wsLog, _guessProcessingService);
-    var eventHandler = new AutoCMEX.Core.WebSocket.EventHandler(wsLog);
-    messageRouter.RegisterHandler(commandHandler);
-    messageRouter.RegisterHandler(eventHandler);
-
-    var isClientMode = string.Equals(
-      settings.WebSocketMode,
-      "Client",
-      StringComparison.OrdinalIgnoreCase
-    );
-
-    if (isClientMode && !string.IsNullOrEmpty(settings.KoishiWebSocketUrl))
-    {
-      var clientUrl = BuildClientUrl(settings);
-      _webSocketServer = new WebSocketClient(
-        clientUrl,
-        protocolHandler,
-        messageRouter,
-        reconnectIntervalMs: 5000,
-        heartbeatIntervalMs: settings.WebSocketHeartbeatIntervalMs,
-        wsLog
-      );
-    }
-    else
-    {
-      var connectionManager = new ConnectionManager(settings.WebSocketMaxConnections);
-      var heartbeatService = new HeartbeatService(
-        settings.WebSocketHeartbeatIntervalMs,
-        settings.WebSocketHeartbeatTimeoutMs,
-        wsLog
-      );
-
-      _webSocketServer = new WebSocketServer(
-        settings.WebSocketPort,
-        connectionManager,
-        protocolHandler,
-        messageRouter,
-        heartbeatService,
-        settings.WebSocketEnableAuth,
-        settings.WebSocketAuthToken,
-        wsLog
-      );
-    }
+    var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService);
+    _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
     // 通知 AutoInject 依赖已就绪
     this.Provide();
@@ -256,88 +210,18 @@ public partial class MainWindow
     // 停止旧实例
     await _webSocketServer.StopAsync();
 
-    var settings = _dataManager.Settings;
-    var protocolHandler = new ProtocolHandler();
-    var messageRouter = new MessageRouter(wsLog);
-
-    var commandHandler = new CommandHandler(wsLog, _guessProcessingService);
-    var eventHandler = new AutoCMEX.Core.WebSocket.EventHandler(wsLog);
-    messageRouter.RegisterHandler(commandHandler);
-    messageRouter.RegisterHandler(eventHandler);
-
-    var isClientMode = string.Equals(
-      settings.WebSocketMode,
-      "Client",
-      StringComparison.OrdinalIgnoreCase
-    );
-
-    if (isClientMode && !string.IsNullOrEmpty(settings.KoishiWebSocketUrl))
-    {
-      var clientUrl = BuildClientUrl(settings);
-      _webSocketServer = new WebSocketClient(
-        clientUrl,
-        protocolHandler,
-        messageRouter,
-        reconnectIntervalMs: 5000,
-        heartbeatIntervalMs: settings.WebSocketHeartbeatIntervalMs,
-        wsLog
-      );
-    }
-    else
-    {
-      var connectionManager = new ConnectionManager(settings.WebSocketMaxConnections);
-      var heartbeatService = new HeartbeatService(
-        settings.WebSocketHeartbeatIntervalMs,
-        settings.WebSocketHeartbeatTimeoutMs,
-        wsLog
-      );
-
-      _webSocketServer = new WebSocketServer(
-        settings.WebSocketPort,
-        connectionManager,
-        protocolHandler,
-        messageRouter,
-        heartbeatService,
-        settings.WebSocketEnableAuth,
-        settings.WebSocketAuthToken,
-        wsLog
-      );
-    }
+    // 使用初始化器创建新实例
+    var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService);
+    _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
     // 更新面板绑定
     if (_panels.TryGetValue("websocket", out var panel) && panel is WebSocketPanel wsPanel)
     {
-      wsPanel.SetServer(_webSocketServer, settings.WebSocketMode);
+      wsPanel.SetServer(_webSocketServer, _dataManager.Settings.WebSocketMode);
     }
 
     await _webSocketServer.StartAsync();
     wsLog.Print("MainWindow: WebSocket restarted.");
-  }
-
-  /// <summary>
-  /// 构建 Client 模式的 WebSocket URL（自动补全 ws:// 前缀和 Token）
-  /// </summary>
-  private static string BuildClientUrl(AppSettings settings)
-  {
-    var url = settings.KoishiWebSocketUrl.Trim();
-
-    // 自动补全 ws:// 前缀
-    if (
-      !url.StartsWith("ws://", StringComparison.OrdinalIgnoreCase)
-      && !url.StartsWith("wss://", StringComparison.OrdinalIgnoreCase)
-    )
-    {
-      url = "ws://" + url;
-    }
-
-    // 自动附加 Token
-    if (settings.WebSocketEnableAuth && !string.IsNullOrEmpty(settings.WebSocketAuthToken))
-    {
-      var separator = url.Contains('?') ? "&" : "?";
-      url = $"{url}{separator}token={Uri.EscapeDataString(settings.WebSocketAuthToken)}";
-    }
-
-    return url;
   }
 
   /// <summary>

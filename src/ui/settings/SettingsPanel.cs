@@ -8,6 +8,7 @@ using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
+using AutoCMEX.Services;
 using Chickensoft.AutoInject;
 using Chickensoft.Introspection;
 using Chickensoft.Log;
@@ -375,10 +376,7 @@ public partial class SettingsPanel : Control
   {
     try
     {
-      Core.Ai.IAiService service =
-        model.ApiFormat == "Anthropic"
-          ? new Core.Ai.AnthropicService(model)
-          : new Core.Ai.OpenAiService(model);
+      var service = AiServiceFactory.CreateService(model);
 
       return await service.TestConnectionAsync();
     }
@@ -513,7 +511,7 @@ public partial class SettingsPanel : Control
         var destDir = System.IO.Path.Combine(dir, "auto-cmex");
 
         // 使用 DirAccess 复制
-        CopyPluginDir(sourceDir, destDir);
+        PluginInstaller.CopyPluginDir(sourceDir, destDir);
 
         _settings.KoishiPluginPath = destDir;
         DataManager?.TriggerAutoSave();
@@ -529,36 +527,6 @@ public partial class SettingsPanel : Control
     };
     installRow.AddChild(installBtn);
     container.AddChild(installRow);
-  }
-
-  /// <summary>
-  /// 复制插件目录
-  /// </summary>
-  private static void CopyPluginDir(string sourceDir, string destDir)
-  {
-    var dir = DirAccess.Open(sourceDir);
-    if (dir == null)
-      return;
-
-    DirAccess.MakeDirAbsolute(destDir);
-
-    dir.ListDirBegin();
-    var fileName = dir.GetNext();
-    while (!string.IsNullOrEmpty(fileName))
-    {
-      if (fileName != "." && fileName != "..")
-      {
-        var srcPath = System.IO.Path.Combine(sourceDir, fileName);
-        var dstPath = System.IO.Path.Combine(destDir, fileName);
-
-        if (dir.CurrentIsDir())
-          CopyPluginDir(srcPath, dstPath);
-        else
-          DirAccess.CopyAbsolute(srcPath, dstPath);
-      }
-      fileName = dir.GetNext();
-    }
-    dir.ListDirEnd();
   }
 
   /// <summary>

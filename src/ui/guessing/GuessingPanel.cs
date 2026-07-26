@@ -2,6 +2,7 @@ namespace AutoCMEX.UI.Guessing;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -233,6 +234,9 @@ public partial class GuessingPanel : Control
     if (_dm != null)
     {
       _dm.LoadAll();
+      // 订阅 ObservableCollection 的 CollectionChanged 事件实现自动 UI 更新
+      _dm.Bosses.CollectionChanged += (_, _) => CallDeferred(nameof(RefreshSpellCardTree));
+      _dm.Aliases.CollectionChanged += (_, _) => CallDeferred(nameof(RefreshAliasTree));
       _dm.DataChanged += () => CallDeferred(nameof(RefreshSpellCardTree));
       UpdateFuzzifyButtonState();
       RefreshAll();
@@ -415,18 +419,16 @@ public partial class GuessingPanel : Control
   {
     if (_dm == null)
       return;
-    ImportResult<List<Boss>> result;
-    if (path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-      result = ExcelImporter.ImportSpellCardTable(path);
-    else
-      result = CsvImporter.ImportSpellCardTable(path);
+    var importer = ImporterFactory.Create(path);
+    ImportResult<List<Boss>> result = importer.ImportSpellCardTable(path);
     if (!result.IsSuccess)
     {
       ShowError(result.ErrorMessage);
       return;
     }
     _dm.Bosses.Clear();
-    _dm.Bosses.AddRange(result.Data!);
+    foreach (var boss in result.Data!)
+      _dm.Bosses.Add(boss);
     _dm.TriggerAutoSave();
     RefreshAll();
   }
@@ -463,7 +465,11 @@ public partial class GuessingPanel : Control
       return;
     var parent = selected.GetParent();
     if (parent == null || parent == SpellCardTree.GetRoot())
-      _dm.Bosses.RemoveAll(b => b.Name == selected.GetText(0));
+    {
+      var toRemove = _dm.Bosses.Where(b => b.Name == selected.GetText(0)).ToList();
+      foreach (var boss in toRemove)
+        _dm.Bosses.Remove(boss);
+    }
     else
     {
       var index = selected.GetMetadata(0).AsInt32();
@@ -598,18 +604,16 @@ public partial class GuessingPanel : Control
   {
     if (_dm == null)
       return;
-    ImportResult<List<CreatorAlias>> result;
-    if (path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-      result = ExcelImporter.ImportAliasTable(path);
-    else
-      result = CsvImporter.ImportAliasTable(path);
+    var importer = ImporterFactory.Create(path);
+    ImportResult<List<CreatorAlias>> result = importer.ImportAliasTable(path);
     if (!result.IsSuccess)
     {
       ShowError(result.ErrorMessage);
       return;
     }
     _dm.Aliases.Clear();
-    _dm.Aliases.AddRange(result.Data!);
+    foreach (var alias in result.Data!)
+      _dm.Aliases.Add(alias);
     _dm.TriggerAutoSave();
     RefreshAliasTree();
   }
@@ -693,7 +697,7 @@ public partial class GuessingPanel : Control
           : GuessProcessingService
       );
 
-    var result = await service.ProcessManualAsync(text, _currentBoss);
+    var result = await service.ProcessAsync(text);
     RefreshDroppedUI();
     if (!result.IsGuess)
     {
