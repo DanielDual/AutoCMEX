@@ -6,6 +6,7 @@ using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoCMEX.Core.Logging;
+using AutoCMEX.Models;
 using Chickensoft.Log;
 
 /// <summary>
@@ -118,6 +119,34 @@ public class WebSocketClient : IWebSocketServer, IDisposable
     _ws?.Dispose();
     _ws = null;
     _log.Print("WebSocketClient stopped.");
+  }
+
+  /// <summary>
+  /// 根据设置构建 Client 模式的 WebSocket URL（自动补全 ws:// 前缀和 Token）。
+  /// </summary>
+  /// <param name="settings">应用设置。</param>
+  /// <returns>完整的 WebSocket URL。</returns>
+  public static string BuildClientUrl(AppSettings settings)
+  {
+    var url = settings.KoishiWebSocketUrl.Trim();
+
+    // 自动补全 ws:// 前缀
+    if (
+      !url.StartsWith("ws://", StringComparison.OrdinalIgnoreCase)
+      && !url.StartsWith("wss://", StringComparison.OrdinalIgnoreCase)
+    )
+    {
+      url = "ws://" + url;
+    }
+
+    // 自动附加 Token
+    if (settings.WebSocketEnableAuth && !string.IsNullOrEmpty(settings.WebSocketAuthToken))
+    {
+      var separator = url.Contains('?') ? "&" : "?";
+      url = $"{url}{separator}token={Uri.EscapeDataString(settings.WebSocketAuthToken)}";
+    }
+
+    return url;
   }
 
   /// <inheritdoc/>
