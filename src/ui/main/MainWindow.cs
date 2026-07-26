@@ -61,6 +61,31 @@ public partial class MainWindow
 
   #endregion
 
+  #region Panel Nodes (instanced in scene)
+
+  [Node("MainContainer/RightPanel/IntegrationPanel")]
+  public Control IntegrationPanelNode { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel/GuessingPanel")]
+  public Control GuessingPanelNode { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel/InfoPanel")]
+  public Control InfoPanelNode { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel/SettingsPanel")]
+  public Control SettingsPanelNode { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel/HelpPanel")]
+  public Control HelpPanelNode { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel/LogPanel")]
+  public LogPanel LogPanelNode { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel/WebSocketPanel")]
+  public WebSocketPanel WebSocketPanelNode { get; set; } = default!;
+
+  #endregion
+
   #region Provided Services
 
   private DataManager _dataManager = default!;
@@ -143,60 +168,26 @@ public partial class MainWindow
     LogBtn.Pressed += () => SwitchPanel("logging");
     WebSocketBtn.Pressed += () => SwitchPanel("websocket");
 
-    PreloadPanels();
-    SetupLogPanel();
-    SetupWebSocketPanel();
+    // 注册场景中的面板
+    _panels["integration"] = IntegrationPanelNode;
+    _panels["guessing"] = GuessingPanelNode;
+    _panels["info"] = InfoPanelNode;
+    _panels["settings"] = SettingsPanelNode;
+    _panels["help"] = HelpPanelNode;
+    _panels["logging"] = LogPanelNode;
+    _panels["websocket"] = WebSocketPanelNode;
+
+    // 绑定日志面板
+    var logService = AppLogs.GetOrCreate();
+    LogPanelNode.BindToService(logService);
+
+    // 绑定 WebSocket 面板
+    WebSocketPanelNode.SetServer(_webSocketServer, _dataManager.Settings.WebSocketMode);
+
     SwitchPanel(DefaultPanel);
 
     // 启动 WebSocket 服务器
     _ = _webSocketServer.StartAsync();
-  }
-
-  /// <summary>
-  /// 预加载所有板块场景
-  /// </summary>
-  private void PreloadPanels()
-  {
-    LoadPanel("integration", "res://src/ui/integration/IntegrationPanel.tscn");
-    LoadPanel("guessing", "res://src/ui/guessing/GuessingPanel.tscn");
-    LoadPanel("info", "res://src/ui/info/InfoPanel.tscn");
-    LoadPanel("settings", "res://src/ui/settings/SettingsPanel.tscn");
-    LoadPanel("help", "res://src/ui/help/HelpPanel.tscn");
-  }
-
-  /// <summary>
-  /// 实例化并绑定日志面板。
-  /// </summary>
-  private void SetupLogPanel()
-  {
-    var path = "res://src/ui/logging/LogPanel.tscn";
-    if (!ResourceLoader.Exists(path))
-      return;
-    var scene = ResourceLoader.Load<PackedScene>(path);
-    var panel = scene.Instantiate<LogPanel>();
-    panel.Visible = false;
-    panel.SetAnchorsPreset(LayoutPreset.FullRect);
-    RightPanel.AddChild(panel);
-    _panels["logging"] = panel;
-    var logService = AppLogs.GetOrCreate();
-    panel.BindToService(logService);
-  }
-
-  /// <summary>
-  /// 实例化并绑定 WebSocket 面板。
-  /// </summary>
-  private void SetupWebSocketPanel()
-  {
-    var path = "res://src/ui/websocket/WebSocketPanel.tscn";
-    if (!ResourceLoader.Exists(path))
-      return;
-    var scene = ResourceLoader.Load<PackedScene>(path);
-    var panel = scene.Instantiate<WebSocketPanel>();
-    panel.Visible = false;
-    panel.SetAnchorsPreset(LayoutPreset.FullRect);
-    panel.SetServer(_webSocketServer, _dataManager.Settings.WebSocketMode);
-    RightPanel.AddChild(panel);
-    _panels["websocket"] = panel;
   }
 
   /// <summary>
@@ -215,29 +206,10 @@ public partial class MainWindow
     _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
     // 更新面板绑定
-    if (_panels.TryGetValue("websocket", out var panel) && panel is WebSocketPanel wsPanel)
-    {
-      wsPanel.SetServer(_webSocketServer, _dataManager.Settings.WebSocketMode);
-    }
+    WebSocketPanelNode.SetServer(_webSocketServer, _dataManager.Settings.WebSocketMode);
 
     await _webSocketServer.StartAsync();
     wsLog.Print("MainWindow: WebSocket restarted.");
-  }
-
-  /// <summary>
-  /// 加载单个板块场景
-  /// </summary>
-  private void LoadPanel(string key, string path)
-  {
-    if (!ResourceLoader.Exists(path))
-      return;
-
-    var scene = ResourceLoader.Load<PackedScene>(path);
-    var panel = scene.Instantiate<Control>();
-    panel.Visible = false;
-    panel.SetAnchorsPreset(LayoutPreset.FullRect);
-    RightPanel.AddChild(panel);
-    _panels[key] = panel;
   }
 
   /// <summary>

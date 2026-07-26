@@ -1,6 +1,10 @@
 [gd_scene format=3 uid="uid://olq3bui2uhly"]
 
 [ext_resource type="Script" uid="uid://cxr7py3jcoul" path="res://src/ui/main/MainWindow.cs" id="1_h87f7"]
+[ext_resource type="Script" uid="uid://c41htm0llrugj" path="res://src/ui/guessing/GuessingPanel.cs" id="2_guessing"]
+[ext_resource type="Script" uid="uid://cmxsol0aje66q" path="res://src/ui/settings/SettingsPanel.cs" id="3_settings"]
+[ext_resource type="Script" uid="uid://dqi1jkjb7r7xb" path="res://src/ui/logging/LogPanel.cs" id="4_log"]
+[ext_resource type="Script" uid="uid://jk08wt8jy0bg" path="res://src/ui/websocket/WebSocketPanel.cs" id="5_ws"]
 
 [node name="Control2" type="Control" unique_id=764712909]
 layout_mode = 3
@@ -86,3 +90,88 @@ horizontal_alignment = 1
 [node name="RightPanel" type="Control" parent="MainContainer" unique_id=1925822448]
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="IntegrationPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187082]
+visible = false
+layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PlaceholderLabel" type="Label" parent="MainContainer/RightPanel/IntegrationPanel" unique_id=1266187083]
+layout_mode = 0
+text = "整合板块 - 暂不开发"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="GuessingPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187084]
+visible = false
+layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("2_guessing")
+
+[node name="InfoPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187085]
+visible = false
+layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PlaceholderLabel" type="Label" parent="MainContainer/RightPanel/InfoPanel" unique_id=1266187086]
+layout_mode = 0
+text = "信息板块 - 暂不开发"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="SettingsPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187087]
+visible = false
+layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("3_settings")
+
+[node name="HelpPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187088]
+visible = false
+layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="PlaceholderLabel" type="Label" parent="MainContainer/RightPanel/HelpPanel" unique_id=1266187089]
+layout_mode = 0
+text = "帮助板块 - 待开发"
+horizontal_alignment = 1
+vertical_alignment = 1
+
+[node name="LogPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187090]
+visible = false
+layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("4_log")
+
+[node name="WebSocketPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187091]
+visible = false
+layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("5_ws")
