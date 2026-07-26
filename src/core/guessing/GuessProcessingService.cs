@@ -119,13 +119,7 @@ public class GuessProcessingService : IGuessProcessingService
 
     try
     {
-      var fuzzifier = new AiFuzzifier(
-        _aiServiceFactory,
-        _dataManager.Aliases,
-        _dataManager.Bosses,
-        currentBoss,
-        _log
-      );
+      var fuzzifier = new AiFuzzifier(_aiServiceFactory, _dataManager.Aliases, currentBoss, _log);
       var fuzzified = await fuzzifier.FuzzifyAsync(input);
 
       if (AiFuzzifier.IsNotAGuessResult(fuzzified) || string.IsNullOrWhiteSpace(fuzzified))

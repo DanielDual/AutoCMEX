@@ -21,20 +21,17 @@ public class AiFuzzifier
 
   private readonly AiServiceFactory _aiServiceFactory;
   private readonly List<CreatorAlias> _aliasTable;
-  private readonly List<Boss> _bosses;
   private readonly Boss _currentBoss;
   private readonly ILog _log;
 
   public AiFuzzifier(
     AiServiceFactory aiServiceFactory,
     List<CreatorAlias> aliasTable,
-    List<Boss> bosses,
     Boss currentBoss
   )
     : this(
       aiServiceFactory,
       aliasTable,
-      bosses,
       currentBoss,
       AppLogs.GetOrCreate().GetLogger(nameof(AiFuzzifier))
     ) { }
@@ -42,14 +39,12 @@ public class AiFuzzifier
   public AiFuzzifier(
     AiServiceFactory aiServiceFactory,
     List<CreatorAlias> aliasTable,
-    List<Boss> bosses,
     Boss currentBoss,
     ILog log
   )
   {
     _aiServiceFactory = aiServiceFactory;
     _aliasTable = aliasTable;
-    _bosses = bosses;
     _currentBoss = currentBoss;
     _log = log;
   }

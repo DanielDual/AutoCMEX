@@ -21,9 +21,6 @@ public interface ILogService : IDisposable
   /// <param name="moduleName">模块名（一般为类名）。</param>
   ILog GetLogger(string moduleName);
 
-  /// <summary>刷新所有写入器。</summary>
-  void Flush();
-
   /// <summary>触发日志文件轮转检查（删除超过保留数量的旧文件）。</summary>
   void RotateIfNeeded();
 

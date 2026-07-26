@@ -47,4 +47,45 @@ public class LogEntry
   {
     Timestamp = DateTime.UtcNow;
   }
+
+  /// <summary>
+  /// 从 Chickensoft.Log 格式化字符串创建日志条目。
+  /// 解析格式 "{Prefix} (ModuleName): Message"。
+  /// </summary>
+  /// <param name="defaultLevel">默认日志级别。</param>
+  /// <param name="formatted">格式化日志字符串。</param>
+  /// <returns>解析后的日志条目。</returns>
+  public static LogEntry FromFormattedString(LogLevel defaultLevel, string? formatted)
+  {
+    var s = formatted ?? string.Empty;
+    var entry = new LogEntry { Level = defaultLevel, Message = s };
+
+    var colonIdx = s.IndexOf(':');
+    if (colonIdx <= 0)
+    {
+      entry.Module = string.Empty;
+      return entry;
+    }
+
+    var head = s[..colonIdx];
+    var msg = s[(colonIdx + 1)..].TrimStart();
+
+    var openParen = head.IndexOf('(');
+    var closeParen = head.IndexOf(')');
+    if (openParen > 0 && closeParen > openParen)
+    {
+      var levelStr = head[..openParen].Trim();
+      var module = head[(openParen + 1)..closeParen];
+      entry.Module = module;
+      entry.Level = levelStr.ToLowerInvariant() switch
+      {
+        "warn" or "warning" => LogLevel.Warn,
+        "error" or "err" => LogLevel.Error,
+        _ => defaultLevel,
+      };
+      entry.Message = msg;
+    }
+
+    return entry;
+  }
 }

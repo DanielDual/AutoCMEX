@@ -164,8 +164,7 @@ public partial class GuessPipeline
     return PipelineResult.Success(response, details);
   }
 
-  [GeneratedRegex(@"^(\d+)(\S+)$", RegexOptions.Compiled)]
-  private static partial Regex PairPattern();
+  // PairRegex 已统一到 GuessParser.PairRegex，避免重复定义
 
   /// <summary>
   /// 将猜测文本中的别名转换为主名
@@ -179,7 +178,7 @@ public partial class GuessPipeline
     for (int i = 0; i < parts.Length; i++)
     {
       var part = parts[i];
-      var match = PairPattern().Match(part);
+      var match = GuessParser.PairRegex().Match(part);
       if (!match.Success)
         continue;
 

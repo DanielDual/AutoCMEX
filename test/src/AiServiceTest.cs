@@ -82,7 +82,7 @@ public class AiServiceTest : TestClass
         },
       };
 
-      var fuzzifier = new AiFuzzifier(factory, new List<CreatorAlias>(), new List<Boss>(), boss);
+      var fuzzifier = new AiFuzzifier(factory, new List<CreatorAlias>(), boss);
       fuzzifier.ShouldNotBeNull();
     }
     finally

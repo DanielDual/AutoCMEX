@@ -157,38 +157,8 @@ public class DataManager : IDisposable
 
   private AppSettings CloneSettingsForSave()
   {
-    var clone = new AppSettings
-    {
-      WebSocketPort = _settings.WebSocketPort,
-      MessageFilterMode = _settings.MessageFilterMode,
-      KoishiPluginPath = _settings.KoishiPluginPath,
-      ActiveAiModelId = _settings.ActiveAiModelId,
-      AiTimeoutSeconds = _settings.AiTimeoutSeconds,
-      WebSocketEnableAuth = _settings.WebSocketEnableAuth,
-      WebSocketAuthToken = _settings.WebSocketAuthToken,
-      WebSocketMaxConnections = _settings.WebSocketMaxConnections,
-      WebSocketHeartbeatIntervalMs = _settings.WebSocketHeartbeatIntervalMs,
-      WebSocketHeartbeatTimeoutMs = _settings.WebSocketHeartbeatTimeoutMs,
-      WebSocketMode = _settings.WebSocketMode,
-      KoishiWebSocketUrl = _settings.KoishiWebSocketUrl,
-      SelectedBossIndex = _settings.SelectedBossIndex,
-    };
-
-    foreach (var model in _settings.AiModels)
-    {
-      clone.AiModels.Add(
-        new AiModelConfig
-        {
-          Id = model.Id,
-          ApiFormat = model.ApiFormat,
-          EndpointUrl = model.EndpointUrl,
-          ModelId = model.ModelId,
-          EncryptedApiKey = _encryptor.Encrypt(model.EncryptedApiKey),
-        }
-      );
-    }
-
-    return clone;
+    var json = JsonSerializer.Serialize(_settings);
+    return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
   }
 
   private T? LoadJson<T>(string fileName)
