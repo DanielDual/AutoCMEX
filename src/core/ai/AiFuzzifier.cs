@@ -20,13 +20,13 @@ public class AiFuzzifier
   public const int MaxRetries = 3;
 
   private readonly AiServiceFactory _aiServiceFactory;
-  private readonly List<CreatorAlias> _aliasTable;
+  private readonly IReadOnlyList<CreatorAlias> _aliasTable;
   private readonly Boss _currentBoss;
   private readonly ILog _log;
 
   public AiFuzzifier(
     AiServiceFactory aiServiceFactory,
-    List<CreatorAlias> aliasTable,
+    IReadOnlyList<CreatorAlias> aliasTable,
     Boss currentBoss
   )
     : this(
@@ -38,7 +38,7 @@ public class AiFuzzifier
 
   public AiFuzzifier(
     AiServiceFactory aiServiceFactory,
-    List<CreatorAlias> aliasTable,
+    IReadOnlyList<CreatorAlias> aliasTable,
     Boss currentBoss,
     ILog log
   )

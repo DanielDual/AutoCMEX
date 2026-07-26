@@ -15,14 +15,10 @@ public interface IGuessProcessingService
   Boss? ResolveCurrentBoss();
 
   /// <summary>
-  /// 处理托管猜测消息
+  /// 处理猜测文本，内部解析当前 Boss 并从设置读取过滤模式。
+  /// 调用方自行判断 <see cref="GuessProcessingResult.IsGuess"/> 和 <see cref="GuessProcessingResult.Status"/> 来处理结果。
   /// </summary>
-  Task<GuessProcessingResult> ProcessManagedAsync(string rawText);
-
-  /// <summary>
-  /// 处理手动输入的猜测消息
-  /// </summary>
-  Task<GuessProcessingResult> ProcessManualAsync(string rawText, Boss? currentBoss);
+  Task<GuessProcessingResult> ProcessAsync(string rawText);
 
   /// <summary>
   /// 获取丢包列表（只读）

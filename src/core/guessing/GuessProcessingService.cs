@@ -64,11 +64,7 @@ public class GuessProcessingService : IGuessProcessingService
   }
 
   /// <inheritdoc/>
-  public Task<GuessProcessingResult> ProcessManualAsync(string rawText, Boss? currentBoss) =>
-    ProcessAsync(rawText, currentBoss, filterMode: "strict", treatFailureAsNotGuess: false);
-
-  /// <inheritdoc/>
-  public Task<GuessProcessingResult> ProcessManagedAsync(string rawText)
+  public Task<GuessProcessingResult> ProcessAsync(string rawText)
   {
     var currentBoss = ResolveCurrentBoss();
     return ProcessAsync(

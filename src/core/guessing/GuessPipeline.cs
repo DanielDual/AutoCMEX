@@ -14,15 +14,18 @@ using Chickensoft.Log;
 public partial class GuessPipeline
 {
   private readonly IGuessResponseHandler _responseHandler;
-  private readonly List<CreatorAlias> _aliasTable;
+  private readonly IReadOnlyList<CreatorAlias> _aliasTable;
   private readonly ILog _log;
 
-  public GuessPipeline(IGuessResponseHandler responseHandler, List<CreatorAlias> aliasTable)
+  public GuessPipeline(
+    IGuessResponseHandler responseHandler,
+    IReadOnlyList<CreatorAlias> aliasTable
+  )
     : this(responseHandler, aliasTable, AppLogs.GetOrCreate().GetLogger(nameof(GuessPipeline))) { }
 
   public GuessPipeline(
     IGuessResponseHandler responseHandler,
-    List<CreatorAlias> aliasTable,
+    IReadOnlyList<CreatorAlias> aliasTable,
     ILog log
   )
   {
