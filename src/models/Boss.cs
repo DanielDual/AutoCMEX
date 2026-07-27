@@ -1,6 +1,6 @@
 namespace AutoCMEX.Models;
 
-using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 /// <summary>
 /// Boss 数据模型，包含符卡列表
@@ -11,5 +11,5 @@ public class Boss
   public string Name { get; set; } = string.Empty;
 
   /// <summary>该 Boss 下的符卡列表</summary>
-  public List<SpellCard> SpellCards { get; set; } = new();
+  public ObservableCollection<SpellCard> SpellCards { get; set; } = new();
 }

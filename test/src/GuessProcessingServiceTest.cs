@@ -2,6 +2,7 @@ namespace AutoCMEX;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Threading.Tasks;
 using AutoCMEX.Core.Ai;
@@ -27,7 +28,7 @@ public class GuessProcessingServiceTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },
@@ -58,7 +59,7 @@ public class GuessProcessingServiceTest : TestClass
       new Boss
       {
         Name = "TestBoss",
-        SpellCards = new List<SpellCard>
+        SpellCards = new ObservableCollection<SpellCard>
         {
           new() { Name = "Card1", Creator = "Alice" },
         },
@@ -88,7 +89,7 @@ public class GuessProcessingServiceTest : TestClass
       new Boss
       {
         Name = "TestBoss",
-        SpellCards = new List<SpellCard>
+        SpellCards = new ObservableCollection<SpellCard>
         {
           new() { Name = "Card1", Creator = "Alice" },
           new() { Name = "Card2", Creator = "Bob" },

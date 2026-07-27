@@ -3,6 +3,7 @@ namespace AutoCMEX.UI.Guessing;
 using System;
 using System.Collections.Generic;
 using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -136,8 +137,94 @@ public partial class GuessingPanel : Control
   private DataManager? _dm;
   private IGuessProcessingService? _guessProcessingService;
   private Boss? _currentBoss;
+  private Boss? _subscribedBoss;
+  private readonly HashSet<CreatorAlias> _subscribedCreators = new();
   private bool _rebuildingAliasTree;
   private ILog _log = AppLogs.GetOrCreate().GetLogger(nameof(GuessingPanel));
+
+  private void SubscribeToCurrentBoss(Boss? boss)
+  {
+    if (_subscribedBoss == boss)
+      return;
+
+    if (_subscribedBoss != null)
+    {
+      _subscribedBoss.SpellCards.CollectionChanged -= OnSpellCardsChanged;
+      foreach (var card in _subscribedBoss.SpellCards)
+        card.PropertyChanged -= OnSpellCardPropertyChanged;
+    }
+
+    _subscribedBoss = boss;
+    _currentBoss = boss;
+
+    if (_subscribedBoss != null)
+    {
+      _subscribedBoss.SpellCards.CollectionChanged += OnSpellCardsChanged;
+      foreach (var card in _subscribedBoss.SpellCards)
+        card.PropertyChanged += OnSpellCardPropertyChanged;
+    }
+  }
+
+  private void OnSpellCardsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+  {
+    if (e.Action == NotifyCollectionChangedAction.Add && _subscribedBoss != null)
+    {
+      foreach (SpellCard card in e.NewItems!)
+        card.PropertyChanged += OnSpellCardPropertyChanged;
+    }
+    else if (e.Action == NotifyCollectionChangedAction.Remove && _subscribedBoss != null)
+    {
+      foreach (SpellCard card in e.OldItems!)
+        card.PropertyChanged -= OnSpellCardPropertyChanged;
+    }
+
+    CallDeferred(nameof(RefreshSpellCardTree));
+  }
+
+  private void OnSpellCardPropertyChanged(object? sender, PropertyChangedEventArgs e)
+  {
+    if (sender is not SpellCard card || _currentBoss == null)
+      return;
+
+    var index = _currentBoss.SpellCards.IndexOf(card);
+    if (index < 0)
+      return;
+
+    var root = SpellCardTree.GetRoot();
+    var bossItem = root?.GetChild(0);
+    var cardItem = bossItem?.GetChild(index);
+    if (cardItem == null)
+      return;
+
+    switch (e.PropertyName)
+    {
+      case nameof(SpellCard.Name):
+        cardItem.SetText(0, card.Name);
+        break;
+      case nameof(SpellCard.Creator):
+        cardItem.SetText(1, string.IsNullOrEmpty(card.Creator) ? "(未揭晓)" : card.Creator);
+        break;
+      case nameof(SpellCard.IsGuessedOut):
+        cardItem.SetChecked(2, card.IsGuessedOut);
+        break;
+    }
+  }
+
+  private void SubscribeToCreator(CreatorAlias creator)
+  {
+    if (_subscribedCreators.Add(creator))
+      creator.Aliases.CollectionChanged += OnCreatorAliasesChanged;
+  }
+
+  private void OnCreatorAliasesChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+    CallDeferred(nameof(RefreshAliasTree));
+
+  private void UnsubscribeAllCreators()
+  {
+    foreach (var creator in _subscribedCreators)
+      creator.Aliases.CollectionChanged -= OnCreatorAliasesChanged;
+    _subscribedCreators.Clear();
+  }
 
   public override void _Notification(int what)
   {
@@ -272,10 +359,10 @@ public partial class GuessingPanel : Control
       }
 
       BossSelect.Select(selectedIndex);
-      _currentBoss = _dm.Bosses[selectedIndex];
+      SubscribeToCurrentBoss(_dm.Bosses[selectedIndex]);
     }
     else
-      _currentBoss = null;
+      SubscribeToCurrentBoss(null);
   }
 
   private void RefreshSpellCardTree()
@@ -342,9 +429,8 @@ public partial class GuessingPanel : Control
     if (_dm != null && index >= 0 && index < _dm.Bosses.Count)
     {
       _dm.Settings.SelectedBossIndex = (int)index;
-      _currentBoss = _dm.Bosses[(int)index];
+      SubscribeToCurrentBoss(_dm.Bosses[(int)index]);
       _dm.TriggerAutoSave();
-      RefreshSpellCardTree();
     }
   }
 
@@ -425,7 +511,6 @@ public partial class GuessingPanel : Control
     _log.Print($"GuessingPanel: user added spellcard to boss '{_currentBoss.Name}'.");
     _currentBoss.SpellCards.Add(new SpellCard { Name = "新符卡" });
     _dm?.TriggerAutoSave();
-    RefreshSpellCardTree();
   }
 
   private void OnDeleteSelected()
@@ -447,7 +532,6 @@ public partial class GuessingPanel : Control
       var index = selected.GetMetadata(0).AsInt32();
       if (_currentBoss != null && index >= 0 && index < _currentBoss.SpellCards.Count)
         _currentBoss.SpellCards.RemoveAt(index);
-      RefreshAll();
     }
     _dm.TriggerAutoSave();
   }
@@ -456,6 +540,7 @@ public partial class GuessingPanel : Control
 
   private void RefreshAliasTree()
   {
+    UnsubscribeAllCreators();
     _rebuildingAliasTree = true;
     AliasTree.ItemEdited -= OnAliasEdited;
     AliasTree.Clear();
@@ -466,6 +551,7 @@ public partial class GuessingPanel : Control
       for (int i = 0; i < _dm.Aliases.Count; i++)
       {
         var creator = _dm.Aliases[i];
+        SubscribeToCreator(creator);
         var creatorItem = AliasTree.CreateItem(root);
         creatorItem.SetText(0, creator.MainName);
         creatorItem.SetEditable(0, true);
@@ -612,7 +698,6 @@ public partial class GuessingPanel : Control
       return;
     _dm.Aliases[creatorIdx].Aliases.Add("新别名");
     _dm.TriggerAutoSave();
-    RefreshAliasTree();
   }
 
   private void OnDeleteAlias()
@@ -634,7 +719,6 @@ public partial class GuessingPanel : Control
       var aliasIdx = selected.GetIndex();
       if (aliasIdx >= 0 && aliasIdx < _dm.Aliases[creatorIdx].Aliases.Count)
         _dm.Aliases[creatorIdx].Aliases.RemoveAt(aliasIdx);
-      RefreshAliasTree();
     }
     _dm.TriggerAutoSave();
   }
@@ -675,7 +759,6 @@ public partial class GuessingPanel : Control
       ResponseDisplay.Text = $"[color=red]{result.FailureReason}[/color]";
       return;
     }
-    RefreshSpellCardTree();
     var display = "";
     if (!string.IsNullOrEmpty(result.ReplyText))
       display += $"[b]{result.ReplyText}[/b]\n\n";

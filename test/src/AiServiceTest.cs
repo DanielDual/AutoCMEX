@@ -2,6 +2,7 @@ namespace AutoCMEX;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Storage;
@@ -75,7 +76,7 @@ public class AiServiceTest : TestClass
       var boss = new Boss
       {
         Name = "TestBoss",
-        SpellCards = new List<SpellCard>
+        SpellCards = new ObservableCollection<SpellCard>
         {
           new() { Name = "Card1" },
           new() { Name = "Card2" },
