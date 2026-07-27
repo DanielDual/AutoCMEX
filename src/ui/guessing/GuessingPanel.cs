@@ -14,6 +14,7 @@ using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Guessing;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
+using AutoCMEX.Helpers;
 using AutoCMEX.Models;
 using Chickensoft.AutoInject;
 using Chickensoft.Introspection;
@@ -275,7 +276,6 @@ public partial class GuessingPanel : Control
     }
     else
       _currentBoss = null;
-    RefreshSpellCardTree();
   }
 
   private void RefreshSpellCardTree()
@@ -384,7 +384,7 @@ public partial class GuessingPanel : Control
     foreach (var card in boss.SpellCards)
       sb.AppendLine(
         CultureInfo.InvariantCulture,
-        $"{EscapeCsv(boss.Name)},{EscapeCsv(card.Name)},{EscapeCsv(card.Creator)}"
+        $"{StringEscapeHelper.EscapeCsv(boss.Name)},{StringEscapeHelper.EscapeCsv(card.Name)},{StringEscapeHelper.EscapeCsv(card.Creator)}"
       );
     File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
   }
@@ -404,7 +404,6 @@ public partial class GuessingPanel : Control
     foreach (var boss in result.Data!)
       _dm.Bosses.Add(boss);
     _dm.TriggerAutoSave();
-    RefreshAll();
   }
 
   private void OnAddBoss()
@@ -414,7 +413,6 @@ public partial class GuessingPanel : Control
     _log.Print("GuessingPanel: user added a new Boss.");
     _dm.Bosses.Add(new Boss { Name = "新 Boss" });
     _dm.TriggerAutoSave();
-    RefreshAll();
   }
 
   private void OnAddSpellCard()
@@ -449,9 +447,9 @@ public partial class GuessingPanel : Control
       var index = selected.GetMetadata(0).AsInt32();
       if (_currentBoss != null && index >= 0 && index < _currentBoss.SpellCards.Count)
         _currentBoss.SpellCards.RemoveAt(index);
+      RefreshAll();
     }
     _dm.TriggerAutoSave();
-    RefreshAll();
   }
 
   // ==================== 别名表 ====================
@@ -562,12 +560,12 @@ public partial class GuessingPanel : Control
     sb.AppendLine(header);
     foreach (var a in _dm.Aliases)
     {
-      var line = EscapeCsv(a.MainName);
+      var line = StringEscapeHelper.EscapeCsv(a.MainName);
       for (int i = 0; i < maxAliases; i++)
       {
         line += ",";
         if (i < a.Aliases.Count)
-          line += EscapeCsv(a.Aliases[i]);
+          line += StringEscapeHelper.EscapeCsv(a.Aliases[i]);
       }
       sb.AppendLine(line);
     }
@@ -589,7 +587,6 @@ public partial class GuessingPanel : Control
     foreach (var alias in result.Data!)
       _dm.Aliases.Add(alias);
     _dm.TriggerAutoSave();
-    RefreshAliasTree();
   }
 
   private void OnAddAlias()
@@ -598,7 +595,6 @@ public partial class GuessingPanel : Control
       return;
     _dm.Aliases.Add(new CreatorAlias { MainName = "新创作者" });
     _dm.TriggerAutoSave();
-    RefreshAliasTree();
   }
 
   private void OnAddAliasToCreator()
@@ -638,9 +634,9 @@ public partial class GuessingPanel : Control
       var aliasIdx = selected.GetIndex();
       if (aliasIdx >= 0 && aliasIdx < _dm.Aliases[creatorIdx].Aliases.Count)
         _dm.Aliases[creatorIdx].Aliases.RemoveAt(aliasIdx);
+      RefreshAliasTree();
     }
     _dm.TriggerAutoSave();
-    RefreshAliasTree();
   }
 
   // ==================== 猜测处理 ====================
@@ -838,14 +834,5 @@ public partial class GuessingPanel : Control
     d.DialogText = msg;
     AddChild(d);
     d.PopupCentered();
-  }
-
-  private static string EscapeCsv(string f)
-  {
-    if (string.IsNullOrEmpty(f))
-      return "";
-    if (f.Contains(',') || f.Contains('"') || f.Contains('\n'))
-      return $"\"{f.Replace("\"", "\"\"")}\"";
-    return f;
   }
 }
