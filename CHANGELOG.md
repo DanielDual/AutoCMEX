@@ -28,6 +28,7 @@
 - **LogService 资源泄漏**：`Shutdown()` 正确释放 `RotatingFileWriter` 并清空内存缓冲区
 - **HeartbeatService CTS 浪费**：使用 `using` 声明替代显式 `finally Dispose`
 - **DataManager 竞态条件**：`TriggerAutoSave` 使用 `volatile` 标志 + `async/await` 防止保存重叠
+- **DataManager.LoadAll 集合替换**：`LoadAll()` 清空并重新填充现有 `ObservableCollection` 而非创建新实例，保持 `CollectionChanged` 事件订阅有效
 - **WebSocket 分片消息截断**：`ReceiveLoop` 使用 `MemoryStream` 累积分片，检查 `EndOfMessage`
 - **SettingsPanel 场景树耦合**：改为配置驱动，`AppSettings.PropertyChanged` → `MainWindow` 自动重启 WebSocket
 - **AesEncryptor 路径硬编码**：提取 `DefaultKeyFileName` 常量和 `GetDefaultKeyPath()` 方法，统一所有调用点
