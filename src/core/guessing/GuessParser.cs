@@ -22,7 +22,7 @@ public static partial class GuessParser
   /// 解析单个猜测对的正则
   /// </summary>
   [GeneratedRegex(@"^(\d+)(\S+)$", RegexOptions.Compiled)]
-  private static partial Regex PairRegex();
+  internal static partial Regex PairRegex();
 
   /// <summary>
   /// 解析猜测文本为符卡下标—创作者对列表

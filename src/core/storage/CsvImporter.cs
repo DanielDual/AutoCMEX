@@ -10,16 +10,12 @@ using CsvHelper;
 using CsvHelper.Configuration;
 
 /// <summary>
-/// CSV 导入工具
+/// CSV 导入工具，实现 <see cref="IImporter"/> 接口。
 /// </summary>
-public static class CsvImporter
+public class CsvImporter : IImporter
 {
-  /// <summary>
-  /// 导入符卡—创作者对应表
-  /// </summary>
-  /// <param name="filePath">CSV 文件路径</param>
-  /// <returns>导入结果</returns>
-  public static ImportResult<List<Boss>> ImportSpellCardTable(string filePath)
+  /// <inheritdoc/>
+  public ImportResult<List<Boss>> ImportSpellCardTable(string filePath)
   {
     try
     {
@@ -76,12 +72,8 @@ public static class CsvImporter
     }
   }
 
-  /// <summary>
-  /// 导入创作者别名表
-  /// </summary>
-  /// <param name="filePath">CSV 文件路径</param>
-  /// <returns>导入结果</returns>
-  public static ImportResult<List<CreatorAlias>> ImportAliasTable(string filePath)
+  /// <inheritdoc/>
+  public ImportResult<List<CreatorAlias>> ImportAliasTable(string filePath)
   {
     try
     {

@@ -136,7 +136,7 @@ public partial class Main : Node2D
     }
     catch (Exception ex)
     {
-      GD.PrintErr($"[Main] Failed to flush logs: {ex.Message}");
+      GD.PrintErr($"[Main] Failed to shutdown logs: {ex.Message}");
     }
   }
 

@@ -117,7 +117,7 @@ public class StorageTest : TestClass
     var csv = "Boss,符卡名,创作者\nBoss1,Card1,Alice\nBoss1,Card2,Bob\nBoss2,Card3,Charlie";
     File.WriteAllText(csvPath, csv, Encoding.UTF8);
 
-    var result = CsvImporter.ImportSpellCardTable(csvPath);
+    var result = new CsvImporter().ImportSpellCardTable(csvPath);
 
     result.IsSuccess.ShouldBeTrue();
     result.Data!.Count.ShouldBe(2);
@@ -136,7 +136,7 @@ public class StorageTest : TestClass
     var csv = "Boss,符卡名\nBoss1,Card1";
     File.WriteAllText(csvPath, csv, Encoding.UTF8);
 
-    var result = CsvImporter.ImportSpellCardTable(csvPath);
+    var result = new CsvImporter().ImportSpellCardTable(csvPath);
 
     result.IsSuccess.ShouldBeFalse();
     result.ErrorMessage.ShouldContain("列缺失");
@@ -149,7 +149,7 @@ public class StorageTest : TestClass
     var csv = "主名,别名1,别名2\nAlice,Ali,A\nBob,B,Bo";
     File.WriteAllText(csvPath, csv, Encoding.UTF8);
 
-    var result = CsvImporter.ImportAliasTable(csvPath);
+    var result = new CsvImporter().ImportAliasTable(csvPath);
 
     result.IsSuccess.ShouldBeTrue();
     result.Data!.Count.ShouldBe(2);
@@ -168,7 +168,7 @@ public class StorageTest : TestClass
     var csv = "主名\nAlice";
     File.WriteAllText(csvPath, csv, Encoding.UTF8);
 
-    var result = CsvImporter.ImportAliasTable(csvPath);
+    var result = new CsvImporter().ImportAliasTable(csvPath);
 
     result.IsSuccess.ShouldBeFalse();
     result.ErrorMessage.ShouldContain("列缺失");
@@ -177,7 +177,7 @@ public class StorageTest : TestClass
   [Test]
   public void CsvImporter_FileNotFound_ReturnsError()
   {
-    var result = CsvImporter.ImportSpellCardTable(Path.Combine(_tempDir, "nonexistent.csv"));
+    var result = new CsvImporter().ImportSpellCardTable(Path.Combine(_tempDir, "nonexistent.csv"));
 
     result.IsSuccess.ShouldBeFalse();
   }

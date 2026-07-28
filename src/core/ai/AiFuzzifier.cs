@@ -20,36 +20,31 @@ public class AiFuzzifier
   public const int MaxRetries = 3;
 
   private readonly AiServiceFactory _aiServiceFactory;
-  private readonly List<CreatorAlias> _aliasTable;
-  private readonly List<Boss> _bosses;
+  private readonly IReadOnlyList<CreatorAlias> _aliasTable;
   private readonly Boss _currentBoss;
   private readonly ILog _log;
 
   public AiFuzzifier(
     AiServiceFactory aiServiceFactory,
-    List<CreatorAlias> aliasTable,
-    List<Boss> bosses,
+    IReadOnlyList<CreatorAlias> aliasTable,
     Boss currentBoss
   )
     : this(
       aiServiceFactory,
       aliasTable,
-      bosses,
       currentBoss,
       AppLogs.GetOrCreate().GetLogger(nameof(AiFuzzifier))
     ) { }
 
   public AiFuzzifier(
     AiServiceFactory aiServiceFactory,
-    List<CreatorAlias> aliasTable,
-    List<Boss> bosses,
+    IReadOnlyList<CreatorAlias> aliasTable,
     Boss currentBoss,
     ILog log
   )
   {
     _aiServiceFactory = aiServiceFactory;
     _aliasTable = aliasTable;
-    _bosses = bosses;
     _currentBoss = currentBoss;
     _log = log;
   }

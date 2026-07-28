@@ -2,6 +2,8 @@ namespace AutoCMEX.UI.Guessing;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Globalization;
 using System.IO;
 using System.Linq;
@@ -13,6 +15,7 @@ using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Guessing;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
+using AutoCMEX.Helpers;
 using AutoCMEX.Models;
 using Chickensoft.AutoInject;
 using Chickensoft.Introspection;
@@ -80,11 +83,16 @@ public partial class GuessingPanel : Control
 
   #endregion
 
-  #region Programmatic UI
+  #region Dropped UI Nodes
 
-  private ItemList? _droppedList;
-  private Button? _retryDroppedBtn;
-  private Button? _clearDroppedBtn;
+  [Node]
+  public ItemList DroppedList { get; set; } = default!;
+
+  [Node]
+  public Button RetryDroppedBtn { get; set; } = default!;
+
+  [Node]
+  public Button ClearDroppedBtn { get; set; } = default!;
 
   #endregion
 
@@ -129,8 +137,94 @@ public partial class GuessingPanel : Control
   private DataManager? _dm;
   private IGuessProcessingService? _guessProcessingService;
   private Boss? _currentBoss;
+  private Boss? _subscribedBoss;
+  private readonly HashSet<CreatorAlias> _subscribedCreators = new();
   private bool _rebuildingAliasTree;
   private ILog _log = AppLogs.GetOrCreate().GetLogger(nameof(GuessingPanel));
+
+  private void SubscribeToCurrentBoss(Boss? boss)
+  {
+    if (_subscribedBoss == boss)
+      return;
+
+    if (_subscribedBoss != null)
+    {
+      _subscribedBoss.SpellCards.CollectionChanged -= OnSpellCardsChanged;
+      foreach (var card in _subscribedBoss.SpellCards)
+        card.PropertyChanged -= OnSpellCardPropertyChanged;
+    }
+
+    _subscribedBoss = boss;
+    _currentBoss = boss;
+
+    if (_subscribedBoss != null)
+    {
+      _subscribedBoss.SpellCards.CollectionChanged += OnSpellCardsChanged;
+      foreach (var card in _subscribedBoss.SpellCards)
+        card.PropertyChanged += OnSpellCardPropertyChanged;
+    }
+  }
+
+  private void OnSpellCardsChanged(object? sender, NotifyCollectionChangedEventArgs e)
+  {
+    if (e.Action == NotifyCollectionChangedAction.Add && _subscribedBoss != null)
+    {
+      foreach (SpellCard card in e.NewItems!)
+        card.PropertyChanged += OnSpellCardPropertyChanged;
+    }
+    else if (e.Action == NotifyCollectionChangedAction.Remove && _subscribedBoss != null)
+    {
+      foreach (SpellCard card in e.OldItems!)
+        card.PropertyChanged -= OnSpellCardPropertyChanged;
+    }
+
+    CallDeferred(nameof(RefreshSpellCardTree));
+  }
+
+  private void OnSpellCardPropertyChanged(object? sender, PropertyChangedEventArgs e)
+  {
+    if (sender is not SpellCard card || _currentBoss == null)
+      return;
+
+    var index = _currentBoss.SpellCards.IndexOf(card);
+    if (index < 0)
+      return;
+
+    var root = SpellCardTree.GetRoot();
+    var bossItem = root?.GetChild(0);
+    var cardItem = bossItem?.GetChild(index);
+    if (cardItem == null)
+      return;
+
+    switch (e.PropertyName)
+    {
+      case nameof(SpellCard.Name):
+        cardItem.SetText(0, card.Name);
+        break;
+      case nameof(SpellCard.Creator):
+        cardItem.SetText(1, string.IsNullOrEmpty(card.Creator) ? "(未揭晓)" : card.Creator);
+        break;
+      case nameof(SpellCard.IsGuessedOut):
+        cardItem.SetChecked(2, card.IsGuessedOut);
+        break;
+    }
+  }
+
+  private void SubscribeToCreator(CreatorAlias creator)
+  {
+    if (_subscribedCreators.Add(creator))
+      creator.Aliases.CollectionChanged += OnCreatorAliasesChanged;
+  }
+
+  private void OnCreatorAliasesChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+    CallDeferred(nameof(RefreshAliasTree));
+
+  private void UnsubscribeAllCreators()
+  {
+    foreach (var creator in _subscribedCreators)
+      creator.Aliases.CollectionChanged -= OnCreatorAliasesChanged;
+    _subscribedCreators.Clear();
+  }
 
   public override void _Notification(int what)
   {
@@ -174,40 +268,9 @@ public partial class GuessingPanel : Control
     FuzzifyBtn.Disabled = true;
     FuzzifyBtn.TooltipText = "请先配置 AI 模型";
 
-    // 丢包重试 UI（延迟到场景树构建完成后添加）
-    CallDeferred(nameof(SetupDroppedUI));
-  }
-
-  private void SetupDroppedUI()
-  {
-    var parent = ResponseDisplay.GetParent();
-    if (parent == null)
-      return;
-
-    var droppedSection = new VBoxContainer();
-    droppedSection.SizeFlagsVertical = SizeFlags.ExpandFill;
-    droppedSection.AddChild(new HSeparator());
-
-    var header = new Label { Text = "丢包列表" };
-    droppedSection.AddChild(header);
-
-    _droppedList = new ItemList();
-    _droppedList.SizeFlagsVertical = Control.SizeFlags.ExpandFill;
-    droppedSection.AddChild(_droppedList);
-
-    var btnRow = new HBoxContainer();
-    _retryDroppedBtn = new Button { Text = "重试全部丢包", Disabled = true };
-    _retryDroppedBtn.Pressed += OnRetryAllDropped;
-    btnRow.AddChild(_retryDroppedBtn);
-
-    _clearDroppedBtn = new Button { Text = "清空丢包", Disabled = true };
-    _clearDroppedBtn.Pressed += OnClearDropped;
-    btnRow.AddChild(_clearDroppedBtn);
-
-    droppedSection.AddChild(btnRow);
-
-    parent.AddChild(droppedSection);
-    RefreshDroppedUI();
+    // 丢包重试 UI 信号连接
+    RetryDroppedBtn.Pressed += OnRetryAllDropped;
+    ClearDroppedBtn.Pressed += OnClearDropped;
   }
 
   public void OnResolved()
@@ -233,6 +296,9 @@ public partial class GuessingPanel : Control
     if (_dm != null)
     {
       _dm.LoadAll();
+      // 订阅 ObservableCollection 的 CollectionChanged 事件实现自动 UI 更新
+      _dm.Bosses.CollectionChanged += (_, _) => CallDeferred(nameof(RefreshSpellCardTree));
+      _dm.Aliases.CollectionChanged += (_, _) => CallDeferred(nameof(RefreshAliasTree));
       _dm.DataChanged += () => CallDeferred(nameof(RefreshSpellCardTree));
       UpdateFuzzifyButtonState();
       RefreshAll();
@@ -293,11 +359,10 @@ public partial class GuessingPanel : Control
       }
 
       BossSelect.Select(selectedIndex);
-      _currentBoss = _dm.Bosses[selectedIndex];
+      SubscribeToCurrentBoss(_dm.Bosses[selectedIndex]);
     }
     else
-      _currentBoss = null;
-    RefreshSpellCardTree();
+      SubscribeToCurrentBoss(null);
   }
 
   private void RefreshSpellCardTree()
@@ -364,9 +429,8 @@ public partial class GuessingPanel : Control
     if (_dm != null && index >= 0 && index < _dm.Bosses.Count)
     {
       _dm.Settings.SelectedBossIndex = (int)index;
-      _currentBoss = _dm.Bosses[(int)index];
+      SubscribeToCurrentBoss(_dm.Bosses[(int)index]);
       _dm.TriggerAutoSave();
-      RefreshSpellCardTree();
     }
   }
 
@@ -406,7 +470,7 @@ public partial class GuessingPanel : Control
     foreach (var card in boss.SpellCards)
       sb.AppendLine(
         CultureInfo.InvariantCulture,
-        $"{EscapeCsv(boss.Name)},{EscapeCsv(card.Name)},{EscapeCsv(card.Creator)}"
+        $"{StringEscapeHelper.EscapeCsv(boss.Name)},{StringEscapeHelper.EscapeCsv(card.Name)},{StringEscapeHelper.EscapeCsv(card.Creator)}"
       );
     File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
   }
@@ -415,20 +479,17 @@ public partial class GuessingPanel : Control
   {
     if (_dm == null)
       return;
-    ImportResult<List<Boss>> result;
-    if (path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-      result = ExcelImporter.ImportSpellCardTable(path);
-    else
-      result = CsvImporter.ImportSpellCardTable(path);
+    var importer = ImporterFactory.Create(path);
+    ImportResult<List<Boss>> result = importer.ImportSpellCardTable(path);
     if (!result.IsSuccess)
     {
       ShowError(result.ErrorMessage);
       return;
     }
     _dm.Bosses.Clear();
-    _dm.Bosses.AddRange(result.Data!);
+    foreach (var boss in result.Data!)
+      _dm.Bosses.Add(boss);
     _dm.TriggerAutoSave();
-    RefreshAll();
   }
 
   private void OnAddBoss()
@@ -438,7 +499,6 @@ public partial class GuessingPanel : Control
     _log.Print("GuessingPanel: user added a new Boss.");
     _dm.Bosses.Add(new Boss { Name = "新 Boss" });
     _dm.TriggerAutoSave();
-    RefreshAll();
   }
 
   private void OnAddSpellCard()
@@ -451,7 +511,6 @@ public partial class GuessingPanel : Control
     _log.Print($"GuessingPanel: user added spellcard to boss '{_currentBoss.Name}'.");
     _currentBoss.SpellCards.Add(new SpellCard { Name = "新符卡" });
     _dm?.TriggerAutoSave();
-    RefreshSpellCardTree();
   }
 
   private void OnDeleteSelected()
@@ -463,7 +522,11 @@ public partial class GuessingPanel : Control
       return;
     var parent = selected.GetParent();
     if (parent == null || parent == SpellCardTree.GetRoot())
-      _dm.Bosses.RemoveAll(b => b.Name == selected.GetText(0));
+    {
+      var toRemove = _dm.Bosses.Where(b => b.Name == selected.GetText(0)).ToList();
+      foreach (var boss in toRemove)
+        _dm.Bosses.Remove(boss);
+    }
     else
     {
       var index = selected.GetMetadata(0).AsInt32();
@@ -471,13 +534,13 @@ public partial class GuessingPanel : Control
         _currentBoss.SpellCards.RemoveAt(index);
     }
     _dm.TriggerAutoSave();
-    RefreshAll();
   }
 
   // ==================== 别名表 ====================
 
   private void RefreshAliasTree()
   {
+    UnsubscribeAllCreators();
     _rebuildingAliasTree = true;
     AliasTree.ItemEdited -= OnAliasEdited;
     AliasTree.Clear();
@@ -488,6 +551,7 @@ public partial class GuessingPanel : Control
       for (int i = 0; i < _dm.Aliases.Count; i++)
       {
         var creator = _dm.Aliases[i];
+        SubscribeToCreator(creator);
         var creatorItem = AliasTree.CreateItem(root);
         creatorItem.SetText(0, creator.MainName);
         creatorItem.SetEditable(0, true);
@@ -582,12 +646,12 @@ public partial class GuessingPanel : Control
     sb.AppendLine(header);
     foreach (var a in _dm.Aliases)
     {
-      var line = EscapeCsv(a.MainName);
+      var line = StringEscapeHelper.EscapeCsv(a.MainName);
       for (int i = 0; i < maxAliases; i++)
       {
         line += ",";
         if (i < a.Aliases.Count)
-          line += EscapeCsv(a.Aliases[i]);
+          line += StringEscapeHelper.EscapeCsv(a.Aliases[i]);
       }
       sb.AppendLine(line);
     }
@@ -598,20 +662,17 @@ public partial class GuessingPanel : Control
   {
     if (_dm == null)
       return;
-    ImportResult<List<CreatorAlias>> result;
-    if (path.EndsWith(".xlsx", StringComparison.OrdinalIgnoreCase))
-      result = ExcelImporter.ImportAliasTable(path);
-    else
-      result = CsvImporter.ImportAliasTable(path);
+    var importer = ImporterFactory.Create(path);
+    ImportResult<List<CreatorAlias>> result = importer.ImportAliasTable(path);
     if (!result.IsSuccess)
     {
       ShowError(result.ErrorMessage);
       return;
     }
     _dm.Aliases.Clear();
-    _dm.Aliases.AddRange(result.Data!);
+    foreach (var alias in result.Data!)
+      _dm.Aliases.Add(alias);
     _dm.TriggerAutoSave();
-    RefreshAliasTree();
   }
 
   private void OnAddAlias()
@@ -620,7 +681,6 @@ public partial class GuessingPanel : Control
       return;
     _dm.Aliases.Add(new CreatorAlias { MainName = "新创作者" });
     _dm.TriggerAutoSave();
-    RefreshAliasTree();
   }
 
   private void OnAddAliasToCreator()
@@ -638,7 +698,6 @@ public partial class GuessingPanel : Control
       return;
     _dm.Aliases[creatorIdx].Aliases.Add("新别名");
     _dm.TriggerAutoSave();
-    RefreshAliasTree();
   }
 
   private void OnDeleteAlias()
@@ -662,7 +721,6 @@ public partial class GuessingPanel : Control
         _dm.Aliases[creatorIdx].Aliases.RemoveAt(aliasIdx);
     }
     _dm.TriggerAutoSave();
-    RefreshAliasTree();
   }
 
   // ==================== 猜测处理 ====================
@@ -693,7 +751,7 @@ public partial class GuessingPanel : Control
           : GuessProcessingService
       );
 
-    var result = await service.ProcessManualAsync(text, _currentBoss);
+    var result = await service.ProcessAsync(text);
     RefreshDroppedUI();
     if (!result.IsGuess)
     {
@@ -701,7 +759,6 @@ public partial class GuessingPanel : Control
       ResponseDisplay.Text = $"[color=red]{result.FailureReason}[/color]";
       return;
     }
-    RefreshSpellCardTree();
     var display = "";
     if (!string.IsNullOrEmpty(result.ReplyText))
       display += $"[b]{result.ReplyText}[/b]\n\n";
@@ -752,7 +809,7 @@ public partial class GuessingPanel : Control
     ResponseDisplay.Text = "[color=gray]正在调用 AI...[/color]";
     try
     {
-      var fuzzifier = new AiFuzzifier(AiServiceFactory, _dm.Aliases, _dm.Bosses, _currentBoss);
+      var fuzzifier = new AiFuzzifier(AiServiceFactory, _dm.Aliases, _currentBoss);
       var result = await fuzzifier.FuzzifyAsync(text);
       if (AiFuzzifier.IsNotAGuessResult(result))
       {
@@ -781,29 +838,26 @@ public partial class GuessingPanel : Control
 
   private void RefreshDroppedUI()
   {
-    if (_droppedList == null || _retryDroppedBtn == null || _clearDroppedBtn == null)
-      return;
-
     var service = _guessProcessingService;
     if (service == null)
       return;
 
-    _droppedList.Clear();
+    DroppedList.Clear();
     var dropped = service.GetDroppedGuesses();
     if (dropped.Count == 0)
     {
-      _retryDroppedBtn.Disabled = true;
-      _clearDroppedBtn.Disabled = true;
+      RetryDroppedBtn.Disabled = true;
+      ClearDroppedBtn.Disabled = true;
       return;
     }
 
     foreach (var d in dropped)
     {
-      _droppedList.AddItem($"[{d.Id}] {d.RawText}");
+      DroppedList.AddItem($"[{d.Id}] {d.RawText}");
     }
 
-    _retryDroppedBtn.Disabled = false;
-    _clearDroppedBtn.Disabled = false;
+    RetryDroppedBtn.Disabled = false;
+    ClearDroppedBtn.Disabled = false;
   }
 
   private async void OnRetryAllDropped()
@@ -817,8 +871,8 @@ public partial class GuessingPanel : Control
       return;
 
     _log.Print($"OnRetryAllDropped: retrying {dropped.Count} dropped guesses.");
-    _retryDroppedBtn!.Disabled = true;
-    _retryDroppedBtn.Text = "重试中...";
+    RetryDroppedBtn.Disabled = true;
+    RetryDroppedBtn.Text = "重试中...";
 
     var successCount = 0;
     var failCount = 0;
@@ -836,7 +890,7 @@ public partial class GuessingPanel : Control
     await Task.WhenAll(tasks);
 
     _log.Print($"OnRetryAllDropped: done, success={successCount}, fail={failCount}");
-    _retryDroppedBtn.Text = "重试全部丢包";
+    RetryDroppedBtn.Text = "重试全部丢包";
     RefreshDroppedUI();
   }
 
@@ -863,14 +917,5 @@ public partial class GuessingPanel : Control
     d.DialogText = msg;
     AddChild(d);
     d.PopupCentered();
-  }
-
-  private static string EscapeCsv(string f)
-  {
-    if (string.IsNullOrEmpty(f))
-      return "";
-    if (f.Contains(',') || f.Contains('"') || f.Contains('\n'))
-      return $"\"{f.Replace("\"", "\"\"")}\"";
-    return f;
   }
 }

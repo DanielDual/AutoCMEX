@@ -1,6 +1,7 @@
 namespace AutoCMEX;
 
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using AutoCMEX.Core.Guessing;
 using AutoCMEX.Models;
 using Chickensoft.GoDotTest;
@@ -184,7 +185,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },
@@ -205,7 +206,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new() { Name = "Card1" },
         new() { Name = "Card2" },
@@ -225,7 +226,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard> { new() { Name = "Card1" } },
+      SpellCards = new ObservableCollection<SpellCard> { new() { Name = "Card1" } },
     };
 
     var pipeline = new GuessPipeline(new GuessResponseHandler(), new List<CreatorAlias>());
@@ -241,7 +242,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },
@@ -253,12 +254,12 @@ public class GuessEngineTest : TestClass
       new()
       {
         MainName = "Alice",
-        Aliases = new List<string> { "Ali" },
+        Aliases = new ObservableCollection<string> { "Ali" },
       },
       new()
       {
         MainName = "Bob",
-        Aliases = new List<string> { "B" },
+        Aliases = new ObservableCollection<string> { "B" },
       },
     };
 
@@ -275,7 +276,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new()
         {
@@ -302,7 +303,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },
@@ -322,7 +323,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
       },
@@ -343,7 +344,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new()
         {
@@ -371,7 +372,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },
@@ -397,7 +398,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },
@@ -423,7 +424,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new()
         {
@@ -453,7 +454,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },

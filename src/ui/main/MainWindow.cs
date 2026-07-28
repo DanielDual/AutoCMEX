@@ -8,7 +8,6 @@ using AutoCMEX.Core.Guessing;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Core.WebSocket;
-using AutoCMEX.Models;
 using AutoCMEX.UI.Logging;
 using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
@@ -39,8 +38,8 @@ public partial class MainWindow
   [Node("MainContainer/RightPanel")]
   public Control RightPanel { get; set; } = default!;
 
-  [Node("MainContainer/LeftPanel/IntegrationBtn")]
-  public Button IntegrationBtn { get; set; } = default!;
+  [Node("MainContainer/LeftPanel/MergeBtn")]
+  public Button MergeBtn { get; set; } = default!;
 
   [Node("MainContainer/LeftPanel/GuessingBtn")]
   public Button GuessingBtn { get; set; } = default!;
@@ -59,6 +58,31 @@ public partial class MainWindow
 
   [Node("MainContainer/LeftPanel/WebSocketBtn")]
   public Button WebSocketBtn { get; set; } = default!;
+
+  #endregion
+
+  #region Panel Nodes (instanced in scene)
+
+  [Node("MainContainer/RightPanel/MergePanel")]
+  public Control MergePanelNode { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel/GuessingPanel")]
+  public Control GuessingPanelNode { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel/InfoPanel")]
+  public Control InfoPanelNode { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel/SettingsPanel")]
+  public Control SettingsPanelNode { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel/HelpPanel")]
+  public Control HelpPanelNode { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel/LogPanel")]
+  public LogPanel LogPanelNode { get; set; } = default!;
+
+  [Node("MainContainer/RightPanel/WebSocketPanel")]
+  public WebSocketPanel WebSocketPanelNode { get; set; } = default!;
 
   #endregion
 
@@ -113,54 +137,9 @@ public partial class MainWindow
     );
 
     // 初始化 WebSocket（Server 或 Client 模式）
-    var settings = _dataManager.Settings;
     var wsLog = AppLogs.GetOrCreate().GetLogger("WebSocket");
-    var protocolHandler = new ProtocolHandler();
-    var messageRouter = new MessageRouter(wsLog);
-
-    var commandHandler = new CommandHandler(wsLog, _guessProcessingService);
-    var eventHandler = new AutoCMEX.Core.WebSocket.EventHandler(wsLog);
-    messageRouter.RegisterHandler(commandHandler);
-    messageRouter.RegisterHandler(eventHandler);
-
-    var isClientMode = string.Equals(
-      settings.WebSocketMode,
-      "Client",
-      StringComparison.OrdinalIgnoreCase
-    );
-
-    if (isClientMode && !string.IsNullOrEmpty(settings.KoishiWebSocketUrl))
-    {
-      var clientUrl = BuildClientUrl(settings);
-      _webSocketServer = new WebSocketClient(
-        clientUrl,
-        protocolHandler,
-        messageRouter,
-        reconnectIntervalMs: 5000,
-        heartbeatIntervalMs: settings.WebSocketHeartbeatIntervalMs,
-        wsLog
-      );
-    }
-    else
-    {
-      var connectionManager = new ConnectionManager(settings.WebSocketMaxConnections);
-      var heartbeatService = new HeartbeatService(
-        settings.WebSocketHeartbeatIntervalMs,
-        settings.WebSocketHeartbeatTimeoutMs,
-        wsLog
-      );
-
-      _webSocketServer = new WebSocketServer(
-        settings.WebSocketPort,
-        connectionManager,
-        protocolHandler,
-        messageRouter,
-        heartbeatService,
-        settings.WebSocketEnableAuth,
-        settings.WebSocketAuthToken,
-        wsLog
-      );
-    }
+    var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService);
+    _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
     // 通知 AutoInject 依赖已就绪
     this.Provide();
@@ -172,7 +151,7 @@ public partial class MainWindow
     LeftPanel.CustomMinimumSize = new Vector2(LeftPanelWidth, 0);
 
     // 注册导航按钮
-    _navButtons["integration"] = IntegrationBtn;
+    _navButtons["merge"] = MergeBtn;
     _navButtons["guessing"] = GuessingBtn;
     _navButtons["info"] = InfoBtn;
     _navButtons["settings"] = SettingsBtn;
@@ -181,7 +160,7 @@ public partial class MainWindow
     _navButtons["websocket"] = WebSocketBtn;
 
     // 连接信号
-    IntegrationBtn.Pressed += () => SwitchPanel("integration");
+    MergeBtn.Pressed += () => SwitchPanel("merge");
     GuessingBtn.Pressed += () => SwitchPanel("guessing");
     InfoBtn.Pressed += () => SwitchPanel("info");
     SettingsBtn.Pressed += () => SwitchPanel("settings");
@@ -189,60 +168,26 @@ public partial class MainWindow
     LogBtn.Pressed += () => SwitchPanel("logging");
     WebSocketBtn.Pressed += () => SwitchPanel("websocket");
 
-    PreloadPanels();
-    SetupLogPanel();
-    SetupWebSocketPanel();
+    // 注册场景中的面板
+    _panels["merge"] = MergePanelNode;
+    _panels["guessing"] = GuessingPanelNode;
+    _panels["info"] = InfoPanelNode;
+    _panels["settings"] = SettingsPanelNode;
+    _panels["help"] = HelpPanelNode;
+    _panels["logging"] = LogPanelNode;
+    _panels["websocket"] = WebSocketPanelNode;
+
+    // 绑定日志面板
+    var logService = AppLogs.GetOrCreate();
+    LogPanelNode.BindToService(logService);
+
+    // 绑定 WebSocket 面板
+    WebSocketPanelNode.SetServer(_webSocketServer, _dataManager.Settings.WebSocketMode);
+
     SwitchPanel(DefaultPanel);
 
     // 启动 WebSocket 服务器
     _ = _webSocketServer.StartAsync();
-  }
-
-  /// <summary>
-  /// 预加载所有板块场景
-  /// </summary>
-  private void PreloadPanels()
-  {
-    LoadPanel("integration", "res://src/ui/integration/IntegrationPanel.tscn");
-    LoadPanel("guessing", "res://src/ui/guessing/GuessingPanel.tscn");
-    LoadPanel("info", "res://src/ui/info/InfoPanel.tscn");
-    LoadPanel("settings", "res://src/ui/settings/SettingsPanel.tscn");
-    LoadPanel("help", "res://src/ui/help/HelpPanel.tscn");
-  }
-
-  /// <summary>
-  /// 实例化并绑定日志面板。
-  /// </summary>
-  private void SetupLogPanel()
-  {
-    var path = "res://src/ui/logging/LogPanel.tscn";
-    if (!ResourceLoader.Exists(path))
-      return;
-    var scene = ResourceLoader.Load<PackedScene>(path);
-    var panel = scene.Instantiate<LogPanel>();
-    panel.Visible = false;
-    panel.SetAnchorsPreset(LayoutPreset.FullRect);
-    RightPanel.AddChild(panel);
-    _panels["logging"] = panel;
-    var logService = AppLogs.GetOrCreate();
-    panel.BindToService(logService);
-  }
-
-  /// <summary>
-  /// 实例化并绑定 WebSocket 面板。
-  /// </summary>
-  private void SetupWebSocketPanel()
-  {
-    var path = "res://src/ui/websocket/WebSocketPanel.tscn";
-    if (!ResourceLoader.Exists(path))
-      return;
-    var scene = ResourceLoader.Load<PackedScene>(path);
-    var panel = scene.Instantiate<WebSocketPanel>();
-    panel.Visible = false;
-    panel.SetAnchorsPreset(LayoutPreset.FullRect);
-    panel.SetServer(_webSocketServer, _dataManager.Settings.WebSocketMode);
-    RightPanel.AddChild(panel);
-    _panels["websocket"] = panel;
   }
 
   /// <summary>
@@ -256,104 +201,15 @@ public partial class MainWindow
     // 停止旧实例
     await _webSocketServer.StopAsync();
 
-    var settings = _dataManager.Settings;
-    var protocolHandler = new ProtocolHandler();
-    var messageRouter = new MessageRouter(wsLog);
-
-    var commandHandler = new CommandHandler(wsLog, _guessProcessingService);
-    var eventHandler = new AutoCMEX.Core.WebSocket.EventHandler(wsLog);
-    messageRouter.RegisterHandler(commandHandler);
-    messageRouter.RegisterHandler(eventHandler);
-
-    var isClientMode = string.Equals(
-      settings.WebSocketMode,
-      "Client",
-      StringComparison.OrdinalIgnoreCase
-    );
-
-    if (isClientMode && !string.IsNullOrEmpty(settings.KoishiWebSocketUrl))
-    {
-      var clientUrl = BuildClientUrl(settings);
-      _webSocketServer = new WebSocketClient(
-        clientUrl,
-        protocolHandler,
-        messageRouter,
-        reconnectIntervalMs: 5000,
-        heartbeatIntervalMs: settings.WebSocketHeartbeatIntervalMs,
-        wsLog
-      );
-    }
-    else
-    {
-      var connectionManager = new ConnectionManager(settings.WebSocketMaxConnections);
-      var heartbeatService = new HeartbeatService(
-        settings.WebSocketHeartbeatIntervalMs,
-        settings.WebSocketHeartbeatTimeoutMs,
-        wsLog
-      );
-
-      _webSocketServer = new WebSocketServer(
-        settings.WebSocketPort,
-        connectionManager,
-        protocolHandler,
-        messageRouter,
-        heartbeatService,
-        settings.WebSocketEnableAuth,
-        settings.WebSocketAuthToken,
-        wsLog
-      );
-    }
+    // 使用初始化器创建新实例
+    var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService);
+    _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
     // 更新面板绑定
-    if (_panels.TryGetValue("websocket", out var panel) && panel is WebSocketPanel wsPanel)
-    {
-      wsPanel.SetServer(_webSocketServer, settings.WebSocketMode);
-    }
+    WebSocketPanelNode.SetServer(_webSocketServer, _dataManager.Settings.WebSocketMode);
 
     await _webSocketServer.StartAsync();
     wsLog.Print("MainWindow: WebSocket restarted.");
-  }
-
-  /// <summary>
-  /// 构建 Client 模式的 WebSocket URL（自动补全 ws:// 前缀和 Token）
-  /// </summary>
-  private static string BuildClientUrl(AppSettings settings)
-  {
-    var url = settings.KoishiWebSocketUrl.Trim();
-
-    // 自动补全 ws:// 前缀
-    if (
-      !url.StartsWith("ws://", StringComparison.OrdinalIgnoreCase)
-      && !url.StartsWith("wss://", StringComparison.OrdinalIgnoreCase)
-    )
-    {
-      url = "ws://" + url;
-    }
-
-    // 自动附加 Token
-    if (settings.WebSocketEnableAuth && !string.IsNullOrEmpty(settings.WebSocketAuthToken))
-    {
-      var separator = url.Contains('?') ? "&" : "?";
-      url = $"{url}{separator}token={Uri.EscapeDataString(settings.WebSocketAuthToken)}";
-    }
-
-    return url;
-  }
-
-  /// <summary>
-  /// 加载单个板块场景
-  /// </summary>
-  private void LoadPanel(string key, string path)
-  {
-    if (!ResourceLoader.Exists(path))
-      return;
-
-    var scene = ResourceLoader.Load<PackedScene>(path);
-    var panel = scene.Instantiate<Control>();
-    panel.Visible = false;
-    panel.SetAnchorsPreset(LayoutPreset.FullRect);
-    RightPanel.AddChild(panel);
-    _panels[key] = panel;
   }
 
   /// <summary>

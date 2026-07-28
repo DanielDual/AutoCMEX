@@ -2,6 +2,7 @@ namespace AutoCMEX.Core.Storage;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
@@ -20,8 +21,8 @@ public class DataManager : IDisposable
   private readonly JsonSerializerOptions _jsonOptions;
   private readonly ILog _log;
 
-  private List<Boss> _bosses = new();
-  private List<CreatorAlias> _aliases = new();
+  private ObservableCollection<Boss> _bosses = new();
+  private ObservableCollection<CreatorAlias> _aliases = new();
   private AppSettings _settings = new();
 
   private CancellationTokenSource? _saveCts;
@@ -29,8 +30,8 @@ public class DataManager : IDisposable
   private const int DebounceMs = 1500;
   private bool _disposed;
 
-  public List<Boss> Bosses => _bosses;
-  public List<CreatorAlias> Aliases => _aliases;
+  public ObservableCollection<Boss> Bosses => _bosses;
+  public ObservableCollection<CreatorAlias> Aliases => _aliases;
   public AppSettings Settings => _settings;
 
   /// <summary>数据变更事件（用于 UI 刷新）</summary>
@@ -66,8 +67,10 @@ public class DataManager : IDisposable
   public void LoadAll()
   {
     _log.Print($"DataManager.LoadAll: dir={_dataDir}");
-    _bosses = LoadJson<List<Boss>>("spellcard_table.json") ?? new();
-    _aliases = LoadJson<List<CreatorAlias>>("alias_table.json") ?? new();
+    _bosses = new ObservableCollection<Boss>(LoadJson<List<Boss>>("spellcard_table.json") ?? new());
+    _aliases = new ObservableCollection<CreatorAlias>(
+      LoadJson<List<CreatorAlias>>("alias_table.json") ?? new()
+    );
     _settings = LoadJson<AppSettings>("app_settings.json") ?? new();
     _log.Print(
       $"DataManager.LoadAll: bosses={_bosses.Count}, aliases={_aliases.Count}, "
@@ -157,38 +160,8 @@ public class DataManager : IDisposable
 
   private AppSettings CloneSettingsForSave()
   {
-    var clone = new AppSettings
-    {
-      WebSocketPort = _settings.WebSocketPort,
-      MessageFilterMode = _settings.MessageFilterMode,
-      KoishiPluginPath = _settings.KoishiPluginPath,
-      ActiveAiModelId = _settings.ActiveAiModelId,
-      AiTimeoutSeconds = _settings.AiTimeoutSeconds,
-      WebSocketEnableAuth = _settings.WebSocketEnableAuth,
-      WebSocketAuthToken = _settings.WebSocketAuthToken,
-      WebSocketMaxConnections = _settings.WebSocketMaxConnections,
-      WebSocketHeartbeatIntervalMs = _settings.WebSocketHeartbeatIntervalMs,
-      WebSocketHeartbeatTimeoutMs = _settings.WebSocketHeartbeatTimeoutMs,
-      WebSocketMode = _settings.WebSocketMode,
-      KoishiWebSocketUrl = _settings.KoishiWebSocketUrl,
-      SelectedBossIndex = _settings.SelectedBossIndex,
-    };
-
-    foreach (var model in _settings.AiModels)
-    {
-      clone.AiModels.Add(
-        new AiModelConfig
-        {
-          Id = model.Id,
-          ApiFormat = model.ApiFormat,
-          EndpointUrl = model.EndpointUrl,
-          ModelId = model.ModelId,
-          EncryptedApiKey = _encryptor.Encrypt(model.EncryptedApiKey),
-        }
-      );
-    }
-
-    return clone;
+    var json = JsonSerializer.Serialize(_settings);
+    return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
   }
 
   private T? LoadJson<T>(string fileName)

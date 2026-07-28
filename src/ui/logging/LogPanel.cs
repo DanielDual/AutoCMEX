@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using AutoCMEX.Core.Logging;
+using AutoCMEX.Helpers;
 using Chickensoft.AutoInject;
 using Chickensoft.Introspection;
 using Godot;
@@ -195,8 +196,8 @@ public partial class LogPanel : Control
     var line =
       $"[color=#888888]{entry.Timestamp.ToLocalTime():HH:mm:ss.fff}[/color] "
       + $"[b][color={color}]{entry.Level}[/color][/b] "
-      + $"[color=#5dade2]{EscapeBbcode(entry.Module)}[/color]  "
-      + $"{EscapeBbcode(entry.Message)}\n";
+      + $"[color=#5dade2]{StringEscapeHelper.EscapeBbcode(entry.Module)}[/color]  "
+      + $"{StringEscapeHelper.EscapeBbcode(entry.Message)}\n";
     LogView.AppendText(line);
   }
 
@@ -306,12 +307,5 @@ public partial class LogPanel : Control
       OS.ShellOpen(ProjectSettings.GlobalizePath(path));
     else
       OS.ShellOpen(ProjectSettings.GlobalizePath(Path.GetDirectoryName(path) ?? path));
-  }
-
-  private static string EscapeBbcode(string s)
-  {
-    if (string.IsNullOrEmpty(s))
-      return string.Empty;
-    return s.Replace("[", "[lb]");
   }
 }

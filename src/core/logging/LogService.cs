@@ -78,14 +78,6 @@ public sealed class LogService : ILogService
     }
   }
 
-  /// <inheritdoc/>
-  public void Flush()
-  {
-    if (_disposed)
-      return;
-    // ILogWriter in Chickensoft.Log 2.0 没有 Flush；保留此方法作为公共契约
-  }
-
   /// <summary>
   /// 检查并执行日志文件轮转。建议在写入一定条数后或定时调用。
   /// </summary>
@@ -97,7 +89,6 @@ public sealed class LogService : ILogService
     if (_disposed)
       return;
     _disposed = true;
-    Flush();
   }
 
   /// <inheritdoc/>

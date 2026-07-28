@@ -1,6 +1,6 @@
 namespace AutoCMEX.Models;
 
-using System.Collections.Generic;
+using System.Collections.ObjectModel;
 
 /// <summary>
 /// 创作者别名数据模型
@@ -11,5 +11,5 @@ public class CreatorAlias
   public string MainName { get; set; } = string.Empty;
 
   /// <summary>别名列表</summary>
-  public List<string> Aliases { get; set; } = new();
+  public ObservableCollection<string> Aliases { get; set; } = new();
 }

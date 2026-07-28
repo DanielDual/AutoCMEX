@@ -16,6 +16,13 @@
 - **日志系统**：基于 Chickensoft.Log 的统一日志服务，支持文件轮转、内存缓冲、敏感信息脱敏、UI 面板实时查看
 - **单元测试**：核心模块测试覆盖（AI、猜测引擎、存储、WebSocket、UI、模型、日志）
 
+### 重构
+
+- **核心层清理**：移除 AiFuzzifier 未使用字段、提取 LogEntry 工厂方法、移除空 Flush() 方法、CloneSettingsForSave 改用 JSON 深拷贝、合并重复正则、统一 WebSocket 发送路径
+- **服务抽象层**：提取 IImporter 接口 + ImporterFactory 工厂模式、创建 StringEscapeHelper 工具类、创建 PluginInstaller 服务
+- **UI 层职责分离**：提取 LogConfigPanel、WebSocketPanel 改用 Godot Timer、MainWindow 剥离 WebSocket 初始化到 WebSocketInitializer
+- **架构统一**：GuessProcessingService 合并 ProcessManualAsync/ProcessManagedAsync 为 ProcessAsync、DataManager 使用 ObservableCollection 实现自动 UI 更新、GuessPipeline/AiFuzzifier 改用 IReadOnlyList 接口
+
 ### 待完成
 
 - 整合板块（暂不开发）

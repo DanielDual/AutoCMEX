@@ -39,13 +39,16 @@ public class InMemoryLogWriter : ILogWriter
   }
 
   /// <inheritdoc/>
-  public void WriteMessage(string message) => AddEntry(ParseFormatted(LogLevel.Info, message));
+  public void WriteMessage(string message) =>
+    AddEntry(LogEntry.FromFormattedString(LogLevel.Info, message));
 
   /// <inheritdoc/>
-  public void WriteWarning(string message) => AddEntry(ParseFormatted(LogLevel.Warn, message));
+  public void WriteWarning(string message) =>
+    AddEntry(LogEntry.FromFormattedString(LogLevel.Warn, message));
 
   /// <inheritdoc/>
-  public void WriteError(string message) => AddEntry(ParseFormatted(LogLevel.Error, message));
+  public void WriteError(string message) =>
+    AddEntry(LogEntry.FromFormattedString(LogLevel.Error, message));
 
   /// <summary>
   /// 直接写入一个 <see cref="LogEntry"/>（供测试或外部服务使用）。
@@ -88,38 +91,4 @@ public class InMemoryLogWriter : ILogWriter
 
   /// <summary>清空缓冲区。</summary>
   public void Clear() => _entries.Clear();
-
-  private static LogEntry ParseFormatted(LogLevel defaultLevel, string? formatted)
-  {
-    var s = formatted ?? string.Empty;
-    var entry = new LogEntry { Level = defaultLevel, Message = s };
-
-    // 默认格式 "{Prefix} ({logName}): {message}"
-    var colonIdx = s.IndexOf(':');
-    if (colonIdx <= 0)
-    {
-      entry.Module = string.Empty;
-      return entry;
-    }
-
-    var head = s[..colonIdx];
-    var msg = s[(colonIdx + 1)..].TrimStart();
-
-    var openParen = head.IndexOf('(');
-    var closeParen = head.IndexOf(')');
-    if (openParen > 0 && closeParen > openParen)
-    {
-      var levelStr = head[..openParen].Trim();
-      var module = head[(openParen + 1)..closeParen];
-      entry.Module = module;
-      entry.Level = levelStr.ToLowerInvariant() switch
-      {
-        "warn" or "warning" => LogLevel.Warn,
-        "error" or "err" => LogLevel.Error,
-        _ => defaultLevel,
-      };
-      entry.Message = msg;
-    }
-    return entry;
-  }
 }

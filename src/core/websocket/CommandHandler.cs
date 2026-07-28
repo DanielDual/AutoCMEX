@@ -115,7 +115,7 @@ public class CommandHandler : IMessageHandler
       $"CommandHandler: dispatching guess from {sender} (conn={connectionId}), text={text}"
     );
 
-    var result = await _guessProcessingService.ProcessManagedAsync(text);
+    var result = await _guessProcessingService.ProcessAsync(text);
     var responses = new List<WebSocketMessage>
     {
       WebSocketMessage.CreateAck(message.Id, "success"),

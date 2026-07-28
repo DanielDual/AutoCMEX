@@ -17,7 +17,6 @@ public class ConnectionManager : IConnectionManager, IDisposable
   private readonly ConcurrentDictionary<string, ConnectionInfo> _connections = new();
   private readonly ConcurrentDictionary<string, ConcurrentQueue<string>> _sendQueues = new();
   private readonly ConcurrentDictionary<string, SemaphoreSlim> _sendLocks = new();
-  private readonly ConcurrentDictionary<string, CancellationTokenSource> _sendLoopTokens = new();
   private bool _disposed;
 
   /// <inheritdoc/>
@@ -59,10 +58,6 @@ public class ConnectionManager : IConnectionManager, IDisposable
 
     _sendQueues[connectionId] = new ConcurrentQueue<string>();
     _sendLocks[connectionId] = new SemaphoreSlim(1, 1);
-    var cts = new CancellationTokenSource();
-    _sendLoopTokens[connectionId] = cts;
-
-    _ = Task.Run(() => SendLoop(connectionId, cts.Token));
 
     return connectionId;
   }
@@ -70,9 +65,6 @@ public class ConnectionManager : IConnectionManager, IDisposable
   /// <inheritdoc/>
   public void UnregisterConnection(string connectionId)
   {
-    if (_sendLoopTokens.TryRemove(connectionId, out var cts))
-      cts.Cancel();
-
     _connections.TryRemove(connectionId, out _);
     _sendQueues.TryRemove(connectionId, out _);
 
@@ -140,34 +132,14 @@ public class ConnectionManager : IConnectionManager, IDisposable
 
     _disposed = true;
 
-    foreach (var cts in _sendLoopTokens.Values)
-      cts.Cancel();
-
     foreach (var sem in _sendLocks.Values)
       sem.Dispose();
 
-    _sendLoopTokens.Clear();
     _sendLocks.Clear();
     _sendQueues.Clear();
     _connections.Clear();
 
     GC.SuppressFinalize(this);
-  }
-
-  private async Task SendLoop(string connectionId, CancellationToken token)
-  {
-    while (!token.IsCancellationRequested)
-    {
-      try
-      {
-        await Task.Delay(100, token);
-        await FlushQueue(connectionId);
-      }
-      catch (OperationCanceledException)
-      {
-        break;
-      }
-    }
   }
 
   private async Task FlushQueue(string connectionId)

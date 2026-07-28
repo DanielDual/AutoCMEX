@@ -140,3 +140,35 @@ layout_mode = 2
 size_flags_vertical = 3
 bbcode_enabled = true
 text = "回应将显示在此处"
+
+[node name="DroppedSection" type="VBoxContainer" parent="MainContainer/ContentArea/RightPanel" unique_id=914169008]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DroppedSeparator" type="HSeparator" parent="MainContainer/ContentArea/RightPanel/DroppedSection" unique_id=2126514842]
+layout_mode = 2
+
+[node name="DroppedHeaderLabel" type="Label" parent="MainContainer/ContentArea/RightPanel/DroppedSection" unique_id=1182941070]
+layout_mode = 2
+text = "丢包列表"
+
+[node name="DroppedList" type="ItemList" parent="MainContainer/ContentArea/RightPanel/DroppedSection" unique_id=750633295]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DroppedButtons" type="HBoxContainer" parent="MainContainer/ContentArea/RightPanel/DroppedSection" unique_id=1568078829]
+layout_mode = 2
+
+[node name="RetryDroppedBtn" type="Button" parent="MainContainer/ContentArea/RightPanel/DroppedSection/DroppedButtons" unique_id=1124905516]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "重试全部丢包"
+
+[node name="ClearDroppedBtn" type="Button" parent="MainContainer/ContentArea/RightPanel/DroppedSection/DroppedButtons" unique_id=2014185853]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "清空丢包"

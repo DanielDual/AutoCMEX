@@ -2,6 +2,7 @@ namespace AutoCMEX;
 
 using System;
 using System.Collections.Generic;
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Threading.Tasks;
 using AutoCMEX.Core.Ai;
@@ -21,13 +22,13 @@ public class GuessProcessingServiceTest : TestClass
     : base(testScene) { }
 
   [Test]
-  public async Task ProcessManualAsync_StrictGuess_SucceedsWithoutAi()
+  public async Task ProcessAsync_StrictGuess_SucceedsWithoutAi()
   {
     var dataManager = CreateDataManager();
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new List<SpellCard>
+      SpellCards = new ObservableCollection<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },
@@ -35,13 +36,15 @@ public class GuessProcessingServiceTest : TestClass
     };
 
     dataManager.Bosses.Add(boss);
+    dataManager.Settings.SelectedBossIndex = 0;
+    dataManager.Settings.MessageFilterMode = "strict";
     var service = new GuessProcessingService(
       dataManager,
       new FakeAiServiceFactory("unused"),
       new GuessResponseHandler()
     );
 
-    var result = await service.ProcessManualAsync("1Alice 2Bob", boss);
+    var result = await service.ProcessAsync("1Alice 2Bob");
 
     result.Status.ShouldBe(GuessProcessingStatus.Success);
     result.ReplyText.ShouldBe("对");
@@ -49,14 +52,14 @@ public class GuessProcessingServiceTest : TestClass
   }
 
   [Test]
-  public async Task ProcessManagedAsync_AiReturnsNotGuess_ReturnsNotGuess()
+  public async Task ProcessAsync_AiReturnsNotGuess_ReturnsNotGuess()
   {
     var dataManager = CreateDataManager();
     dataManager.Bosses.Add(
       new Boss
       {
         Name = "TestBoss",
-        SpellCards = new List<SpellCard>
+        SpellCards = new ObservableCollection<SpellCard>
         {
           new() { Name = "Card1", Creator = "Alice" },
         },
@@ -72,21 +75,21 @@ public class GuessProcessingServiceTest : TestClass
       new GuessResponseHandler()
     );
 
-    var result = await service.ProcessManagedAsync("这看起来不像猜测");
+    var result = await service.ProcessAsync("这看起来不像猜测");
 
     result.Status.ShouldBe(GuessProcessingStatus.NotGuess);
     result.ShouldReply.ShouldBeFalse();
   }
 
   [Test]
-  public async Task ProcessManagedAsync_StrictFailureAiSuccess_ReturnsNormalizedSuccess()
+  public async Task ProcessAsync_StrictFailureAiSuccess_ReturnsNormalizedSuccess()
   {
     var dataManager = CreateDataManager();
     dataManager.Bosses.Add(
       new Boss
       {
         Name = "TestBoss",
-        SpellCards = new List<SpellCard>
+        SpellCards = new ObservableCollection<SpellCard>
         {
           new() { Name = "Card1", Creator = "Alice" },
           new() { Name = "Card2", Creator = "Bob" },
@@ -103,7 +106,7 @@ public class GuessProcessingServiceTest : TestClass
       new GuessResponseHandler()
     );
 
-    var result = await service.ProcessManagedAsync("阿 乙");
+    var result = await service.ProcessAsync("阿 乙");
 
     result.Status.ShouldBe(GuessProcessingStatus.Success);
     result.NormalizedGuess.ShouldBe("1Alice 2Bob");
