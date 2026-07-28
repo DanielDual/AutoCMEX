@@ -2,7 +2,7 @@
 
 [ext_resource type="Script" uid="uid://c41htm0llrugj" path="res://src/ui/guessing/GuessingPanel.cs" id="1_lp4yd"]
 [ext_resource type="Script" uid="uid://d2t3a4b5c6d7e" path="res://src/ui/guessing/SpellCardTreeHandler.cs" id="2_scth0"]
-[ext_resource type="Script" uid="uid://e3f4g5h6i7j8k" path="res://src/ui/guessing/AliasTreeHandler.cs" id="3_alth0"]
+[ext_resource type="Script" uid="uid://708u3kwx0ohs" path="res://src/ui/guessing/AliasTreeHandler.cs" id="3_alth0"]
 
 [node name="Control" type="Control" unique_id=460198611]
 layout_mode = 3
