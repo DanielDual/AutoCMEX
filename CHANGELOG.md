@@ -38,6 +38,14 @@
 - **丢包仓储提取**：`GuessProcessingService` 的丢包管理抽取为 `IDroppedGuessRepository` / `DroppedGuessRepository`
 - **GuessingPanel 子节点脚本化**：符卡表/别名表/导入导出逻辑下放到 `SpellCardTreeHandler` / `AliasTreeHandler` 子节点脚本
 
+### 测试改进
+
+- **测试覆盖率提升**：新增 43 个测试（从 138 → 181），覆盖 StringEscapeHelper、DroppedGuess/DroppedGuessRepository、ImporterFactory 等 0% 覆盖模块
+- **自定义 TestDriver**：创建 GuessingPanelDriver、SpellCardTreeHandlerDriver、AliasTreeHandlerDriver，封装复杂 UI 节点操作为高阶 API，解耦测试与节点路径
+- **测试质量提升**：将存在性行为测试改为行为测试，补充 INotifyPropertyChanged 测试和负面用例
+- **修复失败测试**：更新 GuessEngineTest 和 GuessProcessingServiceTest 断言以匹配当前 GuessResponseHandler 行为（emoji 格式）
+- **修复 CloneSettingsForSave 加密逻辑**：保存前加密 API 密钥，避免敏感数据明文写入 JSON
+
 ### 待完成
 
 - 整合板块（暂不开发）
