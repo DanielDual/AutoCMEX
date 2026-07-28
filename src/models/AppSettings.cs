@@ -1,5 +1,6 @@
 namespace AutoCMEX.Models;
 
+using System;
 using System.Collections.Generic;
 
 /// <summary>
@@ -7,6 +8,16 @@ using System.Collections.Generic;
 /// </summary>
 public class AppSettings
 {
+  /// <summary>属性变更事件（参数：属性名）</summary>
+  public event Action<string>? PropertyChanged;
+
+  private void OnPropertyChanged(
+    [System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null
+  )
+  {
+    PropertyChanged?.Invoke(propertyName ?? string.Empty);
+  }
+
   /// <summary>AI 模型配置列表</summary>
   public List<AiModelConfig> AiModels { get; set; } = new();
 
@@ -16,8 +27,18 @@ public class AppSettings
   /// <summary>AI 请求超时时间（秒），默认 100</summary>
   public int AiTimeoutSeconds { get; set; } = 100;
 
+  private int _webSocketPort = 5140;
+
   /// <summary>WebSocket 监听端口</summary>
-  public int WebSocketPort { get; set; } = 5140;
+  public int WebSocketPort
+  {
+    get => _webSocketPort;
+    set
+    {
+      _webSocketPort = value;
+      OnPropertyChanged();
+    }
+  }
 
   /// <summary>消息筛选模式：strict / ai / strict_then_ai</summary>
   public string MessageFilterMode { get; set; } = "strict";
@@ -40,11 +61,31 @@ public class AppSettings
   /// <summary>WebSocket 心跳超时（毫秒）</summary>
   public int WebSocketHeartbeatTimeoutMs { get; set; } = 10000;
 
+  private string _webSocketMode = "Server";
+
   /// <summary>WebSocket 运行模式：Server（默认，等待 Koishi 连接）/ Client（主动连接 Koishi）</summary>
-  public string WebSocketMode { get; set; } = "Server";
+  public string WebSocketMode
+  {
+    get => _webSocketMode;
+    set
+    {
+      _webSocketMode = value;
+      OnPropertyChanged();
+    }
+  }
+
+  private string _koishiWebSocketUrl = string.Empty;
 
   /// <summary>ws-reserve 模式下 Koishi WebSocket 服务地址（如 ws://localhost:5140）</summary>
-  public string KoishiWebSocketUrl { get; set; } = string.Empty;
+  public string KoishiWebSocketUrl
+  {
+    get => _koishiWebSocketUrl;
+    set
+    {
+      _koishiWebSocketUrl = value;
+      OnPropertyChanged();
+    }
+  }
 
   /// <summary>当前选中的 Boss 下标，用于共享手动与托管猜测流程的上下文</summary>
   public int SelectedBossIndex { get; set; } = 0;

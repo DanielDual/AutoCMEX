@@ -1,6 +1,8 @@
 [gd_scene format=3 uid="uid://b0o67jk40412y"]
 
 [ext_resource type="Script" uid="uid://c41htm0llrugj" path="res://src/ui/guessing/GuessingPanel.cs" id="1_lp4yd"]
+[ext_resource type="Script" uid="uid://d2t3a4b5c6d7e" path="res://src/ui/guessing/SpellCardTreeHandler.cs" id="2_scth0"]
+[ext_resource type="Script" uid="uid://708u3kwx0ohs" path="res://src/ui/guessing/AliasTreeHandler.cs" id="3_alth0"]
 
 [node name="Control" type="Control" unique_id=460198611]
 layout_mode = 3
@@ -30,6 +32,7 @@ size_flags_horizontal = 3
 
 [node name="SpellCardArea" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=1534861767]
 layout_mode = 2
+script = ExtResource("2_scth0")
 
 [node name="SpellCardTree" type="Tree" parent="MainContainer/ContentArea/LeftSplit/SpellCardArea" unique_id=873310835]
 unique_name_in_owner = true
@@ -70,6 +73,7 @@ text = "添加符卡"
 
 [node name="AliasArea" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=740339476]
 layout_mode = 2
+script = ExtResource("3_alth0")
 
 [node name="AliasButtons" type="HBoxContainer" parent="MainContainer/ContentArea/LeftSplit/AliasArea" unique_id=1473140063]
 layout_mode = 2

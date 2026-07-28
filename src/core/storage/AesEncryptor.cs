@@ -10,6 +10,17 @@ using System.Text;
 /// </summary>
 public class AesEncryptor
 {
+  /// <summary>默认密钥文件名。</summary>
+  public const string DefaultKeyFileName = "key.bin";
+
+  /// <summary>
+  /// 获取指定数据目录下的默认密钥文件路径。
+  /// </summary>
+  /// <param name="dataDir">数据目录路径。</param>
+  /// <returns>完整的密钥文件路径。</returns>
+  public static string GetDefaultKeyPath(string dataDir) =>
+    Path.Combine(dataDir, DefaultKeyFileName);
+
   private readonly byte[] _key;
   private readonly byte[] _iv;
 

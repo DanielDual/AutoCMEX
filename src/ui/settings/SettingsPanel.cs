@@ -435,7 +435,6 @@ public partial class SettingsPanel : Control
       // 刷新 UI 以显示/隐藏 URL 输入
       RefreshConfigArea();
       // 通知 MainWindow 重启 WebSocket
-      NotifyMainWindowRestart();
     };
     modeRow.AddChild(modeOption);
     container.AddChild(modeRow);
@@ -540,22 +539,5 @@ public partial class SettingsPanel : Control
     label.VerticalAlignment = VerticalAlignment.Center;
     label.SetAnchorsPreset(LayoutPreset.FullRect);
     ConfigArea.AddChild(label);
-  }
-
-  /// <summary>
-  /// 通知 MainWindow 重启 WebSocket
-  /// </summary>
-  private void NotifyMainWindowRestart()
-  {
-    var parent = GetParent();
-    while (parent != null)
-    {
-      if (parent is AutoCMEX.UI.Main.MainWindow mw)
-      {
-        mw.RestartWebSocket();
-        return;
-      }
-      parent = parent.GetParent();
-    }
   }
 }

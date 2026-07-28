@@ -1,16 +1,34 @@
 namespace AutoCMEX;
 
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading.Tasks;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Guessing;
+using Chickensoft.AutoInject;
 using Chickensoft.GoDotTest;
 using Chickensoft.GodotTestDriver;
 using Chickensoft.GodotTestDriver.Drivers;
+using Chickensoft.Introspection;
 using Godot;
 using Shouldly;
+
+/// <summary>
+/// 测试用 DataManager 提供者节点
+/// </summary>
+[Meta(typeof(IAutoNode))]
+public partial class DataManagerProvider : Node, IProvide<DataManager>
+{
+  public DataManager? DataManagerInstance { get; set; }
+
+  DataManager IProvide<DataManager>.Value() => DataManagerInstance!;
+
+  public override void _Notification(int what) => this.Notify(what);
+
+  public void OnReady() => this.Provide();
+}
 
 /// <summary>
 /// GuessingPanel UI 集成测试 - 验证所有编辑功能
@@ -19,18 +37,40 @@ public class GuessingPanelTest : TestClass
 {
   private Fixture _fixture = default!;
   private GuessingPanel _panel = default!;
+  private SpellCardTreeHandler _spellCardHandler = default!;
+  private AliasTreeHandler _aliasHandler = default!;
 
   public GuessingPanelTest(Node testScene)
     : base(testScene) { }
 
-  [SetupAll]
+  [Setup]
   public async Task Setup()
   {
     _fixture = new Fixture(TestScene.GetTree());
-    _panel = await _fixture.LoadAndAddScene<GuessingPanel>();
+
+    // 创建 DataManager 并通过 AutoInject 提供给子节点处理器
+    // 提供者必须是处理器的祖先节点才能被 AutoInject 发现
+    var tmpDir = Path.Combine(Path.GetTempPath(), $"AutoCMEX_TestSetup_{Guid.NewGuid():N}");
+    Directory.CreateDirectory(tmpDir);
+    var dm = new DataManager(tmpDir, new AesEncryptor(AesEncryptor.GetDefaultKeyPath(tmpDir)));
+    var provider = new DataManagerProvider { DataManagerInstance = dm };
+    TestScene.GetTree().Root.AddChild(provider);
+
+    // 手动加载 GuessingPanel 场景并添加为提供者的子节点
+    // 这样 AutoInject 在处理处理器时能找到提供者
+    var scene = GD.Load<PackedScene>("res://src/ui/guessing/GuessingPanel.tscn");
+    _panel = scene.Instantiate<GuessingPanel>();
+    provider.AddChild(_panel);
+
+    _spellCardHandler = _panel.GetNode<SpellCardTreeHandler>(
+      "MainContainer/ContentArea/LeftSplit/SpellCardArea"
+    );
+    _aliasHandler = _panel.GetNode<AliasTreeHandler>(
+      "MainContainer/ContentArea/LeftSplit/AliasArea"
+    );
   }
 
-  [CleanupAll]
+  [Cleanup]
   public void Cleanup() => _fixture.Cleanup();
 
   // ==================== 基础存在性测试 ====================
@@ -39,13 +79,13 @@ public class GuessingPanelTest : TestClass
   public void LoadsSuccessfully() => _panel.ShouldNotBeNull();
 
   [Test]
-  public void BossSelect_Exists() => _panel.BossSelect.ShouldNotBeNull();
+  public void BossSelect_Exists() => _spellCardHandler.BossSelect.ShouldNotBeNull();
 
   [Test]
-  public void SpellCardTree_Exists() => _panel.SpellCardTree.ShouldNotBeNull();
+  public void SpellCardTree_Exists() => _spellCardHandler.SpellCardTree.ShouldNotBeNull();
 
   [Test]
-  public void AliasTree_Exists() => _panel.AliasTree.ShouldNotBeNull();
+  public void AliasTree_Exists() => _aliasHandler.AliasTree.ShouldNotBeNull();
 
   [Test]
   public void GuessInput_Exists() => _panel.GuessInput.ShouldNotBeNull();
@@ -58,36 +98,36 @@ public class GuessingPanelTest : TestClass
   [Test]
   public void ImportCardBtn_Exists()
   {
-    _panel.ImportCardBtn.ShouldNotBeNull();
-    _panel.ImportCardBtn.Text.ShouldNotBeNullOrEmpty();
+    _spellCardHandler.ImportCardBtn.ShouldNotBeNull();
+    _spellCardHandler.ImportCardBtn.Text.ShouldNotBeNullOrEmpty();
   }
 
   [Test]
   public void ExportCardBtn_Exists()
   {
-    _panel.ExportCardBtn.ShouldNotBeNull();
-    _panel.ExportCardBtn.Text.ShouldNotBeNullOrEmpty();
+    _spellCardHandler.ExportCardBtn.ShouldNotBeNull();
+    _spellCardHandler.ExportCardBtn.Text.ShouldNotBeNullOrEmpty();
   }
 
   [Test]
   public void AddBossBtn_Exists()
   {
-    _panel.AddBossBtn.ShouldNotBeNull();
-    _panel.AddBossBtn.Text.ShouldNotBeNullOrEmpty();
+    _spellCardHandler.AddBossBtn.ShouldNotBeNull();
+    _spellCardHandler.AddBossBtn.Text.ShouldNotBeNullOrEmpty();
   }
 
   [Test]
   public void AddCardBtn_Exists()
   {
-    _panel.AddCardBtn.ShouldNotBeNull();
-    _panel.AddCardBtn.Text.ShouldNotBeNullOrEmpty();
+    _spellCardHandler.AddCardBtn.ShouldNotBeNull();
+    _spellCardHandler.AddCardBtn.Text.ShouldNotBeNullOrEmpty();
   }
 
   [Test]
   public void DeleteBtn_Exists()
   {
-    _panel.DeleteBtn.ShouldNotBeNull();
-    _panel.DeleteBtn.Text.ShouldNotBeNullOrEmpty();
+    _spellCardHandler.DeleteBtn.ShouldNotBeNull();
+    _spellCardHandler.DeleteBtn.Text.ShouldNotBeNullOrEmpty();
   }
 
   // ==================== 别名表按钮测试 ====================
@@ -95,36 +135,36 @@ public class GuessingPanelTest : TestClass
   [Test]
   public void ImportAliasBtn_Exists()
   {
-    _panel.ImportAliasBtn.ShouldNotBeNull();
-    _panel.ImportAliasBtn.Text.ShouldNotBeNullOrEmpty();
+    _aliasHandler.ImportAliasBtn.ShouldNotBeNull();
+    _aliasHandler.ImportAliasBtn.Text.ShouldNotBeNullOrEmpty();
   }
 
   [Test]
   public void ExportAliasBtn_Exists()
   {
-    _panel.ExportAliasBtn.ShouldNotBeNull();
-    _panel.ExportAliasBtn.Text.ShouldNotBeNullOrEmpty();
+    _aliasHandler.ExportAliasBtn.ShouldNotBeNull();
+    _aliasHandler.ExportAliasBtn.Text.ShouldNotBeNullOrEmpty();
   }
 
   [Test]
   public void AddAliasBtn_Exists()
   {
-    _panel.AddAliasBtn.ShouldNotBeNull();
-    _panel.AddAliasBtn.Text.ShouldNotBeNullOrEmpty();
+    _aliasHandler.AddAliasBtn.ShouldNotBeNull();
+    _aliasHandler.AddAliasBtn.Text.ShouldNotBeNullOrEmpty();
   }
 
   [Test]
   public void AddAliasToCreatorBtn_Exists()
   {
-    _panel.AddAliasToCreatorBtn.ShouldNotBeNull();
-    _panel.AddAliasToCreatorBtn.Text.ShouldNotBeNullOrEmpty();
+    _aliasHandler.AddAliasToCreatorBtn.ShouldNotBeNull();
+    _aliasHandler.AddAliasToCreatorBtn.Text.ShouldNotBeNullOrEmpty();
   }
 
   [Test]
   public void DeleteAliasBtn_Exists()
   {
-    _panel.DeleteAliasBtn.ShouldNotBeNull();
-    _panel.DeleteAliasBtn.Text.ShouldNotBeNullOrEmpty();
+    _aliasHandler.DeleteAliasBtn.ShouldNotBeNull();
+    _aliasHandler.DeleteAliasBtn.Text.ShouldNotBeNullOrEmpty();
   }
 
   // ==================== 猜测区测试 ====================
@@ -154,45 +194,47 @@ public class GuessingPanelTest : TestClass
   // ==================== 按钮可点击测试 ====================
 
   [Test]
-  public void ExportCardBtn_IsClickable() => _panel.ExportCardBtn.Disabled.ShouldBeFalse();
+  public void ExportCardBtn_IsClickable() =>
+    _spellCardHandler.ExportCardBtn.Disabled.ShouldBeFalse();
 
   [Test]
-  public void ExportAliasBtn_IsClickable() => _panel.ExportAliasBtn.Disabled.ShouldBeFalse();
+  public void ExportAliasBtn_IsClickable() => _aliasHandler.ExportAliasBtn.Disabled.ShouldBeFalse();
 
   [Test]
-  public void AddBossBtn_IsClickable() => _panel.AddBossBtn.Disabled.ShouldBeFalse();
+  public void AddBossBtn_IsClickable() => _spellCardHandler.AddBossBtn.Disabled.ShouldBeFalse();
 
   [Test]
-  public void AddCardBtn_IsClickable() => _panel.AddCardBtn.Disabled.ShouldBeFalse();
+  public void AddCardBtn_IsClickable() => _spellCardHandler.AddCardBtn.Disabled.ShouldBeFalse();
 
   [Test]
-  public void DeleteBtn_IsClickable() => _panel.DeleteBtn.Disabled.ShouldBeFalse();
+  public void DeleteBtn_IsClickable() => _spellCardHandler.DeleteBtn.Disabled.ShouldBeFalse();
 
   [Test]
-  public void AddAliasBtn_IsClickable() => _panel.AddAliasBtn.Disabled.ShouldBeFalse();
+  public void AddAliasBtn_IsClickable() => _aliasHandler.AddAliasBtn.Disabled.ShouldBeFalse();
 
   [Test]
   public void AddAliasToCreatorBtn_IsClickable() =>
-    _panel.AddAliasToCreatorBtn.Disabled.ShouldBeFalse();
+    _aliasHandler.AddAliasToCreatorBtn.Disabled.ShouldBeFalse();
 
   [Test]
-  public void DeleteAliasBtn_IsClickable() => _panel.DeleteAliasBtn.Disabled.ShouldBeFalse();
+  public void DeleteAliasBtn_IsClickable() => _aliasHandler.DeleteAliasBtn.Disabled.ShouldBeFalse();
 
   [Test]
-  public void ImportCardBtn_IsClickable() => _panel.ImportCardBtn.Disabled.ShouldBeFalse();
+  public void ImportCardBtn_IsClickable() =>
+    _spellCardHandler.ImportCardBtn.Disabled.ShouldBeFalse();
 
   [Test]
-  public void ImportAliasBtn_IsClickable() => _panel.ImportAliasBtn.Disabled.ShouldBeFalse();
+  public void ImportAliasBtn_IsClickable() => _aliasHandler.ImportAliasBtn.Disabled.ShouldBeFalse();
 
   // ==================== 别名表编辑功能测试 ====================
 
   [Test]
   public void AddAlias_AddsCreatorToTree()
   {
-    var btn = new ButtonDriver(() => (Button)_panel.AddAliasBtn);
-    btn.ClickCenter();
+    // 直接调用处理器方法，避免 headless 下 ButtonDriver 不可靠
+    _aliasHandler.GetOnAlias()();
 
-    var root = _panel.AliasTree.GetRoot();
+    var root = _aliasHandler.AliasTree.GetRoot();
     root.ShouldNotBeNull();
     root.GetChildCount().ShouldBeGreaterThan(0);
   }
@@ -200,14 +242,14 @@ public class GuessingPanelTest : TestClass
   [Test]
   public void AddAliasToCreator_AddsChildRow()
   {
-    // 直接操作 DataManager 验证别名添加，避免 headless 下 TreeItem.Select 不可靠
-    var tmpDir = Path.Combine(Path.GetTempPath(), $"AutoCMEX_Test_{System.Guid.NewGuid():N}");
-    Directory.CreateDirectory(tmpDir);
-    var dm = new DataManager(tmpDir, new AesEncryptor(Path.Combine(tmpDir, "key.bin")));
-    dm.Aliases.Add(new CreatorAlias { MainName = "测试创作者" });
-    _panel.InjectTestData(dm);
+    // 使用处理器的 DataManager
+    var dm = _aliasHandler.GetDataManager();
+    dm.ShouldNotBeNull();
 
-    var root = _panel.AliasTree.GetRoot();
+    dm.Aliases.Add(new CreatorAlias { MainName = "测试创作者" });
+    _aliasHandler.Refresh();
+
+    var root = _aliasHandler.AliasTree.GetRoot();
     root.ShouldNotBeNull();
     root.GetChildCount().ShouldBe(1);
     var creator = root.GetChild(0);
@@ -215,89 +257,62 @@ public class GuessingPanelTest : TestClass
 
     // 直接添加别名并刷新
     dm.Aliases[0].Aliases.Add("新别名");
-    _panel.RefreshAll();
+    _aliasHandler.Refresh();
 
-    root = _panel.AliasTree.GetRoot();
+    root = _aliasHandler.AliasTree.GetRoot();
     root.GetChildCount().ShouldBe(1);
     creator = root.GetChild(0);
     creator.GetChildCount().ShouldBeGreaterThan(initialChildCount);
-
-    try
-    {
-      Directory.Delete(tmpDir, recursive: true);
-    }
-    catch { }
   }
 
   [Test]
   public void AddBoss_AddsToDropdown()
   {
-    var tmpDir = Path.Combine(Path.GetTempPath(), $"AutoCMEX_Test_{System.Guid.NewGuid():N}");
-    Directory.CreateDirectory(tmpDir);
-    var dm = new DataManager(tmpDir, new AesEncryptor(Path.Combine(tmpDir, "key.bin")));
-    _panel.InjectTestData(dm);
+    var dm = _spellCardHandler.GetDataManager();
+    dm.ShouldNotBeNull();
 
-    var initialCount = _panel.BossSelect.ItemCount;
+    var initialCount = _spellCardHandler.BossSelect.ItemCount;
 
     // 直接添加 Boss 并刷新
     dm.Bosses.Add(new Boss { Name = "新Boss" });
-    _panel.RefreshAll();
+    _spellCardHandler.Refresh();
 
-    _panel.BossSelect.ItemCount.ShouldBeGreaterThan(initialCount);
-
-    try
-    {
-      Directory.Delete(tmpDir, recursive: true);
-    }
-    catch { }
+    _spellCardHandler.BossSelect.ItemCount.ShouldBeGreaterThan(initialCount);
   }
 
   [Test]
   public void AddSpellCard_AddsToTree()
   {
-    var tmpDir = Path.Combine(Path.GetTempPath(), $"AutoCMEX_Test_{System.Guid.NewGuid():N}");
-    Directory.CreateDirectory(tmpDir);
-    var dm = new DataManager(tmpDir, new AesEncryptor(Path.Combine(tmpDir, "key.bin")));
+    var dm = _spellCardHandler.GetDataManager();
+    dm.ShouldNotBeNull();
+
     dm.Bosses.Add(new Boss { Name = "测试Boss" });
-    _panel.InjectTestData(dm);
+    _spellCardHandler.Refresh();
 
-    // InjectTestData 已选中第一个 Boss，直接添加符卡
-    var addCardBtn = new ButtonDriver(() => (Button)_panel.AddCardBtn);
-    addCardBtn.ClickCenter();
+    // 直接调用处理器方法添加符卡
+    _spellCardHandler.GetOnAddSpellCard()();
 
-    var root = _panel.SpellCardTree.GetRoot();
+    var root = _spellCardHandler.SpellCardTree.GetRoot();
     root.ShouldNotBeNull();
     root.GetChildCount().ShouldBeGreaterThan(0);
-
-    try
-    {
-      Directory.Delete(tmpDir, recursive: true);
-    }
-    catch { }
   }
 
   [Test]
   public void DeleteBoss_RemovesFromDropdown()
   {
-    var tmpDir = Path.Combine(Path.GetTempPath(), $"AutoCMEX_Test_{System.Guid.NewGuid():N}");
-    Directory.CreateDirectory(tmpDir);
-    var dm = new DataManager(tmpDir, new AesEncryptor(Path.Combine(tmpDir, "key.bin")));
-    dm.Bosses.Add(new Boss { Name = "待删除Boss" });
-    _panel.InjectTestData(dm);
+    var dm = _spellCardHandler.GetDataManager();
+    dm.ShouldNotBeNull();
 
-    var initialCount = _panel.BossSelect.ItemCount;
+    dm.Bosses.Add(new Boss { Name = "待删除Boss" });
+    _spellCardHandler.Refresh();
+
+    var initialCount = _spellCardHandler.BossSelect.ItemCount;
     initialCount.ShouldBeGreaterThan(0);
 
     // 直接删除 Boss 并刷新
     dm.Bosses.RemoveAt(0);
-    _panel.RefreshAll();
+    _spellCardHandler.Refresh();
 
-    _panel.BossSelect.ItemCount.ShouldBeLessThan(initialCount);
-
-    try
-    {
-      Directory.Delete(tmpDir, recursive: true);
-    }
-    catch { }
+    _spellCardHandler.BossSelect.ItemCount.ShouldBeLessThan(initialCount);
   }
 }

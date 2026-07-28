@@ -67,7 +67,7 @@ public class AiServiceTest : TestClass
     Directory.CreateDirectory(tmpDir);
     try
     {
-      var encryptor = new AesEncryptor(Path.Combine(tmpDir, "key.bin"));
+      var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(tmpDir));
       var dm = new DataManager(tmpDir, encryptor);
       dm.Settings.AiModels.Add(config);
       dm.Settings.ActiveAiModelId = "test";
@@ -131,7 +131,7 @@ public class AiServiceTest : TestClass
     Directory.CreateDirectory(tmpDir);
     try
     {
-      var encryptor = new AesEncryptor(Path.Combine(tmpDir, "key.bin"));
+      var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(tmpDir));
       var dm = new DataManager(tmpDir, encryptor);
 
       var openAiConfig = new AiModelConfig
@@ -165,7 +165,7 @@ public class AiServiceTest : TestClass
     Directory.CreateDirectory(tmpDir);
     try
     {
-      var encryptor = new AesEncryptor(Path.Combine(tmpDir, "key.bin"));
+      var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(tmpDir));
       var dm = new DataManager(tmpDir, encryptor);
       var factory = new AiServiceFactory(dm);
 
@@ -185,7 +185,7 @@ public class AiServiceTest : TestClass
     Directory.CreateDirectory(tmpDir);
     try
     {
-      var encryptor = new AesEncryptor(Path.Combine(tmpDir, "key.bin"));
+      var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(tmpDir));
       var dm = new DataManager(tmpDir, encryptor);
 
       var incompleteConfig = new AiModelConfig

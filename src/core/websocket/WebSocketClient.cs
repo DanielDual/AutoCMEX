@@ -1,6 +1,7 @@
 namespace AutoCMEX.Core.WebSocket;
 
 using System;
+using System.IO;
 using System.Net.WebSockets;
 using System.Text;
 using System.Threading;
@@ -214,6 +215,7 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   private async Task ReceiveLoop(string connectionId, CancellationToken token)
   {
     var buffer = new byte[4096];
+    var messageStream = new MemoryStream();
 
     while (_ws?.State == WebSocketState.Open && !token.IsCancellationRequested)
     {
@@ -232,8 +234,17 @@ public class WebSocketClient : IWebSocketServer, IDisposable
 
         if (result.MessageType == WebSocketMessageType.Text)
         {
-          var text = Encoding.UTF8.GetString(buffer, 0, result.Count);
-          _ = Task.Run(() => ProcessMessage(connectionId, text));
+          messageStream.Write(buffer, 0, result.Count);
+          if (result.EndOfMessage)
+          {
+            var text = Encoding.UTF8.GetString(
+              messageStream.GetBuffer(),
+              0,
+              (int)messageStream.Length
+            );
+            messageStream.SetLength(0);
+            _ = Task.Run(() => ProcessMessage(connectionId, text));
+          }
         }
       }
       catch (OperationCanceledException)

@@ -18,19 +18,20 @@ public class GuessProcessingService : IGuessProcessingService
   private readonly DataManager _dataManager;
   private readonly AiServiceFactory _aiServiceFactory;
   private readonly IGuessResponseHandler _responseHandler;
+  private readonly IDroppedGuessRepository _droppedGuessRepository;
   private readonly ILog _log;
-  private readonly List<DroppedGuess> _droppedGuesses = new();
-  private readonly object _droppedLock = new();
 
   public GuessProcessingService(
     DataManager dataManager,
     AiServiceFactory aiServiceFactory,
-    IGuessResponseHandler responseHandler
+    IGuessResponseHandler responseHandler,
+    IDroppedGuessRepository droppedGuessRepository
   )
     : this(
       dataManager,
       aiServiceFactory,
       responseHandler,
+      droppedGuessRepository,
       AppLogs.GetOrCreate().GetLogger(nameof(GuessProcessingService))
     ) { }
 
@@ -38,12 +39,14 @@ public class GuessProcessingService : IGuessProcessingService
     DataManager dataManager,
     AiServiceFactory aiServiceFactory,
     IGuessResponseHandler responseHandler,
+    IDroppedGuessRepository droppedGuessRepository,
     ILog log
   )
   {
     _dataManager = dataManager;
     _aiServiceFactory = aiServiceFactory;
     _responseHandler = responseHandler;
+    _droppedGuessRepository = droppedGuessRepository;
     _log = log;
   }
 
@@ -143,13 +146,11 @@ public class GuessProcessingService : IGuessProcessingService
         $"GuessProcessingService.ProcessAsync AI fallback failed: {ex.GetType().Name}: {ex.Message}"
       );
 
-      lock (_droppedLock)
-      {
-        _droppedGuesses.Add(new DroppedGuess(input, ex.Message));
-        _log.Print(
-          $"GuessProcessingService: added to dropped list (total={_droppedGuesses.Count}), id={_droppedGuesses[^1].Id}"
-        );
-      }
+      var dropped = new DroppedGuess(input, ex.Message);
+      _droppedGuessRepository.Add(dropped);
+      _log.Print(
+        $"GuessProcessingService: added to dropped list (total={_droppedGuessRepository.GetAll().Count}), id={dropped.Id}"
+      );
 
       return treatFailureAsNotGuess
         ? GuessProcessingResult.NotGuess(ex.Message)
@@ -185,22 +186,12 @@ public class GuessProcessingService : IGuessProcessingService
   }
 
   /// <inheritdoc/>
-  public IReadOnlyList<DroppedGuess> GetDroppedGuesses()
-  {
-    lock (_droppedLock)
-    {
-      return _droppedGuesses.ToList();
-    }
-  }
+  public IReadOnlyList<DroppedGuess> GetDroppedGuesses() => _droppedGuessRepository.GetAll();
 
   /// <inheritdoc/>
   public async Task<GuessProcessingResult> RetryDroppedGuessAsync(string droppedId)
   {
-    DroppedGuess? dropped;
-    lock (_droppedLock)
-    {
-      dropped = _droppedGuesses.FirstOrDefault(d => d.Id == droppedId);
-    }
+    var dropped = _droppedGuessRepository.FindById(droppedId);
 
     if (dropped == null)
       return GuessProcessingResult.Error($"丢包记录 {droppedId} 不存在。");
@@ -217,11 +208,7 @@ public class GuessProcessingService : IGuessProcessingService
 
     if (result.Status != GuessProcessingStatus.Error)
     {
-      lock (_droppedLock)
-      {
-        _droppedGuesses.RemoveAll(d => d.Id == droppedId);
-      }
-
+      _droppedGuessRepository.Remove(droppedId);
       _log.Print($"GuessProcessingService: dropped guess {droppedId} retried successfully.");
     }
 
@@ -231,11 +218,7 @@ public class GuessProcessingService : IGuessProcessingService
   /// <inheritdoc/>
   public void RemoveDroppedGuess(string droppedId)
   {
-    lock (_droppedLock)
-    {
-      _droppedGuesses.RemoveAll(d => d.Id == droppedId);
-    }
-
+    _droppedGuessRepository.Remove(droppedId);
     _log.Print($"GuessProcessingService: removed dropped guess {droppedId}.");
   }
 }
