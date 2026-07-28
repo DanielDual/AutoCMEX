@@ -11,9 +11,6 @@ using Chickensoft.GodotNodeInterfaces;
 #endif
 
 // This entry-point file is responsible for determining if we should run tests.
-//
-// If you want to edit your game's main entry-point, please see Game.tscn and
-// Game.cs instead.
 
 /// <summary>
 /// 全局日志服务访问点。在 <see cref="Main._Ready"/> 中初始化。
@@ -108,7 +105,7 @@ public partial class Main : Node2D
     }
 #endif
 
-    // If we don't need to run tests, we can just switch to the game scene.
+    // If we don't need to run tests, we can just switch to the main scene.
     startupLog.Print("Switching to main scene.");
     CallDeferred("RunScene");
   }
