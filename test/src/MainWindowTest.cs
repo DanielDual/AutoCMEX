@@ -46,4 +46,17 @@ public class MainWindowTest : TestClass
   {
     _mainWindow.ShouldBeAssignableTo<Control>();
   }
+
+  [Test]
+  public void MainWindow_HasValidInitialState()
+  {
+    _mainWindow.ShouldNotBeNull();
+    _mainWindow.LeftPanelWidth.ShouldBeGreaterThan(0);
+  }
+
+  [Test]
+  public void MainWindow_LeftPanelWidth_IsPositive()
+  {
+    _mainWindow.LeftPanelWidth.ShouldBeGreaterThan(0);
+  }
 }

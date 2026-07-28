@@ -1,6 +1,8 @@
 namespace AutoCMEX;
 
 using System.Collections.Generic;
+using System.ComponentModel;
+using System.Runtime.CompilerServices;
 using AutoCMEX.Models;
 using Chickensoft.GoDotTest;
 using Godot;
@@ -116,5 +118,87 @@ public class ModelsTest : TestClass
     settings.AiModels.Add(new AiModelConfig { Id = "model-2" });
 
     settings.AiModels.Count.ShouldBe(2);
+  }
+
+  // ==================== INotifyPropertyChanged Tests ====================
+
+  [Test]
+  public void SpellCard_RaisesPropertyChanged_WhenNameChanges()
+  {
+    var card = new SpellCard();
+    var raisedProperties = new List<string>();
+    card.PropertyChanged += (_, args) => raisedProperties.Add(args.PropertyName!);
+
+    card.Name = "NewName";
+
+    raisedProperties.ShouldContain(nameof(SpellCard.Name));
+  }
+
+  [Test]
+  public void SpellCard_RaisesPropertyChanged_WhenCreatorChanges()
+  {
+    var card = new SpellCard();
+    var raisedProperties = new List<string>();
+    card.PropertyChanged += (_, args) => raisedProperties.Add(args.PropertyName!);
+
+    card.Creator = "NewCreator";
+
+    raisedProperties.ShouldContain(nameof(SpellCard.Creator));
+  }
+
+  [Test]
+  public void SpellCard_RaisesPropertyChanged_WhenIsGuessedOutChanges()
+  {
+    var card = new SpellCard();
+    var raisedProperties = new List<string>();
+    card.PropertyChanged += (_, args) => raisedProperties.Add(args.PropertyName!);
+
+    card.IsGuessedOut = true;
+
+    raisedProperties.ShouldContain(nameof(SpellCard.IsGuessedOut));
+  }
+
+  // ==================== Edge Case Tests ====================
+
+  [Test]
+  public void SpellCard_IsGuessedOut_DefaultsToFalse()
+  {
+    var card = new SpellCard();
+    card.IsGuessedOut.ShouldBeFalse();
+  }
+
+  [Test]
+  public void Boss_SpellCards_CannotBeNull()
+  {
+    var boss = new Boss();
+    boss.SpellCards.ShouldNotBeNull();
+  }
+
+  [Test]
+  public void CreatorAlias_Aliases_CannotBeNull()
+  {
+    var alias = new CreatorAlias();
+    alias.Aliases.ShouldNotBeNull();
+  }
+
+  [Test]
+  public void AiModelConfig_DefaultApiFormat_IsOpenAI()
+  {
+    var config = new AiModelConfig();
+    config.ApiFormat.ShouldBe("OpenAI");
+  }
+
+  [Test]
+  public void AppSettings_DefaultWebSocketPort_Is5140()
+  {
+    var settings = new AppSettings();
+    settings.WebSocketPort.ShouldBe(5140);
+  }
+
+  [Test]
+  public void AppSettings_DefaultMessageFilterMode_IsStrict()
+  {
+    var settings = new AppSettings();
+    settings.MessageFilterMode.ShouldBe("strict");
   }
 }
