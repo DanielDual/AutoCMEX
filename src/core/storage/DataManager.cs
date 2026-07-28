@@ -68,10 +68,18 @@ public class DataManager : IDisposable
   public void LoadAll()
   {
     _log.Print($"DataManager.LoadAll: dir={_dataDir}");
-    _bosses = new ObservableCollection<Boss>(LoadJson<List<Boss>>("spellcard_table.json") ?? new());
-    _aliases = new ObservableCollection<CreatorAlias>(
-      LoadJson<List<CreatorAlias>>("alias_table.json") ?? new()
-    );
+
+    // 清空并重新填充现有集合，保持 CollectionChanged 事件订阅有效
+    var loadedBosses = LoadJson<List<Boss>>("spellcard_table.json") ?? new();
+    _bosses.Clear();
+    foreach (var item in loadedBosses)
+      _bosses.Add(item);
+
+    var loadedAliases = LoadJson<List<CreatorAlias>>("alias_table.json") ?? new();
+    _aliases.Clear();
+    foreach (var item in loadedAliases)
+      _aliases.Add(item);
+
     _settings = LoadJson<AppSettings>("app_settings.json") ?? new();
     _log.Print(
       $"DataManager.LoadAll: bosses={_bosses.Count}, aliases={_aliases.Count}, "

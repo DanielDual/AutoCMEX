@@ -20,22 +20,22 @@ using Godot;
 [Meta(typeof(IAutoNode))]
 public partial class AliasTreeHandler : Control
 {
-  [Node]
+  [Node("AliasTree")]
   public Tree AliasTree { get; set; } = default!;
 
-  [Node]
+  [Node("AliasButtons/ImportAliasBtn")]
   public Button ImportAliasBtn { get; set; } = default!;
 
-  [Node]
+  [Node("AliasButtons/ExportAliasBtn")]
   public Button ExportAliasBtn { get; set; } = default!;
 
-  [Node]
+  [Node("AliasButtons/AddAliasBtn")]
   public Button AddAliasBtn { get; set; } = default!;
 
-  [Node]
+  [Node("AliasButtons/AddAliasToCreatorBtn")]
   public Button AddAliasToCreatorBtn { get; set; } = default!;
 
-  [Node]
+  [Node("AliasButtons/DeleteAliasBtn")]
   public Button DeleteAliasBtn { get; set; } = default!;
 
   [Dependency]
@@ -44,6 +44,16 @@ public partial class AliasTreeHandler : Control
   private DataManager? _dm;
   private readonly HashSet<CreatorAlias> _subscribedCreators = new();
   private bool _rebuildingAliasTree;
+
+  /// <summary>
+  /// 获取当前使用的 DataManager 实例（供测试使用）
+  /// </summary>
+  public DataManager? GetDataManager() => _dm;
+
+  /// <summary>
+  /// 测试用：获取 OnAddAlias 委托
+  /// </summary>
+  public Action GetOnAlias() => OnAddAlias;
 
   public override void _Notification(int what) => this.Notify(what);
 
@@ -64,11 +74,10 @@ public partial class AliasTreeHandler : Control
   public void OnResolved()
   {
     _dm = DataManager;
-    if (_dm != null)
-    {
-      _dm.Aliases.CollectionChanged += (_, _) => CallDeferred(nameof(Refresh));
-      Refresh();
-    }
+    if (_dm == null)
+      return;
+    _dm.Aliases.CollectionChanged += (_, _) => Refresh();
+    Refresh();
   }
 
   public void Refresh()
@@ -116,7 +125,7 @@ public partial class AliasTreeHandler : Control
   }
 
   private void OnCreatorAliasesChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
-    CallDeferred(nameof(RefreshAliasTree));
+    RefreshAliasTree();
 
   private void UnsubscribeAllCreators()
   {
@@ -207,7 +216,7 @@ public partial class AliasTreeHandler : Control
       }
       sb.AppendLine(line);
     }
-    System.IO.File.WriteAllText(path, sb.ToString(), System.Text.Encoding.UTF8);
+    File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
   }
 
   private void OnAliasFileSelected(string path)

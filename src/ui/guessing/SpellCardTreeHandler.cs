@@ -50,6 +50,16 @@ public partial class SpellCardTreeHandler : Control
   private Boss? _currentBoss;
   private Boss? _subscribedBoss;
 
+  /// <summary>
+  /// 获取当前使用的 DataManager 实例（供测试使用）
+  /// </summary>
+  public DataManager? GetDataManager() => _dm;
+
+  /// <summary>
+  /// 测试用：获取 OnAddSpellCard 委托
+  /// </summary>
+  public Action GetOnAddSpellCard() => OnAddSpellCard;
+
   public override void _Notification(int what) => this.Notify(what);
 
   public void OnReady()
@@ -71,11 +81,10 @@ public partial class SpellCardTreeHandler : Control
   public void OnResolved()
   {
     _dm = DataManager;
-    if (_dm != null)
-    {
-      _dm.Bosses.CollectionChanged += (_, _) => CallDeferred(nameof(Refresh));
-      Refresh();
-    }
+    if (_dm == null)
+      return;
+    _dm.Bosses.CollectionChanged += (_, _) => Refresh();
+    Refresh();
   }
 
   public void Refresh()
@@ -167,7 +176,7 @@ public partial class SpellCardTreeHandler : Control
       foreach (SpellCard card in e.OldItems!)
         card.PropertyChanged -= OnSpellCardPropertyChanged;
     }
-    CallDeferred(nameof(RefreshSpellCardTree));
+    RefreshSpellCardTree();
   }
 
   private void OnSpellCardPropertyChanged(object? sender, PropertyChangedEventArgs e)
