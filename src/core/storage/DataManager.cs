@@ -185,7 +185,18 @@ public class DataManager : IDisposable
   private AppSettings CloneSettingsForSave()
   {
     var json = JsonSerializer.Serialize(_settings);
-    return JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+    var clone = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+
+    // 保存前加密 API 密钥
+    foreach (var model in clone.AiModels)
+    {
+      if (!string.IsNullOrEmpty(model.EncryptedApiKey))
+      {
+        model.EncryptedApiKey = _encryptor.Encrypt(model.EncryptedApiKey);
+      }
+    }
+
+    return clone;
   }
 
   private T? LoadJson<T>(string fileName)

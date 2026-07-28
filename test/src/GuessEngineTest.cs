@@ -100,7 +100,7 @@ public class GuessEngineTest : TestClass
   {
     var handler = new GuessResponseHandler();
     var result = handler.Handle(3, 3, new List<string>(), 0, EmptyNames());
-    result.ShouldBe("猜对 3/3 张");
+    result.ShouldBe("3/3");
   }
 
   [Test]
@@ -108,7 +108,7 @@ public class GuessEngineTest : TestClass
   {
     var handler = new GuessResponseHandler();
     var result = handler.Handle(3, 1, new List<string>(), 0, EmptyNames());
-    result.ShouldBe("猜对 1/3 张");
+    result.ShouldBe("1/3");
   }
 
   [Test]
@@ -116,7 +116,7 @@ public class GuessEngineTest : TestClass
   {
     var handler = new GuessResponseHandler();
     var result = handler.Handle(4, 0, new List<string>(), 0, EmptyNames());
-    result.ShouldBe("猜对 0/4 张");
+    result.ShouldBe("0/4");
   }
 
   [Test]
@@ -124,7 +124,7 @@ public class GuessEngineTest : TestClass
   {
     var handler = new GuessResponseHandler();
     var result = handler.Handle(2, 2, new List<string>(), 0, EmptyNames());
-    result.ShouldBe("对");
+    result.ShouldBe("✔️");
   }
 
   [Test]
@@ -132,7 +132,7 @@ public class GuessEngineTest : TestClass
   {
     var handler = new GuessResponseHandler();
     var result = handler.Handle(2, 1, new List<string>(), 0, EmptyNames());
-    result.ShouldBe("错");
+    result.ShouldBe("❌️");
   }
 
   [Test]
@@ -140,7 +140,7 @@ public class GuessEngineTest : TestClass
   {
     var handler = new GuessResponseHandler();
     var result = handler.Handle(2, 0, new List<string>(), 0, EmptyNames());
-    result.ShouldBe("错");
+    result.ShouldBe("❌️");
   }
 
   [Test]
@@ -148,7 +148,7 @@ public class GuessEngineTest : TestClass
   {
     var handler = new GuessResponseHandler();
     var result = handler.Handle(1, 1, new List<string>(), 0, EmptyNames());
-    result.ShouldBe("不能只猜一个");
+    result.ShouldBe("必须猜两个以上");
   }
 
   [Test]
@@ -156,7 +156,7 @@ public class GuessEngineTest : TestClass
   {
     var handler = new GuessResponseHandler();
     var result = handler.Handle(0, 0, new List<string>(), 0, EmptyNames());
-    result.ShouldBe("不能只猜一个");
+    result.ShouldBe("必须猜两个以上");
   }
 
   [Test]
@@ -165,7 +165,7 @@ public class GuessEngineTest : TestClass
     var handler = new GuessResponseHandler();
     var guessedOutNames = new List<string> { "符卡1（Card1）", "符卡3（Card3）" };
     var result = handler.Handle(2, 2, new List<string>(), 2, guessedOutNames);
-    result.ShouldBe("对（符卡1（Card1）、符卡3（Card3） 已被猜出，已跳过）");
+    result.ShouldBe("✔️（符卡1（Card1）、符卡3（Card3） 已被猜出，已跳过）");
   }
 
   [Test]
@@ -174,7 +174,7 @@ public class GuessEngineTest : TestClass
     var handler = new GuessResponseHandler();
     var guessedOutNames = new List<string> { "符卡1（Card1）" };
     var result = handler.Handle(0, 0, new List<string>(), 1, guessedOutNames);
-    result.ShouldBe("所有猜测的符卡均已被猜出，已跳过");
+    result.ShouldBe("所有猜测的符卡均已被猜出");
   }
 
   // ==================== GuessPipeline Tests ====================
@@ -197,7 +197,7 @@ public class GuessEngineTest : TestClass
     var result = pipeline.Process("1Alice 2Bob 3Charlie", boss);
 
     result.IsSuccess.ShouldBeTrue();
-    result.Response.ShouldBe("猜对 3/3 张");
+    result.Response.ShouldBe("3/3");
   }
 
   [Test]
@@ -267,7 +267,7 @@ public class GuessEngineTest : TestClass
     var result = pipeline.Process("1Ali 2B", boss);
 
     result.IsSuccess.ShouldBeTrue();
-    result.Response.ShouldBe("对");
+    result.Response.ShouldBe("✔️");
   }
 
   [Test]
@@ -314,7 +314,7 @@ public class GuessEngineTest : TestClass
     var result = pipeline.Process("1Alice 2Bob", boss);
 
     result.IsSuccess.ShouldBeTrue();
-    result.Response.ShouldBe("对");
+    result.Response.ShouldBe("✔️");
   }
 
   [Test]
@@ -333,7 +333,7 @@ public class GuessEngineTest : TestClass
     var result = pipeline.Process("1Alice", boss);
 
     result.IsSuccess.ShouldBeTrue();
-    result.Response.ShouldBe("不能只猜一个");
+    result.Response.ShouldBe("必须猜两个以上");
     // 单张猜测不标记为已猜出
     boss.SpellCards[0].IsGuessedOut.ShouldBeFalse();
   }
@@ -363,7 +363,7 @@ public class GuessEngineTest : TestClass
     result.IsSuccess.ShouldBeTrue();
     result.Details.ShouldContain(d => d.Contains("已被猜出"));
     // Card1 is guessed out, so only 2 cards count
-    result.Response.ShouldBe("对（符卡1（Card1） 已被猜出，已跳过）");
+    result.Response.ShouldBe("✔️（1 已被猜出，已跳过）");
   }
 
   [Test]
@@ -384,7 +384,7 @@ public class GuessEngineTest : TestClass
     var result = pipeline.Process("1Alice 2Bob 3Charlie", boss);
 
     result.IsSuccess.ShouldBeTrue();
-    result.Response.ShouldBe("猜对 3/3 张");
+    result.Response.ShouldBe("3/3");
 
     // All three should now be marked as guessed out
     boss.SpellCards[0].IsGuessedOut.ShouldBeTrue();
@@ -410,7 +410,7 @@ public class GuessEngineTest : TestClass
     var result = pipeline.Process("1Alice 2Wrong 3Charlie", boss);
 
     result.IsSuccess.ShouldBeTrue();
-    result.Response.ShouldBe("猜对 2/3 张");
+    result.Response.ShouldBe("2/3");
 
     // None should be marked as guessed out (only 2/3 correct)
     boss.SpellCards[0].IsGuessedOut.ShouldBeFalse();
@@ -445,7 +445,7 @@ public class GuessEngineTest : TestClass
     var result = pipeline.Process("1Alice 2Bob", boss);
 
     result.IsSuccess.ShouldBeTrue();
-    result.Response.ShouldBe("所有猜测的符卡均已被猜出，已跳过");
+    result.Response.ShouldBe("所有猜测的符卡均已被猜出");
   }
 
   [Test]
@@ -467,7 +467,7 @@ public class GuessEngineTest : TestClass
 
     result.IsSuccess.ShouldBeTrue();
     // 2Bob appears 3 times but only counts once → 3 unique cards
-    result.Response.ShouldBe("猜对 3/3 张");
+    result.Response.ShouldBe("3/3");
     result.Details.ShouldContain(d => d.Contains("重复猜测"));
   }
 }

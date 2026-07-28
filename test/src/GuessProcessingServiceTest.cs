@@ -48,7 +48,7 @@ public class GuessProcessingServiceTest : TestClass
     var result = await service.ProcessAsync("1Alice 2Bob");
 
     result.Status.ShouldBe(GuessProcessingStatus.Success);
-    result.ReplyText.ShouldBe("对");
+    result.ReplyText.ShouldBe("✔️");
     result.ShouldReply.ShouldBeTrue();
   }
 
@@ -113,7 +113,7 @@ public class GuessProcessingServiceTest : TestClass
 
     result.Status.ShouldBe(GuessProcessingStatus.Success);
     result.NormalizedGuess.ShouldBe("1Alice 2Bob");
-    result.ReplyText.ShouldBe("对");
+    result.ReplyText.ShouldBe("✔️");
   }
 
   private static DataManager CreateDataManager()
