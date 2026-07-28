@@ -98,7 +98,7 @@ public class HeartbeatService : IDisposable
           break;
 
         // 发送 Ping
-        var pingCts = new CancellationTokenSource(_timeoutMs);
+        using var pingCts = new CancellationTokenSource(_timeoutMs);
         try
         {
           await state.Socket.SendAsync(
@@ -119,10 +119,6 @@ public class HeartbeatService : IDisposable
           _log.Warn($"HeartbeatService: send failed for {state.ConnectionId}.");
           OnHeartbeatTimeout?.Invoke(state.ConnectionId);
           break;
-        }
-        finally
-        {
-          pingCts.Dispose();
         }
       }
       catch (OperationCanceledException)

@@ -28,6 +28,7 @@ public class DataManager : IDisposable
   private CancellationTokenSource? _saveCts;
   private readonly object _saveLock = new();
   private const int DebounceMs = 1500;
+  private volatile bool _isSaving;
   private bool _disposed;
 
   public ObservableCollection<Boss> Bosses => _bosses;
@@ -100,25 +101,40 @@ public class DataManager : IDisposable
       _saveCts = new CancellationTokenSource();
       var token = _saveCts.Token;
 
-      Task.Delay(DebounceMs, token)
-        .ContinueWith(
-          _ =>
-          {
-            if (!token.IsCancellationRequested)
-            {
-              try
-              {
-                SaveAll();
-                _log.Print("DataManager: auto-save completed.");
-              }
-              catch (Exception ex)
-              {
-                _log.Err($"DataManager: auto-save failed: {ex.GetType().Name}: {ex.Message}");
-              }
-            }
-          },
-          token
-        );
+      _ = SaveDelayedAsync(token);
+    }
+  }
+
+  private async Task SaveDelayedAsync(CancellationToken token)
+  {
+    try
+    {
+      await Task.Delay(DebounceMs, token);
+    }
+    catch (TaskCanceledException)
+    {
+      return;
+    }
+
+    if (_isSaving)
+    {
+      _log.Print("DataManager: save already in progress, skipping.");
+      return;
+    }
+
+    _isSaving = true;
+    try
+    {
+      SaveAll();
+      _log.Print("DataManager: auto-save completed.");
+    }
+    catch (Exception ex)
+    {
+      _log.Err($"DataManager: auto-save failed: {ex.GetType().Name}: {ex.Message}");
+    }
+    finally
+    {
+      _isSaving = false;
     }
   }
 

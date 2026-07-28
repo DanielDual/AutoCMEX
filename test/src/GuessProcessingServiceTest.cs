@@ -41,7 +41,8 @@ public class GuessProcessingServiceTest : TestClass
     var service = new GuessProcessingService(
       dataManager,
       new FakeAiServiceFactory("unused"),
-      new GuessResponseHandler()
+      new GuessResponseHandler(),
+      new DroppedGuessRepository()
     );
 
     var result = await service.ProcessAsync("1Alice 2Bob");
@@ -72,7 +73,8 @@ public class GuessProcessingServiceTest : TestClass
     var service = new GuessProcessingService(
       dataManager,
       new FakeAiServiceFactory(AiFuzzifier.NotAGuessToken),
-      new GuessResponseHandler()
+      new GuessResponseHandler(),
+      new DroppedGuessRepository()
     );
 
     var result = await service.ProcessAsync("这看起来不像猜测");
@@ -103,7 +105,8 @@ public class GuessProcessingServiceTest : TestClass
     var service = new GuessProcessingService(
       dataManager,
       new FakeAiServiceFactory("1Alice 2Bob"),
-      new GuessResponseHandler()
+      new GuessResponseHandler(),
+      new DroppedGuessRepository()
     );
 
     var result = await service.ProcessAsync("阿 乙");
@@ -128,7 +131,7 @@ public class GuessProcessingServiceTest : TestClass
       : base(
         new DataManager(
           Path.GetTempPath(),
-          new AesEncryptor(Path.Combine(Path.GetTempPath(), "key.bin"))
+          new AesEncryptor(AesEncryptor.GetDefaultKeyPath(Path.GetTempPath()))
         )
       )
     {

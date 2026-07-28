@@ -42,7 +42,7 @@ public class StorageTest : TestClass
   [Test]
   public void AesEncryptor_EncryptDecrypt_RoundTrip()
   {
-    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
     var encryptor = new AesEncryptor(keyPath);
 
     var plainText = "my-secret-api-key-12345";
@@ -58,7 +58,7 @@ public class StorageTest : TestClass
   [Test]
   public void AesEncryptor_EncryptEmpty_ReturnsEmpty()
   {
-    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
     var encryptor = new AesEncryptor(keyPath);
 
     var encrypted = encryptor.Encrypt(string.Empty);
@@ -68,7 +68,7 @@ public class StorageTest : TestClass
   [Test]
   public void AesEncryptor_DecryptEmpty_ReturnsEmpty()
   {
-    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
     var encryptor = new AesEncryptor(keyPath);
 
     var decrypted = encryptor.Decrypt(string.Empty);
@@ -78,7 +78,7 @@ public class StorageTest : TestClass
   [Test]
   public void AesEncryptor_DecryptInvalidData_ReturnsEmpty()
   {
-    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
     var encryptor = new AesEncryptor(keyPath);
 
     var decrypted = encryptor.Decrypt("not-valid-base64!!!");
@@ -88,7 +88,7 @@ public class StorageTest : TestClass
   [Test]
   public void AesEncryptor_GeneratesKeyFile()
   {
-    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
     var encryptor = new AesEncryptor(keyPath);
 
     File.Exists(keyPath).ShouldBeTrue();
@@ -97,7 +97,7 @@ public class StorageTest : TestClass
   [Test]
   public void AesEncryptor_ReusesExistingKeyFile()
   {
-    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
     var encryptor1 = new AesEncryptor(keyPath);
     var encrypted = encryptor1.Encrypt("test");
 
@@ -187,7 +187,7 @@ public class StorageTest : TestClass
   [Test]
   public void DataManager_LoadAll_EmptyWhenNoFiles()
   {
-    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
     var encryptor = new AesEncryptor(keyPath);
     var dm = new DataManager(_tempDir, encryptor);
 
@@ -201,7 +201,7 @@ public class StorageTest : TestClass
   [Test]
   public void DataManager_SaveAndLoad_RoundTrip()
   {
-    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
     var encryptor = new AesEncryptor(keyPath);
     var dm = new DataManager(_tempDir, encryptor);
 
@@ -225,7 +225,7 @@ public class StorageTest : TestClass
   [Test]
   public void DataManager_AiModelApiKey_EncryptedOnSave()
   {
-    var keyPath = Path.Combine(_tempDir, "aes.key");
+    var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
     var encryptor = new AesEncryptor(keyPath);
     var dm = new DataManager(_tempDir, encryptor);
 

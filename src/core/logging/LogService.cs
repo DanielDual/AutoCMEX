@@ -55,6 +55,9 @@ public sealed class LogService : ILogService
     if (string.IsNullOrWhiteSpace(moduleName))
       moduleName = "Unknown";
 
+    if (_disposed)
+      throw new ObjectDisposedException(nameof(LogService), "LogService has been shut down.");
+
     lock (_loggersLock)
     {
       if (_loggers.TryGetValue(moduleName, out var existing))
@@ -89,6 +92,8 @@ public sealed class LogService : ILogService
     if (_disposed)
       return;
     _disposed = true;
+    _fileWriter.Dispose();
+    _inMemoryWriter.Clear();
   }
 
   /// <inheritdoc/>

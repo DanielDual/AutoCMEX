@@ -16,10 +16,11 @@ using Chickensoft.Log;
 /// 并将 <c>app.log</c> 重命名为 <c>app.1.log</c>，<c>app.1.log</c> 重命名为 <c>app.2.log</c>，依此类推。</para>
 /// <para>线程安全；自动对敏感字段（API Key、密码、Token 等）做脱敏。</para>
 /// </remarks>
-public sealed partial class RotatingFileWriter : ILogWriter
+public sealed partial class RotatingFileWriter : ILogWriter, IDisposable
 {
   private readonly LogConfig _config;
   private readonly object _lock = new();
+  private bool _disposed;
 
   // 匹配形如 key=xxx / key: xxx / "key":"xxx" 的敏感键值
   [GeneratedRegex(
@@ -124,6 +125,8 @@ public sealed partial class RotatingFileWriter : ILogWriter
     var sanitized = Sanitize(formattedMessage);
     lock (_lock)
     {
+      if (_disposed)
+        return;
       try
       {
         EnsureDirectoryExists();
@@ -135,6 +138,16 @@ public sealed partial class RotatingFileWriter : ILogWriter
         Godot.GD.PrintErr($"[RotatingFileWriter] Write failed: {ex.Message}");
       }
     }
+  }
+
+  /// <inheritdoc/>
+  public void Dispose()
+  {
+    lock (_lock)
+    {
+      _disposed = true;
+    }
+    GC.SuppressFinalize(this);
   }
 
   private void EnsureDirectoryExists()

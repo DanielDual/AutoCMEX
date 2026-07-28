@@ -8,6 +8,7 @@ using AutoCMEX.Core.Guessing;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Core.WebSocket;
+using AutoCMEX.Models;
 using AutoCMEX.UI.Logging;
 using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
@@ -121,8 +122,7 @@ public partial class MainWindow
   {
     // 初始化核心服务
     var dataDir = ProjectSettings.GlobalizePath("user://data/");
-    var keyPath = ProjectSettings.GlobalizePath("user://data/key.bin");
-    var encryptor = new AesEncryptor(keyPath);
+    var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(dataDir));
     _dataManager = new DataManager(dataDir, encryptor);
     _dataManager.LoadAll();
 
@@ -130,16 +130,21 @@ public partial class MainWindow
 
     _guessResponseHandler = new GuessResponseHandler();
     _guessPipeline = new GuessPipeline(_guessResponseHandler, _dataManager.Aliases);
+    var droppedGuessRepository = new DroppedGuessRepository();
     _guessProcessingService = new GuessProcessingService(
       _dataManager,
       _aiServiceFactory,
-      _guessResponseHandler
+      _guessResponseHandler,
+      droppedGuessRepository
     );
 
     // 初始化 WebSocket（Server 或 Client 模式）
     var wsLog = AppLogs.GetOrCreate().GetLogger("WebSocket");
     var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService);
     _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
+
+    // 订阅配置变更事件，自动重启 WebSocket
+    _dataManager.Settings.PropertyChanged += OnSettingsPropertyChanged;
 
     // 通知 AutoInject 依赖已就绪
     this.Provide();
@@ -188,6 +193,21 @@ public partial class MainWindow
 
     // 启动 WebSocket 服务器
     _ = _webSocketServer.StartAsync();
+  }
+
+  /// <summary>
+  /// 配置变更回调：当 WebSocket 相关配置变化时自动重启
+  /// </summary>
+  private void OnSettingsPropertyChanged(string propertyName)
+  {
+    if (
+      propertyName == nameof(AppSettings.WebSocketMode)
+      || propertyName == nameof(AppSettings.WebSocketPort)
+      || propertyName == nameof(AppSettings.KoishiWebSocketUrl)
+    )
+    {
+      RestartWebSocket();
+    }
   }
 
   /// <summary>
