@@ -221,7 +221,7 @@ public class GuessingPanelTest : TestClass
     var dm = _driver.SpellCardHandler.Root?.GetDataManager();
     dm.ShouldNotBeNull();
 
-    var bossSelect = _driver.SpellCardHandler.Root?.GetNode<OptionButton>("../../../BossSelect");
+    var bossSelect = _driver.SpellCardHandler.BossSelect.Root;
     bossSelect.ShouldNotBeNull();
     var initialCount = bossSelect.ItemCount;
 
@@ -256,7 +256,7 @@ public class GuessingPanelTest : TestClass
     dm.Bosses.Add(new Boss { Name = "待删除Boss" });
     _driver.SpellCardHandler.Root?.Refresh();
 
-    var bossSelect = _driver.SpellCardHandler.Root?.GetNode<OptionButton>("../../../BossSelect");
+    var bossSelect = _driver.SpellCardHandler.BossSelect.Root;
     bossSelect.ShouldNotBeNull();
     var initialCount = bossSelect.ItemCount;
     initialCount.ShouldBeGreaterThan(0);

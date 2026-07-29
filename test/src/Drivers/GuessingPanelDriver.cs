@@ -76,10 +76,7 @@ public class GuessingPanelDriver : ControlDriver<GuessingPanel>
   /// </summary>
   public void SubmitGuess(string text)
   {
-    if (
-      Root?.GetNodeOrNull<TextEdit>("MainContainer/ContentArea/RightPanel/GuessInput") is { } input
-    )
-      input.Text = text;
+    GuessInput.Type(text);
     ProcessBtn.ClickCenter();
   }
 
