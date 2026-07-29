@@ -23,17 +23,21 @@ public class SpellCardTreeHandlerDriver : ControlDriver<SpellCardTreeHandler>
     : base(producer)
   {
     BossSelect = new OptionButtonDriver(() =>
-      Root?.GetNodeOrNull<OptionButton>("../../../BossSelect")
+      Root?.GetNodeOrNull<OptionButton>("../../../BossSelect")!
     );
     ImportCardBtn = new ButtonDriver(() =>
-      Root?.GetNodeOrNull<Button>("SpellCardButtons/ImportCardBtn")
+      Root?.GetNodeOrNull<Button>("SpellCardButtons/ImportCardBtn")!
     );
     ExportCardBtn = new ButtonDriver(() =>
-      Root?.GetNodeOrNull<Button>("SpellCardButtons/ExportCardBtn")
+      Root?.GetNodeOrNull<Button>("SpellCardButtons/ExportCardBtn")!
     );
-    AddBossBtn = new ButtonDriver(() => Root?.GetNodeOrNull<Button>("SpellCardButtons/AddBossBtn"));
-    AddCardBtn = new ButtonDriver(() => Root?.GetNodeOrNull<Button>("SpellCardButtons/AddCardBtn"));
-    DeleteBtn = new ButtonDriver(() => Root?.GetNodeOrNull<Button>("SpellCardButtons/DeleteBtn"));
+    AddBossBtn = new ButtonDriver(() =>
+      Root?.GetNodeOrNull<Button>("SpellCardButtons/AddBossBtn")!
+    );
+    AddCardBtn = new ButtonDriver(() =>
+      Root?.GetNodeOrNull<Button>("SpellCardButtons/AddCardBtn")!
+    );
+    DeleteBtn = new ButtonDriver(() => Root?.GetNodeOrNull<Button>("SpellCardButtons/DeleteBtn")!);
   }
 
   /// <summary>

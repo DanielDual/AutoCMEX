@@ -22,17 +22,17 @@ public class AliasTreeHandlerDriver : ControlDriver<AliasTreeHandler>
     : base(producer)
   {
     ImportAliasBtn = new ButtonDriver(() =>
-      Root?.GetNodeOrNull<Button>("AliasButtons/ImportAliasBtn")
+      Root?.GetNodeOrNull<Button>("AliasButtons/ImportAliasBtn")!
     );
     ExportAliasBtn = new ButtonDriver(() =>
-      Root?.GetNodeOrNull<Button>("AliasButtons/ExportAliasBtn")
+      Root?.GetNodeOrNull<Button>("AliasButtons/ExportAliasBtn")!
     );
-    AddAliasBtn = new ButtonDriver(() => Root?.GetNodeOrNull<Button>("AliasButtons/AddAliasBtn"));
+    AddAliasBtn = new ButtonDriver(() => Root?.GetNodeOrNull<Button>("AliasButtons/AddAliasBtn")!);
     AddAliasToCreatorBtn = new ButtonDriver(() =>
-      Root?.GetNodeOrNull<Button>("AliasButtons/AddAliasToCreatorBtn")
+      Root?.GetNodeOrNull<Button>("AliasButtons/AddAliasToCreatorBtn")!
     );
     DeleteAliasBtn = new ButtonDriver(() =>
-      Root?.GetNodeOrNull<Button>("AliasButtons/DeleteAliasBtn")
+      Root?.GetNodeOrNull<Button>("AliasButtons/DeleteAliasBtn")!
     );
   }
 

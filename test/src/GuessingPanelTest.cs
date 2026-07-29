@@ -42,7 +42,7 @@ public class GuessingPanelTest : TestClass
     : base(testScene) { }
 
   [Setup]
-  public async Task Setup()
+  public void Setup()
   {
     _fixture = new Fixture(TestScene.GetTree());
 
@@ -209,6 +209,7 @@ public class GuessingPanelTest : TestClass
     _driver.AliasHandler.Root?.Refresh();
 
     root = _driver.AliasHandler.Tree?.GetRoot();
+    root.ShouldNotBeNull();
     root.GetChildCount().ShouldBe(1);
     creator = root.GetChild(0);
     creator.GetChildCount().ShouldBeGreaterThan(initialChildCount);

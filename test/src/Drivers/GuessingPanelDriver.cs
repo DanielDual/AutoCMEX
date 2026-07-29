@@ -25,31 +25,31 @@ public class GuessingPanelDriver : ControlDriver<GuessingPanel>
     : base(producer)
   {
     GuessInput = new TextEditDriver(() =>
-      Root?.GetNodeOrNull<TextEdit>("MainContainer/ContentArea/RightPanel/GuessInput")
+      Root?.GetNodeOrNull<TextEdit>("MainContainer/ContentArea/RightPanel/GuessInput")!
     );
     FuzzifyBtn = new ButtonDriver(() =>
-      Root?.GetNodeOrNull<Button>("MainContainer/ContentArea/RightPanel/GuessButtons/FuzzifyBtn")
+      Root?.GetNodeOrNull<Button>("MainContainer/ContentArea/RightPanel/GuessButtons/FuzzifyBtn")!
     );
     ProcessBtn = new ButtonDriver(() =>
-      Root?.GetNodeOrNull<Button>("MainContainer/ContentArea/RightPanel/GuessButtons/ProcessBtn")
+      Root?.GetNodeOrNull<Button>("MainContainer/ContentArea/RightPanel/GuessButtons/ProcessBtn")!
     );
     ResponseDisplay = new RichTextLabelDriver(() =>
-      Root?.GetNodeOrNull<RichTextLabel>("MainContainer/ContentArea/RightPanel/ResponseDisplay")
+      Root?.GetNodeOrNull<RichTextLabel>("MainContainer/ContentArea/RightPanel/ResponseDisplay")!
     );
     DroppedList = new ItemListDriver(() =>
       Root?.GetNodeOrNull<ItemList>(
         "MainContainer/ContentArea/RightPanel/DroppedSection/DroppedList"
-      )
+      )!
     );
     RetryDroppedBtn = new ButtonDriver(() =>
       Root?.GetNodeOrNull<Button>(
         "MainContainer/ContentArea/RightPanel/DroppedSection/DroppedButtons/RetryDroppedBtn"
-      )
+      )!
     );
     ClearDroppedBtn = new ButtonDriver(() =>
       Root?.GetNodeOrNull<Button>(
         "MainContainer/ContentArea/RightPanel/DroppedSection/DroppedButtons/ClearDroppedBtn"
-      )
+      )!
     );
   }
 
@@ -58,7 +58,9 @@ public class GuessingPanelDriver : ControlDriver<GuessingPanel>
   /// </summary>
   public SpellCardTreeHandlerDriver SpellCardHandler =>
     new(() =>
-      Root?.GetNodeOrNull<SpellCardTreeHandler>("MainContainer/ContentArea/LeftSplit/SpellCardArea")
+      Root?.GetNodeOrNull<SpellCardTreeHandler>(
+        "MainContainer/ContentArea/LeftSplit/SpellCardArea"
+      )!
     );
 
   /// <summary>
@@ -66,7 +68,7 @@ public class GuessingPanelDriver : ControlDriver<GuessingPanel>
   /// </summary>
   public AliasTreeHandlerDriver AliasHandler =>
     new(() =>
-      Root?.GetNodeOrNull<AliasTreeHandler>("MainContainer/ContentArea/LeftSplit/AliasArea")
+      Root?.GetNodeOrNull<AliasTreeHandler>("MainContainer/ContentArea/LeftSplit/AliasArea")!
     );
 
   /// <summary>
