@@ -59,4 +59,31 @@ public class SpellCardTreeHandlerDriver : ControlDriver<SpellCardTreeHandler>
   /// Deletes the currently selected item in the tree.
   /// </summary>
   public void DeleteSelected() => DeleteBtn.ClickCenter();
+
+  /// <summary>
+  /// Gets the number of items in the boss dropdown.
+  /// </summary>
+  public int BossSelectItemCount => BossSelect.Root?.ItemCount ?? 0;
+
+  /// <summary>
+  /// Gets the number of root children in the tree.
+  /// </summary>
+  public int TreeRootChildCount
+  {
+    get
+    {
+      var root = Tree?.GetRoot();
+      return root?.GetChildCount() ?? 0;
+    }
+  }
+
+  /// <summary>
+  /// Gets whether the import button is disabled.
+  /// </summary>
+  public bool ImportBtnDisabled => ImportCardBtn.Disabled;
+
+  /// <summary>
+  /// Gets whether the export button is disabled.
+  /// </summary>
+  public bool ExportBtnDisabled => ExportCardBtn.Disabled;
 }

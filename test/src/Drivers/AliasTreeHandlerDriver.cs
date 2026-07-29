@@ -55,4 +55,26 @@ public class AliasTreeHandlerDriver : ControlDriver<AliasTreeHandler>
   /// Deletes the currently selected item in the tree.
   /// </summary>
   public void DeleteSelected() => DeleteAliasBtn.ClickCenter();
+
+  /// <summary>
+  /// Gets the number of root children in the tree.
+  /// </summary>
+  public int TreeRootChildCount
+  {
+    get
+    {
+      var root = Tree?.GetRoot();
+      return root?.GetChildCount() ?? 0;
+    }
+  }
+
+  /// <summary>
+  /// Gets whether the import button is disabled.
+  /// </summary>
+  public bool ImportBtnDisabled => ImportAliasBtn.Disabled;
+
+  /// <summary>
+  /// Gets whether the export button is disabled.
+  /// </summary>
+  public bool ExportBtnDisabled => ExportAliasBtn.Disabled;
 }

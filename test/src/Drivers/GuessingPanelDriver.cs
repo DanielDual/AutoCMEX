@@ -94,4 +94,66 @@ public class GuessingPanelDriver : ControlDriver<GuessingPanel>
   /// Clears all dropped guesses.
   /// </summary>
   public void ClearAllDropped() => ClearDroppedBtn.ClickCenter();
+
+  /// <summary>
+  /// Gets the current response display text.
+  /// </summary>
+  public string ResponseText => ResponseDisplay.Text ?? string.Empty;
+
+  /// <summary>
+  /// Gets the number of items in the dropped list.
+  /// </summary>
+  public int DroppedCount
+  {
+    get
+    {
+      var list = Root?.GetNodeOrNull<ItemList>(
+        "MainContainer/ContentArea/RightPanel/DroppedSection/DroppedList"
+      );
+      return list?.ItemCount ?? 0;
+    }
+  }
+
+  /// <summary>
+  /// Gets whether the fuzzify button is disabled.
+  /// </summary>
+  public bool FuzzifyBtnDisabled => FuzzifyBtn.Root?.Disabled ?? true;
+
+  /// <summary>
+  /// Gets the fuzzify button text.
+  /// </summary>
+  public string FuzzifyBtnText
+  {
+    get
+    {
+      var btn = Root?.GetNodeOrNull<Button>(
+        "MainContainer/ContentArea/RightPanel/GuessButtons/FuzzifyBtn"
+      );
+      return btn?.Text ?? string.Empty;
+    }
+  }
+
+  /// <summary>
+  /// Gets the retry dropped button text.
+  /// </summary>
+  public string RetryDroppedBtnText
+  {
+    get
+    {
+      var btn = Root?.GetNodeOrNull<Button>(
+        "MainContainer/ContentArea/RightPanel/DroppedSection/DroppedButtons/RetryDroppedBtn"
+      );
+      return btn?.Text ?? string.Empty;
+    }
+  }
+
+  /// <summary>
+  /// Gets whether the retry dropped button is disabled.
+  /// </summary>
+  public bool RetryDroppedBtnDisabled => RetryDroppedBtn.Root?.Disabled ?? true;
+
+  /// <summary>
+  /// Gets whether the process button is disabled.
+  /// </summary>
+  public bool ProcessBtnDisabled => ProcessBtn.Root?.Disabled ?? false;
 }
