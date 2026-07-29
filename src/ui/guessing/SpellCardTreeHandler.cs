@@ -80,7 +80,15 @@ public partial class SpellCardTreeHandler : Control
 
   public void OnResolved()
   {
-    _dm = DataManager;
+    try
+    {
+      _dm = DataManager;
+    }
+    catch (NullReferenceException)
+    {
+      // Provider not available (e.g., in tests without DataManagerProvider)
+      return;
+    }
     if (_dm == null)
       return;
     _dm.Bosses.CollectionChanged += (_, _) => Refresh();

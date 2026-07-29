@@ -166,6 +166,11 @@ public partial class GuessingPanel : Control
 
   private void UpdateFuzzifyButtonState()
   {
+    // Node references may not be resolved yet if called from _Notification
+    // before AutoInject has run.
+    if (FuzzifyBtn == null)
+      return;
+
     var hasAi = false;
     if (_dm != null)
     {
@@ -302,6 +307,11 @@ public partial class GuessingPanel : Control
 
   private void RefreshDroppedUI()
   {
+    // Node references may not be resolved yet if called from _Notification
+    // before AutoInject has run.
+    if (DroppedList == null || RetryDroppedBtn == null || ClearDroppedBtn == null)
+      return;
+
     var service = _guessProcessingService;
     if (service == null)
       return;

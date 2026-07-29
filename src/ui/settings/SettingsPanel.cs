@@ -71,10 +71,19 @@ public partial class SettingsPanel : Control
 
   public void OnResolved()
   {
-    // 依赖已解析，同步设置数据
-    if (DataManager != null)
+    // 依赖已解析，同步设置数据。依赖提供者可能尚未注册（如测试环境），
+    // 此时 DependOn 会抛出 NullReferenceException，需忽略。
+    try
     {
-      _settings = DataManager.Settings;
+      var dm = DataManager;
+      if (dm != null)
+      {
+        _settings = dm.Settings;
+      }
+    }
+    catch (NullReferenceException)
+    {
+      // Provider not available — leave default settings.
     }
   }
 
