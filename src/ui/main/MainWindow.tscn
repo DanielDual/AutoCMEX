@@ -96,6 +96,7 @@ size_flags_horizontal = 3
 
 [node name="MergePanel" parent="MainContainer/RightPanel" unique_id=1266187082 instance=ExtResource("6_merge")]
 visible = false
+layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -104,6 +105,7 @@ grow_vertical = 2
 
 [node name="GuessingPanel" parent="MainContainer/RightPanel" unique_id=1266187084 instance=ExtResource("2_guessing")]
 visible = false
+layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -112,6 +114,7 @@ grow_vertical = 2
 
 [node name="InfoPanel" parent="MainContainer/RightPanel" unique_id=1266187085 instance=ExtResource("7_info")]
 visible = false
+layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -120,6 +123,7 @@ grow_vertical = 2
 
 [node name="SettingsPanel" parent="MainContainer/RightPanel" unique_id=1266187087 instance=ExtResource("3_settings")]
 visible = false
+layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -128,6 +132,7 @@ grow_vertical = 2
 
 [node name="HelpPanel" parent="MainContainer/RightPanel" unique_id=1266187088 instance=ExtResource("8_help")]
 visible = false
+layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
@@ -136,16 +141,8 @@ grow_vertical = 2
 
 [node name="LogPanel" parent="MainContainer/RightPanel" unique_id=1266187090 instance=ExtResource("4_log")]
 visible = false
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+layout_mode = 1
 
 [node name="WebSocketPanel" parent="MainContainer/RightPanel" unique_id=1266187091 instance=ExtResource("5_ws")]
 visible = false
-anchors_preset = 15
-anchor_right = 1.0
-anchor_bottom = 1.0
-grow_horizontal = 2
-grow_vertical = 2
+layout_mode = 1

@@ -10,7 +10,6 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("1_rrnkb")
-metadata/_custom_type_script = "res://src/ui/logging/LogPanel.cs"
 
 [node name="MainContainer" type="VBoxContainer" parent="." unique_id=1760719818]
 layout_mode = 0
