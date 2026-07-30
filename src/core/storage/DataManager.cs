@@ -41,6 +41,15 @@ public class DataManager : IDisposable
   /// <summary>触发数据变更通知</summary>
   public void NotifyDataChanged() => DataChanged?.Invoke();
 
+  /// <summary>
+  /// 当 AppSettings 属性变化时自动通知 UI 组件
+  /// </summary>
+  private void OnSettingsPropertyChanged(string propertyName)
+  {
+    _log.Print($"DataManager: Setting '{propertyName}' changed, notifying UI...");
+    NotifyDataChanged();
+  }
+
   public DataManager(string dataDir, AesEncryptor encryptor)
     : this(dataDir, encryptor, AppLogs.GetOrCreate().GetLogger(nameof(DataManager))) { }
 
@@ -81,6 +90,9 @@ public class DataManager : IDisposable
       _aliases.Add(item);
 
     _settings = LoadJson<AppSettings>("app_settings.json") ?? new();
+    // Subscribe to property changes to notify UI components
+    _settings.PropertyChanged -= OnSettingsPropertyChanged; // Avoid duplicate subscriptions
+    _settings.PropertyChanged += OnSettingsPropertyChanged;
     _log.Print(
       $"DataManager.LoadAll: bosses={_bosses.Count}, aliases={_aliases.Count}, "
         + $"aiModels={_settings.AiModels.Count}"

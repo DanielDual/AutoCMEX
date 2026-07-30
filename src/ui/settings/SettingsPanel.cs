@@ -188,6 +188,7 @@ public partial class SettingsPanel : Control
           _settings.ActiveAiModelId = _settings.AiModels[modelIdx].Id;
       }
       DataManager?.TriggerAutoSave();
+      DataManager?.NotifyDataChanged();
     };
     activeRow.AddChild(modelSelect);
     container.AddChild(activeRow);
@@ -241,6 +242,7 @@ public partial class SettingsPanel : Control
       };
       _settings.AiModels.Add(newModel);
       DataManager?.TriggerAutoSave();
+      DataManager?.NotifyDataChanged();
       RefreshConfigArea();
     };
     container.AddChild(addBtn);
@@ -368,6 +370,7 @@ public partial class SettingsPanel : Control
     {
       _settings.AiModels.Remove(model);
       DataManager?.TriggerAutoSave();
+      DataManager?.NotifyDataChanged();
       RefreshConfigArea();
     };
     actionRow.AddChild(deleteBtn);

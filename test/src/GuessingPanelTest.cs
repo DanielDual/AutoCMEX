@@ -404,6 +404,38 @@ public class GuessingPanelTest : TestClass
   }
 
   [Test]
+  public async Task FuzzifyBtn_HasAiModel_IsEnabled()
+  {
+    _dm.Bosses.Add(
+      new Boss
+      {
+        Name = "TestBoss",
+        SpellCards = new System.Collections.ObjectModel.ObservableCollection<SpellCard>
+        {
+          new() { Name = "Card1", Creator = "Alice" },
+        },
+      }
+    );
+    _dm.Settings.SelectedBossIndex = 0;
+    _dm.Settings.ActiveAiModelId = "test-model";
+    _dm.Settings.AiModels.Add(
+      new AiModelConfig
+      {
+        Id = "test-model",
+        ApiFormat = "OpenAI",
+        EndpointUrl = "https://example.com",
+        ModelId = "gpt-4",
+        EncryptedApiKey = "sk-test",
+      }
+    );
+
+    // Wait for PropertyChanged → NotifyDataChanged → CallDeferred → UpdateFuzzifyButtonState
+    await TestScene.GetTree().NextFrame();
+
+    _driver.FuzzifyBtn.Disabled.ShouldBeFalse();
+  }
+
+  [Test]
   public void RetryDroppedBtn_NoDropped_IsDisabled() =>
     _driver.RetryDroppedBtnDisabled.ShouldBeTrue();
 

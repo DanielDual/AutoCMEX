@@ -21,8 +21,18 @@ public class AppSettings
   /// <summary>AI 模型配置列表</summary>
   public List<AiModelConfig> AiModels { get; set; } = new();
 
+  private string? _activeAiModelId;
+
   /// <summary>当前激活的 AI 模型 ID，对应 AiModels 中某个模型的 Id</summary>
-  public string? ActiveAiModelId { get; set; }
+  public string? ActiveAiModelId
+  {
+    get => _activeAiModelId;
+    set
+    {
+      _activeAiModelId = value;
+      OnPropertyChanged();
+    }
+  }
 
   /// <summary>AI 请求超时时间（秒），默认 100</summary>
   public int AiTimeoutSeconds { get; set; } = 100;
