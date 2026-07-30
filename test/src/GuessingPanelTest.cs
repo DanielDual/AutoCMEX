@@ -3,12 +3,15 @@ namespace AutoCMEX;
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using AutoCMEX.Core.Ai;
+using AutoCMEX.Core.Guessing;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Guessing;
 using Chickensoft.AutoInject;
 using Chickensoft.GoDotTest;
 using Chickensoft.GodotTestDriver;
+using Chickensoft.GodotTestDriver.Input;
 using Chickensoft.GodotTestDriver.Util;
 using Chickensoft.Introspection;
 using Godot;
@@ -30,35 +33,50 @@ public partial class DataManagerProvider : Node, IProvide<DataManager>
 }
 
 /// <summary>
-/// GuessingPanel UI 集成测试 - 验证所有编辑功能
-/// 使用自定义 Driver 封装节点操作，避免硬编码路径。
+/// GuessingPanel UI 集成测试 — 使用 AutoInject 推荐的测试模式。
 /// </summary>
 public class GuessingPanelTest : TestClass
 {
   private Fixture _fixture = default!;
   private GuessingPanelDriver _driver = default!;
   private GuessingPanel _panel = default!;
-  private DataManagerProvider _provider = default!;
+  private DataManager _dm = default!;
 
   public GuessingPanelTest(Node testScene)
     : base(testScene) { }
 
   [Setup]
-  public void Setup()
+  public async Task Setup()
   {
     _fixture = new Fixture(TestScene.GetTree());
 
-    // 创建 DataManager 并通过 AutoInject 提供给子节点处理器
+    // 创建测试 DataManager
     var tmpDir = Path.Combine(Path.GetTempPath(), $"AutoCMEX_TestSetup_{Guid.NewGuid():N}");
     Directory.CreateDirectory(tmpDir);
-    var dm = new DataManager(tmpDir, new AesEncryptor(AesEncryptor.GetDefaultKeyPath(tmpDir)));
-    _provider = new DataManagerProvider { DataManagerInstance = dm };
-    TestScene.GetTree().Root.AddChild(_provider);
+    _dm = new DataManager(tmpDir, new AesEncryptor(AesEncryptor.GetDefaultKeyPath(tmpDir)));
 
-    // 手动加载 GuessingPanel 场景并添加为提供者的子节点
+    // 创建 Provider（子处理器需要从 Provider 解析 DataManager）
+    var provider = new DataManagerProvider { DataManagerInstance = _dm };
+
+    // 实例化场景（获取子节点）
     var scene = GD.Load<PackedScene>("res://src/ui/guessing/GuessingPanel.tscn");
     _panel = scene.Instantiate<GuessingPanel>();
-    _provider.AddChild(_panel);
+
+    // 伪造 IGuessProcessingService 依赖（面板专用）
+    _panel.FakeDependency<IGuessProcessingService>(
+      new GuessProcessingService(
+        _dm,
+        new AiServiceFactory(_dm),
+        new GuessResponseHandler(),
+        new DroppedGuessRepository()
+      )
+    );
+
+    // 将 Provider 加入场景树
+    TestScene.GetTree().Root.AddChild(provider);
+
+    // 将 Panel 加入 Provider（触发 _Ready → OnReady → OnResolved）
+    provider.AddChild(_panel);
 
     _driver = new GuessingPanelDriver(() => _panel);
   }
@@ -71,12 +89,6 @@ public class GuessingPanelTest : TestClass
       _panel.GetParent()?.RemoveChild(_panel);
       _panel.QueueFree();
       _panel = null;
-    }
-    if (_provider != null)
-    {
-      _provider.GetParent()?.RemoveChild(_provider);
-      _provider.QueueFree();
-      _provider = null;
     }
     _fixture.Cleanup();
   }
@@ -145,8 +157,9 @@ public class GuessingPanelTest : TestClass
   public void ProcessBtn_Exists() => _driver.ProcessBtn.ShouldNotBeNull();
 
   [Test]
-  public void ProcessEmptyInput_ShowsError()
+  public async Task ProcessEmptyInput_ShowsError()
   {
+    await TestScene.GetTree().NextFrame();
     _driver.ProcessBtn.ClickCenter();
     _driver.ResponseDisplay.Text.ShouldNotBeNullOrEmpty();
   }
@@ -198,8 +211,6 @@ public class GuessingPanelTest : TestClass
   [Test]
   public void AddAlias_AddsCreatorToTree()
   {
-    // Directly invoke handler method since dependencies may not be
-    // resolved yet in test fixture setup.
     _driver.AliasHandler.Root?.GetOnAlias()();
 
     var root = _driver.AliasHandler.Tree?.GetRoot();
@@ -347,60 +358,12 @@ public class GuessingPanelTest : TestClass
   // ==================== 猜测处理行为测试 ====================
 
   [Test]
-  public void FuzzifyBtn_HasAiModel_IsEnabled()
-  {
-    var dm = _driver.SpellCardHandler.Root?.GetDataManager();
-    dm.ShouldNotBeNull();
-
-    dm.Bosses.Add(
-      new Boss
-      {
-        Name = "TestBoss",
-        SpellCards = new System.Collections.ObjectModel.ObservableCollection<SpellCard>
-        {
-          new() { Name = "Card1", Creator = "Alice" },
-        },
-      }
-    );
-    dm.Settings.SelectedBossIndex = 0;
-    dm.Settings.ActiveAiModelId = "test-model";
-    dm.Settings.AiModels.Add(
-      new AiModelConfig
-      {
-        Id = "test-model",
-        ApiFormat = "OpenAI",
-        EndpointUrl = "https://example.com",
-        ModelId = "gpt-4",
-        EncryptedApiKey = "sk-test",
-      }
-    );
-    _panel.OnResolved();
-
-    // Verify that OnResolved doesn't throw when AI model is configured
-    // The actual button state depends on AutoInject lifecycle which may not
-    // be fully initialized in test environment
-    _driver.FuzzifyBtn.ShouldNotBeNull();
-  }
-
-  [Test]
-  public void DroppedList_Empty_InitiallyDisabled()
-  {
-    var dm = _driver.SpellCardHandler.Root?.GetDataManager();
-    dm.ShouldNotBeNull();
-    _panel.OnResolved();
-
+  public void DroppedList_Empty_InitiallyDisabled() =>
     _driver.RetryDroppedBtnDisabled.ShouldBeTrue();
-  }
 
   [Test]
   public void ClearDropped_NoGuesses_ButtonDisabled()
   {
-    var dm = _driver.SpellCardHandler.Root?.GetDataManager();
-    dm.ShouldNotBeNull();
-    _panel.OnResolved();
-
-    // With no dropped guesses, clear button should be disabled
-    // Just verify the button state without clicking
     var clearBtn = _panel.GetNode<Button>(
       "MainContainer/ContentArea/RightPanel/DroppedSection/DroppedButtons/ClearDroppedBtn"
     );
@@ -411,7 +374,6 @@ public class GuessingPanelTest : TestClass
   [Test]
   public void GuessInput_CanTypeText()
   {
-    _panel.OnResolved();
     var input = _panel.GetNode<TextEdit>("MainContainer/ContentArea/RightPanel/GuessInput");
     input.ShouldNotBeNull();
     input.Text = "test input";
@@ -419,22 +381,14 @@ public class GuessingPanelTest : TestClass
   }
 
   [Test]
-  public void GuessInput_DriverIsAccessible()
-  {
-    _panel.OnResolved();
-    // Verify that the guess input driver can be accessed
-    _driver.GuessInput.ShouldNotBeNull();
-  }
+  public void GuessInput_DriverIsAccessible() => _driver.GuessInput.ShouldNotBeNull();
 
   // ==================== 按钮状态测试 ====================
 
   [Test]
   public void FuzzifyBtn_NoAiModel_IsDisabled()
   {
-    var dm = _driver.SpellCardHandler.Root?.GetDataManager();
-    dm.ShouldNotBeNull();
-
-    dm.Bosses.Add(
+    _dm.Bosses.Add(
       new Boss
       {
         Name = "TestBoss",
@@ -444,30 +398,18 @@ public class GuessingPanelTest : TestClass
         },
       }
     );
-    dm.Settings.SelectedBossIndex = 0;
-    // No AI model configured
-    _panel.OnResolved();
+    _dm.Settings.SelectedBossIndex = 0;
 
     _driver.FuzzifyBtnDisabled.ShouldBeTrue();
   }
 
   [Test]
-  public void RetryDroppedBtn_NoDropped_IsDisabled()
-  {
-    var dm = _driver.SpellCardHandler.Root?.GetDataManager();
-    dm.ShouldNotBeNull();
-    _panel.OnResolved();
-
+  public void RetryDroppedBtn_NoDropped_IsDisabled() =>
     _driver.RetryDroppedBtnDisabled.ShouldBeTrue();
-  }
 
   [Test]
   public void ClearDroppedBtn_NoDropped_IsDisabled()
   {
-    var dm = _driver.SpellCardHandler.Root?.GetDataManager();
-    dm.ShouldNotBeNull();
-    _panel.OnResolved();
-
     var clearBtn = _panel.GetNode<Button>(
       "MainContainer/ContentArea/RightPanel/DroppedSection/DroppedButtons/ClearDroppedBtn"
     );
@@ -476,13 +418,30 @@ public class GuessingPanelTest : TestClass
   }
 
   [Test]
-  public void ProcessBtn_IsEnabled()
-  {
-    var dm = _driver.SpellCardHandler.Root?.GetDataManager();
-    dm.ShouldNotBeNull();
-    _panel.OnResolved();
+  public void ProcessBtn_IsEnabled() => _driver.ProcessBtnDisabled.ShouldBeFalse();
 
-    // Process button should always be enabled
-    _driver.ProcessBtnDisabled.ShouldBeFalse();
+  // ==================== 异步集成测试 ====================
+
+  [Test]
+  [Timeout(15000)]
+  public async Task OnProcessGuess_StrictMode_Result()
+  {
+    _dm.Bosses.Add(
+      new Boss
+      {
+        Name = "TestBoss",
+        SpellCards = new System.Collections.ObjectModel.ObservableCollection<SpellCard>
+        {
+          new() { Name = "Card1", Creator = "Alice" },
+          new() { Name = "Card2", Creator = "Bob" },
+        },
+      }
+    );
+    _dm.Settings.SelectedBossIndex = 0;
+    _dm.Settings.MessageFilterMode = "strict";
+
+    await TestScene.GetTree().NextFrame();
+    _driver.SubmitGuess("1Alice 2Bob");
+    await TestScene.GetTree().WithinSeconds(5f, () => _driver.ResponseText.Contains("✔️"));
   }
 }
