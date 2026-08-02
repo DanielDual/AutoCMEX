@@ -89,6 +89,7 @@ size_flags_horizontal = 3
 text = "日志"
 
 [node name="WebSocketBtn" type="Button" parent="MainContainer/LeftPanel" unique_id=1543099074]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "WebSocket"
@@ -107,6 +108,7 @@ layout_mode = 2
 size_flags_horizontal = 3
 
 [node name="MergePanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187082 instance=ExtResource("6_merge")]
+unique_name_in_owner = true
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -116,6 +118,7 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="GuessingPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187084 instance=ExtResource("2_guessing")]
+unique_name_in_owner = true
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -126,6 +129,7 @@ grow_vertical = 2
 script = ExtResource("4_qts5r")
 
 [node name="InfoPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187085 instance=ExtResource("7_info")]
+unique_name_in_owner = true
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -135,6 +139,7 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="SettingsPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187087 instance=ExtResource("3_settings")]
+unique_name_in_owner = true
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -145,6 +150,7 @@ grow_vertical = 2
 script = ExtResource("7_8a7bm")
 
 [node name="HelpPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187088 instance=ExtResource("8_help")]
+unique_name_in_owner = true
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -154,6 +160,7 @@ grow_horizontal = 2
 grow_vertical = 2
 
 [node name="LogPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187090 instance=ExtResource("4_log")]
+unique_name_in_owner = true
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -164,6 +171,7 @@ grow_vertical = 2
 script = ExtResource("10_sdns3")
 
 [node name="WebSocketPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187091 instance=ExtResource("5_ws")]
+unique_name_in_owner = true
 visible = false
 layout_mode = 1
 anchors_preset = 15

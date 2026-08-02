@@ -79,15 +79,6 @@ public partial class GuessingPanel : Control
     ClearDroppedBtn.Pressed += OnClearDropped;
   }
 
-  public void OnNotification(int what)
-  {
-    if (what == NotificationVisibilityChanged && Visible)
-    {
-      UpdateFuzzifyButtonState();
-      RefreshDroppedUI();
-    }
-  }
-
   public void OnResolved()
   {
     _dm = DataManager;

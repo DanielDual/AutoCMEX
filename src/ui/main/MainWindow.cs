@@ -58,32 +58,32 @@ public partial class MainWindow
   [Node("%LogBtn")]
   public Button LogBtn { get; set; } = default!;
 
-  [Node("MainContainer/LeftPanel/WebSocketBtn")]
+  [Node("%WebSocketBtn")]
   public Button WebSocketBtn { get; set; } = default!;
 
   #endregion
 
   #region Panel Nodes (instanced in scene)
 
-  [Node("MainContainer/RightPanel/MergePanel")]
+  [Node("%MergePanel")]
   public Control MergePanelNode { get; set; } = default!;
 
-  [Node("MainContainer/RightPanel/GuessingPanel")]
+  [Node("%GuessingPanel")]
   public Control GuessingPanelNode { get; set; } = default!;
 
-  [Node("MainContainer/RightPanel/InfoPanel")]
+  [Node("%InfoPanel")]
   public Control InfoPanelNode { get; set; } = default!;
 
-  [Node("MainContainer/RightPanel/SettingsPanel")]
+  [Node("%SettingsPanel")]
   public Control SettingsPanelNode { get; set; } = default!;
 
-  [Node("MainContainer/RightPanel/HelpPanel")]
+  [Node("%HelpPanel")]
   public Control HelpPanelNode { get; set; } = default!;
 
-  [Node("MainContainer/RightPanel/LogPanel")]
+  [Node("%LogPanel")]
   public LogPanel LogPanelNode { get; set; } = default!;
 
-  [Node("MainContainer/RightPanel/WebSocketPanel")]
+  [Node("%WebSocketPanel")]
   public WebSocketPanel WebSocketPanelNode { get; set; } = default!;
 
   #endregion
