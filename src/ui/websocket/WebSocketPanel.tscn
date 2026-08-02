@@ -40,13 +40,9 @@ layout_mode = 2
 text = "状态: "
 
 [node name="StatusLabel" type="Label" parent="MainContainer/StatusContainer" unique_id=853976923]
-layout_mode = 2
-text = "已停止"
-
-[node name="@Label@23511" type="Label" parent="MainContainer/StatusContainer" unique_id=369895865]
 unique_name_in_owner = true
 layout_mode = 2
-text = "状态: 未启动"
+text = "已停止"
 
 [node name="PortLabel" type="Label" parent="MainContainer" unique_id=1245692162]
 unique_name_in_owner = true
