@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using AutoCMEX.Models;
+using Chickensoft.Sync.Primitives;
 using ClosedXML.Excel;
 
 /// <summary>
@@ -54,7 +55,13 @@ public class ExcelImporter : IImporter
           bossOrder.Add(bossName);
         }
 
-        boss.SpellCards.Add(new SpellCard { Name = cardName, Creator = creator });
+        boss.SpellCards.Add(
+          new SpellCard
+          {
+            Name = new AutoValue<string>(cardName),
+            Creator = new AutoValue<string>(creator),
+          }
+        );
       }
 
       var bosses = new List<Boss>();

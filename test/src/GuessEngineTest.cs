@@ -187,9 +187,9 @@ public class GuessEngineTest : TestClass
       Name = "TestBoss",
       SpellCards = new AutoList<SpellCard>
       {
-        new() { Name = "Card1", Creator = "Alice" },
-        new() { Name = "Card2", Creator = "Bob" },
-        new() { Name = "Card3", Creator = "Charlie" },
+        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("Alice") },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
+        new() { Name = new AutoValue<string>("Card3"), Creator = new AutoValue<string>("Charlie") },
       },
     };
 
@@ -208,8 +208,8 @@ public class GuessEngineTest : TestClass
       Name = "TestBoss",
       SpellCards = new AutoList<SpellCard>
       {
-        new() { Name = "Card1" },
-        new() { Name = "Card2" },
+        new() { Name = new AutoValue<string>("Card1") },
+        new() { Name = new AutoValue<string>("Card2") },
       },
     };
 
@@ -226,7 +226,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new AutoList<SpellCard> { new() { Name = "Card1" } },
+      SpellCards = new AutoList<SpellCard> { new() { Name = new AutoValue<string>("Card1") } },
     };
 
     var pipeline = new GuessPipeline(new GuessResponseHandler(), new List<CreatorAlias>());
@@ -244,8 +244,8 @@ public class GuessEngineTest : TestClass
       Name = "TestBoss",
       SpellCards = new AutoList<SpellCard>
       {
-        new() { Name = "Card1", Creator = "Alice" },
-        new() { Name = "Card2", Creator = "Bob" },
+        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("Alice") },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
       },
     };
 
@@ -280,12 +280,12 @@ public class GuessEngineTest : TestClass
       {
         new()
         {
-          Name = "Card1",
-          Creator = "Alice",
-          IsRevealed = true,
+          Name = new AutoValue<string>("Card1"),
+          Creator = new AutoValue<string>("Alice"),
+          IsRevealed = new AutoValue<bool>(true),
         },
-        new() { Name = "Card2", Creator = "Bob" },
-        new() { Name = "Card3", Creator = "Charlie" },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
+        new() { Name = new AutoValue<string>("Card3"), Creator = new AutoValue<string>("Charlie") },
       },
     };
 
@@ -305,8 +305,8 @@ public class GuessEngineTest : TestClass
       Name = "TestBoss",
       SpellCards = new AutoList<SpellCard>
       {
-        new() { Name = "Card1", Creator = "Alice" },
-        new() { Name = "Card2", Creator = "Bob" },
+        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("Alice") },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
       },
     };
 
@@ -325,7 +325,7 @@ public class GuessEngineTest : TestClass
       Name = "TestBoss",
       SpellCards = new AutoList<SpellCard>
       {
-        new() { Name = "Card1", Creator = "Alice" },
+        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("Alice") },
       },
     };
 
@@ -335,7 +335,7 @@ public class GuessEngineTest : TestClass
     result.IsSuccess.ShouldBeTrue();
     result.Response.ShouldBe("必须猜两个以上");
     // 单张猜测不标记为已猜出
-    boss.SpellCards[0].IsGuessedOut.ShouldBeFalse();
+    boss.SpellCards[0].IsGuessedOut.Value.ShouldBeFalse();
   }
 
   [Test]
@@ -348,12 +348,12 @@ public class GuessEngineTest : TestClass
       {
         new()
         {
-          Name = "Card1",
-          Creator = "Alice",
-          IsGuessedOut = true,
+          Name = new AutoValue<string>("Card1"),
+          Creator = new AutoValue<string>("Alice"),
+          IsGuessedOut = new AutoValue<bool>(true),
         },
-        new() { Name = "Card2", Creator = "Bob" },
-        new() { Name = "Card3", Creator = "Charlie" },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
+        new() { Name = new AutoValue<string>("Card3"), Creator = new AutoValue<string>("Charlie") },
       },
     };
 
@@ -374,9 +374,9 @@ public class GuessEngineTest : TestClass
       Name = "TestBoss",
       SpellCards = new AutoList<SpellCard>
       {
-        new() { Name = "Card1", Creator = "Alice" },
-        new() { Name = "Card2", Creator = "Bob" },
-        new() { Name = "Card3", Creator = "Charlie" },
+        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("Alice") },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
+        new() { Name = new AutoValue<string>("Card3"), Creator = new AutoValue<string>("Charlie") },
       },
     };
 
@@ -387,9 +387,9 @@ public class GuessEngineTest : TestClass
     result.Response.ShouldBe("3/3");
 
     // All three should now be marked as guessed out
-    boss.SpellCards[0].IsGuessedOut.ShouldBeTrue();
-    boss.SpellCards[1].IsGuessedOut.ShouldBeTrue();
-    boss.SpellCards[2].IsGuessedOut.ShouldBeTrue();
+    boss.SpellCards[0].IsGuessedOut.Value.ShouldBeTrue();
+    boss.SpellCards[1].IsGuessedOut.Value.ShouldBeTrue();
+    boss.SpellCards[2].IsGuessedOut.Value.ShouldBeTrue();
   }
 
   [Test]
@@ -400,9 +400,9 @@ public class GuessEngineTest : TestClass
       Name = "TestBoss",
       SpellCards = new AutoList<SpellCard>
       {
-        new() { Name = "Card1", Creator = "Alice" },
-        new() { Name = "Card2", Creator = "Bob" },
-        new() { Name = "Card3", Creator = "Charlie" },
+        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("Alice") },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
+        new() { Name = new AutoValue<string>("Card3"), Creator = new AutoValue<string>("Charlie") },
       },
     };
 
@@ -413,9 +413,9 @@ public class GuessEngineTest : TestClass
     result.Response.ShouldBe("2/3");
 
     // None should be marked as guessed out (only 2/3 correct)
-    boss.SpellCards[0].IsGuessedOut.ShouldBeFalse();
-    boss.SpellCards[1].IsGuessedOut.ShouldBeFalse();
-    boss.SpellCards[2].IsGuessedOut.ShouldBeFalse();
+    boss.SpellCards[0].IsGuessedOut.Value.ShouldBeFalse();
+    boss.SpellCards[1].IsGuessedOut.Value.ShouldBeFalse();
+    boss.SpellCards[2].IsGuessedOut.Value.ShouldBeFalse();
   }
 
   [Test]
@@ -428,15 +428,15 @@ public class GuessEngineTest : TestClass
       {
         new()
         {
-          Name = "Card1",
-          Creator = "Alice",
-          IsGuessedOut = true,
+          Name = new AutoValue<string>("Card1"),
+          Creator = new AutoValue<string>("Alice"),
+          IsGuessedOut = new AutoValue<bool>(true),
         },
         new()
         {
-          Name = "Card2",
-          Creator = "Bob",
-          IsGuessedOut = true,
+          Name = new AutoValue<string>("Card2"),
+          Creator = new AutoValue<string>("Bob"),
+          IsGuessedOut = new AutoValue<bool>(true),
         },
       },
     };
@@ -456,9 +456,9 @@ public class GuessEngineTest : TestClass
       Name = "TestBoss",
       SpellCards = new AutoList<SpellCard>
       {
-        new() { Name = "Card1", Creator = "Alice" },
-        new() { Name = "Card2", Creator = "Bob" },
-        new() { Name = "Card3", Creator = "Charlie" },
+        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("Alice") },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
+        new() { Name = new AutoValue<string>("Card3"), Creator = new AutoValue<string>("Charlie") },
       },
     };
 

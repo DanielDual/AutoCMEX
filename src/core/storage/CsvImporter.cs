@@ -6,6 +6,7 @@ using System.Globalization;
 using System.IO;
 using System.Text;
 using AutoCMEX.Models;
+using Chickensoft.Sync.Primitives;
 using CsvHelper;
 using CsvHelper.Configuration;
 
@@ -57,7 +58,13 @@ public class CsvImporter : IImporter
           bossOrder.Add(bossName);
         }
 
-        boss.SpellCards.Add(new SpellCard { Name = cardName, Creator = creator });
+        boss.SpellCards.Add(
+          new SpellCard
+          {
+            Name = new AutoValue<string>(cardName),
+            Creator = new AutoValue<string>(creator),
+          }
+        );
       }
 
       var bosses = new List<Boss>();

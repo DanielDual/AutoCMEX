@@ -30,8 +30,8 @@ public class GuessProcessingServiceTest : TestClass
       Name = "TestBoss",
       SpellCards = new AutoList<SpellCard>
       {
-        new() { Name = "Card1", Creator = "Alice" },
-        new() { Name = "Card2", Creator = "Bob" },
+        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("Alice") },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
       },
     };
 
@@ -62,7 +62,7 @@ public class GuessProcessingServiceTest : TestClass
         Name = "TestBoss",
         SpellCards = new AutoList<SpellCard>
         {
-          new() { Name = "Card1", Creator = "Alice" },
+          new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("Alice") },
         },
       }
     );
@@ -93,8 +93,8 @@ public class GuessProcessingServiceTest : TestClass
         Name = "TestBoss",
         SpellCards = new AutoList<SpellCard>
         {
-          new() { Name = "Card1", Creator = "Alice" },
-          new() { Name = "Card2", Creator = "Bob" },
+          new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("Alice") },
+          new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
         },
       }
     );

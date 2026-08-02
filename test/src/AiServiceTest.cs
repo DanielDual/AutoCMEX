@@ -78,8 +78,8 @@ public class AiServiceTest : TestClass
         Name = "TestBoss",
         SpellCards = new AutoList<SpellCard>
         {
-          new() { Name = "Card1" },
-          new() { Name = "Card2" },
+          new() { Name = new AutoValue<string>("Card1") },
+          new() { Name = new AutoValue<string>("Card2") },
         },
       };
 

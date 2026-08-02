@@ -7,6 +7,7 @@ using AutoCMEX.Models;
 using AutoCMEX.UI.Guessing;
 using Chickensoft.AutoInject;
 using Chickensoft.GoDotTest;
+using Chickensoft.Sync.Primitives;
 using Godot;
 using Shouldly;
 
@@ -99,7 +100,7 @@ public class TestSpellCardPanel : TestClass
   public void Refresh_UpdatesTree()
   {
     _dm.Bosses.Add(new Boss { Name = "测试Boss" });
-    _dm.Bosses[0].SpellCards.Add(new SpellCard { Name = "符卡1" });
+    _dm.Bosses[0].SpellCards.Add(new SpellCard { Name = new AutoValue<string>("符卡1") });
     _panel.GetSelectBoss()(_dm.Bosses[0]);
     _panel.Refresh();
     var root = _panel.SpellCardTree.GetRoot();

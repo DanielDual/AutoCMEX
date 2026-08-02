@@ -3,6 +3,7 @@ namespace AutoCMEX;
 using System.Collections.Generic;
 using AutoCMEX.Models;
 using Chickensoft.GoDotTest;
+using Chickensoft.Sync.Primitives;
 using Godot;
 using Shouldly;
 
@@ -27,27 +28,39 @@ public class ModelsTest : TestClass
   public void Boss_CanAddSpellCards()
   {
     var boss = new Boss { Name = "TestBoss" };
-    boss.SpellCards.Add(new SpellCard { Name = "Card1", Creator = "Alice" });
-    boss.SpellCards.Add(new SpellCard { Name = "Card2", Creator = "Bob" });
+    boss.SpellCards.Add(
+      new SpellCard
+      {
+        Name = new AutoValue<string>("Card1"),
+        Creator = new AutoValue<string>("Alice"),
+      }
+    );
+    boss.SpellCards.Add(
+      new SpellCard
+      {
+        Name = new AutoValue<string>("Card2"),
+        Creator = new AutoValue<string>("Bob"),
+      }
+    );
 
     boss.SpellCards.Count.ShouldBe(2);
-    boss.SpellCards[0].Name.ShouldBe("Card1");
-    boss.SpellCards[1].Creator.ShouldBe("Bob");
+    boss.SpellCards[0].Name.Value.ShouldBe("Card1");
+    boss.SpellCards[1].Creator.Value.ShouldBe("Bob");
   }
 
   [Test]
   public void SpellCard_DefaultValues()
   {
     var card = new SpellCard();
-    card.Name.ShouldBe(string.Empty);
-    card.Creator.ShouldBe(string.Empty);
+    card.Name.Value.ShouldBe(string.Empty);
+    card.Creator.Value.ShouldBe(string.Empty);
   }
 
   [Test]
   public void SpellCard_CreatorCanBeEmpty()
   {
-    var card = new SpellCard { Name = "Card1" };
-    card.Creator.ShouldBe(string.Empty);
+    var card = new SpellCard { Name = new AutoValue<string>("Card1") };
+    card.Creator.Value.ShouldBe(string.Empty);
   }
 
   [Test]
@@ -124,7 +137,7 @@ public class ModelsTest : TestClass
   public void SpellCard_IsGuessedOut_DefaultsToFalse()
   {
     var card = new SpellCard();
-    card.IsGuessedOut.ShouldBeFalse();
+    card.IsGuessedOut.Value.ShouldBeFalse();
   }
 
   [Test]

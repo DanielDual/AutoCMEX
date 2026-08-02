@@ -89,49 +89,55 @@ public partial class GuessPipeline
       // 过滤重复猜测
       if (!seenPairs.Add((index, creator)))
       {
-        details.Add($"符卡 {index}（{spellCard.Name}）：重复猜测 {creator}，已跳过");
+        details.Add($"符卡 {index}（{spellCard.Name.Value}）：重复猜测 {creator}，已跳过");
         continue;
       }
 
       // 已揭晓符卡跳过
-      if (spellCard.IsRevealed)
+      if (spellCard.IsRevealed.Value)
       {
-        details.Add($"符卡 {index}（{spellCard.Name}）已揭晓，创作者为 {spellCard.Creator}");
+        details.Add(
+          $"符卡 {index}（{spellCard.Name.Value}）已揭晓，创作者为 {spellCard.Creator.Value}"
+        );
         continue;
       }
 
       // 已被猜出的符卡跳过
-      if (spellCard.IsGuessedOut)
+      if (spellCard.IsGuessedOut.Value)
       {
         guessedOutCount++;
         guessedOutNames.Add($"{index}");
-        details.Add($"符卡 {index}（{spellCard.Name}）已被猜出，跳过");
+        details.Add($"符卡 {index}（{spellCard.Name.Value}）已被猜出，跳过");
         continue;
       }
 
       totalCards++;
 
-      if (string.IsNullOrEmpty(spellCard.Creator))
+      if (string.IsNullOrEmpty(spellCard.Creator.Value))
       {
         // 创作者答案未知，无法判断对错
-        details.Add($"符卡 {index}（{spellCard.Name}）：猜测创作者为 {creator}，待揭晓后验证");
+        details.Add(
+          $"符卡 {index}（{spellCard.Name.Value}）：猜测创作者为 {creator}，待揭晓后验证"
+        );
       }
       else
       {
         var isCorrect = string.Equals(
-          spellCard.Creator,
+          spellCard.Creator.Value,
           creator,
           System.StringComparison.OrdinalIgnoreCase
         );
         if (isCorrect)
         {
           correctCount++;
-          details.Add($"符卡 {index}（{spellCard.Name}）：猜对，创作者为 {spellCard.Creator}");
+          details.Add(
+            $"符卡 {index}（{spellCard.Name.Value}）：猜对，创作者为 {spellCard.Creator.Value}"
+          );
         }
         else
         {
           details.Add(
-            $"符卡 {index}（{spellCard.Name}）：猜错，猜测 {creator}，实际为 {spellCard.Creator}"
+            $"符卡 {index}（{spellCard.Name.Value}）：猜错，猜测 {creator}，实际为 {spellCard.Creator.Value}"
           );
         }
       }
@@ -143,9 +149,9 @@ public partial class GuessPipeline
       foreach (var (index, _) in parseResult.Pairs)
       {
         var spellCard = currentBoss.SpellCards[index - 1];
-        if (!spellCard.IsRevealed && !spellCard.IsGuessedOut)
+        if (!spellCard.IsRevealed.Value && !spellCard.IsGuessedOut.Value)
         {
-          spellCard.IsGuessedOut = true;
+          spellCard.IsGuessedOut.Value = true;
         }
       }
     }

@@ -57,8 +57,8 @@ public class ExcelImporterTest : TestClass
     result.Data!.Count.ShouldBe(2);
     result.Data[0].Name.ShouldBe("Boss1");
     result.Data[0].SpellCards.Count.ShouldBe(2);
-    result.Data[0].SpellCards[0].Name.ShouldBe("Card1");
-    result.Data[0].SpellCards[0].Creator.ShouldBe("Alice");
+    result.Data[0].SpellCards[0].Name.Value.ShouldBe("Card1");
+    result.Data[0].SpellCards[0].Creator.Value.ShouldBe("Alice");
     result.Data[1].Name.ShouldBe("Boss2");
     result.Data[1].SpellCards.Count.ShouldBe(1);
   }

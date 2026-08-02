@@ -146,10 +146,13 @@ public partial class SpellCardPanel : VBoxContainer
     {
       var card = _currentBoss.SpellCards[i];
       var cardItem = SpellCardTree.CreateItem(bossItem);
-      cardItem.SetText(0, card.Name);
-      cardItem.SetText(1, string.IsNullOrEmpty(card.Creator) ? "(未揭晓)" : card.Creator);
+      cardItem.SetText(0, card.Name.Value);
+      cardItem.SetText(
+        1,
+        string.IsNullOrEmpty(card.Creator.Value) ? "(未揭晓)" : card.Creator.Value
+      );
       cardItem.SetCellMode(2, TreeItem.TreeCellMode.Check);
-      cardItem.SetChecked(2, card.IsGuessedOut);
+      cardItem.SetChecked(2, card.IsGuessedOut.Value);
       cardItem.SetEditable(0, true);
       cardItem.SetEditable(1, true);
       cardItem.SetEditable(2, true);
@@ -187,15 +190,15 @@ public partial class SpellCardPanel : VBoxContainer
     {
       var card = _currentBoss.SpellCards[metaIndex];
       if (column == 0)
-        card.Name = edited.GetText(0);
+        card.Name.Value = edited.GetText(0);
       else if (column == 1)
       {
         var t = edited.GetText(1);
-        card.Creator = t == "(未揭晓)" ? "" : t;
+        card.Creator.Value = t == "(未揭晓)" ? "" : t;
       }
       else if (column == 2)
       {
-        card.IsGuessedOut = edited.IsChecked(2);
+        card.IsGuessedOut.Value = edited.IsChecked(2);
       }
     }
     _dm?.TriggerAutoSave();
@@ -223,8 +226,8 @@ public partial class SpellCardPanel : VBoxContainer
         string.Format(
           "{0},{1},{2}",
           StringEscapeHelper.EscapeCsv(boss.Name),
-          StringEscapeHelper.EscapeCsv(card.Name),
-          StringEscapeHelper.EscapeCsv(card.Creator)
+          StringEscapeHelper.EscapeCsv(card.Name.Value),
+          StringEscapeHelper.EscapeCsv(card.Creator.Value)
         )
       );
     File.WriteAllText(path, sb.ToString(), Encoding.UTF8);
@@ -262,7 +265,7 @@ public partial class SpellCardPanel : VBoxContainer
       ShowError("请先选择 Boss");
       return;
     }
-    _currentBoss.SpellCards.Add(new SpellCard { Name = "新符卡" });
+    _currentBoss.SpellCards.Add(new SpellCard { Name = new AutoValue<string>("新符卡") });
     _dm?.TriggerAutoSave();
   }
 
