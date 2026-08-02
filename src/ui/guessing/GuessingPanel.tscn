@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://b0o67jk40412y"]
 
 [ext_resource type="Script" uid="uid://c41htm0llrugj" path="res://src/ui/guessing/GuessingPanel.cs" id="1_lp4yd"]
-[ext_resource type="Script" uid="uid://brn7j3xhjgple" path="res://src/ui/guessing/SpellCardPanel.cs" id="2_lfa72"]
-[ext_resource type="Script" uid="uid://dljgmqsk7p1ol" path="res://src/ui/guessing/AliasPanel.cs" id="3_drv0c"]
+[ext_resource type="PackedScene" uid="uid://0y1bexufiiq8" path="res://src/ui/guessing/SpellCardPanel.tscn" id="2_spellcard"]
+[ext_resource type="PackedScene" uid="uid://dmclev4tq27j" path="res://src/ui/guessing/AliasPanel.tscn" id="3_alias"]
 
 [node name="Control" type="Control" unique_id=460198611]
 layout_mode = 3
@@ -30,17 +30,15 @@ size_flags_vertical = 3
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="SpellCardPanel" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=1291741918]
+[node name="SpellCardPanel" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=1291741918 instance=ExtResource("2_spellcard")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-script = ExtResource("2_lfa72")
 
-[node name="AliasPanel" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=1330251026]
+[node name="AliasPanel" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=1330251026 instance=ExtResource("3_alias")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
-script = ExtResource("3_drv0c")
 
 [node name="RightPanel" type="VBoxContainer" parent="MainContainer/ContentArea" unique_id=489645881]
 layout_mode = 2

@@ -1,8 +1,8 @@
 [gd_scene format=3 uid="uid://gihori8we6rx"]
 
 [ext_resource type="Script" uid="uid://cmxsol0aje66q" path="res://src/ui/settings/SettingsPanel.cs" id="1_4c3qi"]
-[ext_resource type="Script" uid="uid://bubjcl7bce0df" path="res://src/ui/settings/AiModelConfigPanel.cs" id="2_k8gk3"]
-[ext_resource type="Script" uid="uid://vwn0wnq3t4w3" path="res://src/ui/settings/ChatConfigPanel.cs" id="3_e1yje"]
+[ext_resource type="PackedScene" uid="uid://bwtxixlpfifw7" path="res://src/ui/settings/AiModelConfigPanel.tscn" id="2_aimodel"]
+[ext_resource type="PackedScene" uid="uid://hht0r77y8b4y" path="res://src/ui/settings/ChatConfigPanel.tscn" id="3_chat"]
 
 [node name="Control" type="Control" unique_id=1958570285]
 layout_mode = 3
@@ -38,14 +38,12 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="AiModelConfigPanel" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea" unique_id=2118296807]
+[node name="AiModelConfigPanel" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea" unique_id=2118296807 instance=ExtResource("2_aimodel")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
-script = ExtResource("2_k8gk3")
 
-[node name="ChatConfigPanel" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea" unique_id=2068780662]
+[node name="ChatConfigPanel" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea" unique_id=2068780662 instance=ExtResource("3_chat")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
-script = ExtResource("3_e1yje")
