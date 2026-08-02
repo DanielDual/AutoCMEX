@@ -20,19 +20,15 @@ public class AiServiceFactory
   /// <summary>
   /// 获取当前激活的 AI 服务实例
   /// </summary>
-  /// <returns>IAiService 实例</returns>
-  /// <exception cref="InvalidOperationException">没有配置有效的 AI 模型时抛出</exception>
   public virtual IAiService GetActiveService()
   {
     var config = GetActiveModelConfig();
-    var timeout = _dataManager.Settings.AiTimeoutSeconds;
-    return CreateService(config, timeout);
+    return CreateService(config);
   }
 
   /// <summary>
-  /// 获取当前激活的模型配置
+  /// 获取当前激活的 AI 模型配置
   /// </summary>
-  /// <exception cref="InvalidOperationException">没有选中模型或选中模型无效时抛出</exception>
   public virtual AiModelConfig GetActiveModelConfig()
   {
     var settings = _dataManager.Settings;
@@ -40,7 +36,7 @@ public class AiServiceFactory
     // 优先使用用户选中的模型
     if (!string.IsNullOrEmpty(settings.ActiveAiModelId))
     {
-      var selected = settings.AiModels.Find(m => m.Id == settings.ActiveAiModelId);
+      var selected = settings.AiModels.FirstOrDefault(m => m.Id == settings.ActiveAiModelId);
       if (selected != null && IsModelValid(selected))
         return selected;
 
@@ -49,27 +45,34 @@ public class AiServiceFactory
       );
     }
 
-    // 没有选中模型时报错
-    throw new InvalidOperationException("未选择 AI 模型，请在设置中选择一个模型");
+    // 无选中模型时，尝试使用第一个有效模型
+    var firstValid = settings.AiModels.FirstOrDefault(IsModelValid);
+    if (firstValid != null)
+      return firstValid;
+
+    throw new InvalidOperationException("没有可用的 AI 模型配置，请先在设置中添加并配置 AI 模型");
   }
 
   /// <summary>
-  /// 检查模型配置是否完整有效
+  /// 判断模型配置是否有效（EndpointUrl、ModelId、EncryptedApiKey 均不为空）
   /// </summary>
-  public static bool IsModelValid(AiModelConfig model)
+  public static bool IsModelValid(AiModelConfig config)
   {
-    return !string.IsNullOrEmpty(model.EndpointUrl)
-      && !string.IsNullOrEmpty(model.ModelId)
-      && !string.IsNullOrEmpty(model.EncryptedApiKey);
+    return !string.IsNullOrEmpty(config.EndpointUrl)
+      && !string.IsNullOrEmpty(config.ModelId)
+      && !string.IsNullOrEmpty(config.EncryptedApiKey);
   }
 
   /// <summary>
-  /// 根据模型配置创建对应的 AI 服务实例
+  /// 根据模型配置创建对应的 IAiService 实例
   /// </summary>
-  public static IAiService CreateService(AiModelConfig config, int timeoutSeconds = 100)
+  public static IAiService CreateService(AiModelConfig config)
   {
-    return config.ApiFormat == "Anthropic"
-      ? new AnthropicService(config, timeoutSeconds)
-      : new OpenAiService(config, timeoutSeconds);
+    return config.ApiFormat switch
+    {
+      "OpenAI" => new OpenAiService(config),
+      "Anthropic" => new AnthropicService(config),
+      _ => throw new ArgumentException($"不支持的 API 格式: {config.ApiFormat}"),
+    };
   }
 }

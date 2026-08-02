@@ -2,58 +2,88 @@ namespace AutoCMEX.UI.WebSocket;
 
 using System;
 using AutoCMEX.Core.WebSocket;
+using Chickensoft.AutoInject;
+using Chickensoft.Introspection;
 using Godot;
 
 /// <summary>
 /// WebSocket 面板：显示服务器状态和已连接客户端列表
 /// </summary>
+[Meta(typeof(IAutoNode))]
 public partial class WebSocketPanel : Control
 {
+  [Node("MainContainer/StatusContainer/StatusLabel")]
+  public Label StatusLabel { get; set; } = default!;
+
+  [Node("MainContainer/ModeLabel")]
+  public Label ModeLabel { get; set; } = default!;
+
+  [Node("MainContainer/PortLabel")]
+  public Label PortLabel { get; set; } = default!;
+
+  [Node("MainContainer/ConnectionCountLabel")]
+  public Label ConnectionCountLabel { get; set; } = default!;
+
+  [Node("MainContainer/EventLabel")]
+  public Label EventLabel { get; set; } = default!;
+
+  [Node("MainContainer/StartStopBtn")]
+  public Button StartStopBtn { get; set; } = default!;
+
+  [Node("MainContainer/ClientList")]
+  public ItemList ClientList { get; set; } = default!;
+
+  [Dependency]
+  public IWebSocketServer Server => this.DependOn<IWebSocketServer>();
+
   private IWebSocketServer? _server;
   private string _mode = "Server";
   private string _lastEvent = "";
   private Timer? _refreshTimer;
 
-  private Label? _statusLabel;
-  private Label? _modeLabel;
-  private Label? _portLabel;
-  private Label? _connectionCountLabel;
-  private Label? _eventLabel;
-  private Button? _startStopBtn;
-  private ItemList? _clientList;
+  public override void _Notification(int what) => this.Notify(what);
 
-  /// <summary>
-  /// 设置 WebSocket 服务器引用（在 AddChild 之前调用）
-  /// </summary>
-  public void SetServer(IWebSocketServer server, string mode)
+  public void OnReady()
   {
-    _server = server;
-    _mode = mode;
-  }
-
-  public override void _Ready()
-  {
-    _statusLabel = GetNode<Label>("MainContainer/StatusContainer/StatusLabel");
-    _modeLabel = GetNode<Label>("MainContainer/ModeLabel");
-    _portLabel = GetNode<Label>("MainContainer/PortLabel");
-    _connectionCountLabel = GetNode<Label>("MainContainer/ConnectionCountLabel");
-    _eventLabel = GetNode<Label>("MainContainer/EventLabel");
-    _startStopBtn = GetNode<Button>("MainContainer/StartStopBtn");
-    _clientList = GetNode<ItemList>("MainContainer/ClientList");
-
-    if (_server == null)
-      return;
-
-    _server.OnClientConnected += OnConnected;
-    _server.OnClientDisconnected += OnDisconnected;
-    _startStopBtn.Pressed += OnStartStopPressed;
-
-    // 使用 Godot 原生 Timer 节点替代 System.Timers.Timer，与主循环天然同步
     _refreshTimer = new Timer();
     _refreshTimer.WaitTime = 1.0;
     _refreshTimer.Autostart = true;
     _refreshTimer.Timeout += OnRefreshTimerTimeout;
     AddChild(_refreshTimer);
+  }
+
+  public void OnResolved()
+  {
+    _server = Server;
+    if (_server == null)
+      return;
+
+    _server.OnClientConnected += OnConnected;
+    _server.OnClientDisconnected += OnDisconnected;
+    StartStopBtn.Pressed += OnStartStopPressed;
+
+    RefreshUI();
+  }
+
+  /// <summary>
+  /// 更新服务器引用（重启 WebSocket 时由 MainWindow 调用）
+  /// </summary>
+  public void UpdateServer(IWebSocketServer server, string mode)
+  {
+    if (_server != null)
+    {
+      _server.OnClientConnected -= OnConnected;
+      _server.OnClientDisconnected -= OnDisconnected;
+    }
+
+    _server = server;
+    _mode = mode;
+
+    if (_server != null)
+    {
+      _server.OnClientConnected += OnConnected;
+      _server.OnClientDisconnected += OnDisconnected;
+    }
 
     RefreshUI();
   }
@@ -92,7 +122,7 @@ public partial class WebSocketPanel : Control
 
   private void OnStartStopPressed()
   {
-    if (_server == null || _startStopBtn == null)
+    if (_server == null)
       return;
 
     if (_server.IsRunning)
@@ -105,35 +135,27 @@ public partial class WebSocketPanel : Control
 
   private void RefreshUI()
   {
-    if (_server == null || _statusLabel == null)
+    if (_server == null)
       return;
 
     var isRunning = _server.IsRunning;
     var isClient = string.Equals(_mode, "Client", StringComparison.OrdinalIgnoreCase);
 
-    // 模式
-    if (_modeLabel != null)
-      _modeLabel.Text = isClient ? "模式: Client（主动连接）" : "模式: Server（等待连接）";
+    ModeLabel.Text = isClient ? "模式: Client（主动连接）" : "模式: Server（等待连接）";
 
-    // 状态
     var statusText = isClient
       ? (isRunning ? "已连接" : "未连接")
       : (isRunning ? "运行中" : "已停止");
-    _statusLabel.Text = statusText;
-    _statusLabel.Modulate = isRunning ? new Color(0, 1, 0) : new Color(1, 0, 0);
+    StatusLabel.Text = statusText;
+    StatusLabel.Modulate = isRunning ? new Color(0, 1, 0) : new Color(1, 0, 0);
 
-    // 连接数
-    if (_connectionCountLabel != null)
-      _connectionCountLabel.Text = isClient
-        ? (isRunning ? "已连接" : "未连接")
-        : $"连接数: {_server.ConnectionCount}";
+    ConnectionCountLabel.Text = isClient
+      ? (isRunning ? "已连接" : "未连接")
+      : $"连接数: {_server.ConnectionCount}";
 
-    // 最近事件
-    if (_eventLabel != null && !string.IsNullOrEmpty(_lastEvent))
-      _eventLabel.Text = _lastEvent;
+    if (!string.IsNullOrEmpty(_lastEvent))
+      EventLabel.Text = _lastEvent;
 
-    // 按钮
-    if (_startStopBtn != null)
-      _startStopBtn.Text = isRunning ? "断开" : "连接";
+    StartStopBtn.Text = isRunning ? "断开" : "连接";
   }
 }

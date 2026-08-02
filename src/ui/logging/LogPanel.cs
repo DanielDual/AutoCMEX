@@ -14,8 +14,7 @@ using Godot;
 /// </summary>
 /// <remarks>
 /// <para>提供日志级别过滤、模块筛选、自动滚动、清空、配置入口。</para>
-/// <para>不直接依赖 ILogService；而是从 <see cref="AppLogs"/> 静态访问点获取，
-/// 便于在测试场景中替换。</para>
+/// <para>通过 [Dependency] 获取 ILogService。</para>
 /// </remarks>
 [Meta(typeof(IAutoNode))]
 public partial class LogPanel : Control
@@ -50,6 +49,9 @@ public partial class LogPanel : Control
   public RichTextLabel StatusLabel { get; set; } = default!;
 
   #endregion
+
+  [Dependency]
+  public ILogService LogService => this.DependOn<ILogService>();
 
   private ILogService? _service;
   private InMemoryLogWriter? _writer;
@@ -115,38 +117,24 @@ public partial class LogPanel : Control
 
   public void OnResolved()
   {
-    // 依赖解析后:从 AppLogs 获取服务并订阅
-    _service = AppLogs.Current;
+    _service = LogService;
     if (_service == null)
-    {
-      // 在 MainWindow 初始化前,延迟等待
-      SetStatus("等待日志服务初始化...");
       return;
-    }
-    BindToService(_service);
-  }
 
-  /// <summary>
-  /// 绑定到指定日志服务。允许从外部(如 MainWindow)提前注入。
-  /// </summary>
-  public void BindToService(ILogService service)
-  {
-    ArgumentNullException.ThrowIfNull(service);
-    _service = service;
-    _writer = service.InMemoryWriter;
+    _writer = _service.InMemoryWriter;
     _writer.OnNewLogEntry -= OnNewLogEntry;
     _writer.OnNewLogEntry += OnNewLogEntry;
 
     // 初始化配置 UI
     _suppressEvents = true;
-    MaxFileCountInput.Value = service.Config.MaxFileCount;
-    MinLevelOption.Selected = (int)service.Config.MinLevel;
+    MaxFileCountInput.Value = _service.Config.MaxFileCount;
+    MinLevelOption.Selected = (int)_service.Config.MinLevel;
     _suppressEvents = false;
 
     // 初次显示历史条目
     RefreshFromBuffer();
     SetStatus(
-      $"日志目录: [url=file://{service.Config.LogDirectory}]{service.Config.LogDirectory}[/url]  ·  缓冲 {service.Config.InMemoryBufferSize} 条"
+      $"日志目录: [url=file://{_service.Config.LogDirectory}]{_service.Config.LogDirectory}[/url]  ·  缓冲 {_service.Config.InMemoryBufferSize} 条"
     );
   }
 

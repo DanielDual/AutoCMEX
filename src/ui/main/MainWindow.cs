@@ -26,7 +26,8 @@ public partial class MainWindow
     IProvide<GuessPipeline>,
     IProvide<IGuessResponseHandler>,
     IProvide<IGuessProcessingService>,
-    IProvide<IWebSocketServer>
+    IProvide<IWebSocketServer>,
+    IProvide<ILogService>
 {
   [Export]
   public int LeftPanelWidth { get; set; } = 200;
@@ -95,6 +96,7 @@ public partial class MainWindow
   private GuessResponseHandler _guessResponseHandler = default!;
   private IGuessProcessingService _guessProcessingService = default!;
   private IWebSocketServer _webSocketServer = default!;
+  private ILogService _logService = default!;
 
   DataManager IProvide<DataManager>.Value() => _dataManager;
 
@@ -107,6 +109,8 @@ public partial class MainWindow
   IGuessProcessingService IProvide<IGuessProcessingService>.Value() => _guessProcessingService;
 
   IWebSocketServer IProvide<IWebSocketServer>.Value() => _webSocketServer;
+
+  ILogService IProvide<ILogService>.Value() => _logService;
 
   #endregion
 
@@ -142,6 +146,9 @@ public partial class MainWindow
     var wsLog = AppLogs.GetOrCreate().GetLogger("WebSocket");
     var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService);
     _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
+
+    // 初始化日志服务
+    _logService = AppLogs.GetOrCreate();
 
     // 订阅配置变更事件，自动重启 WebSocket
     _dataManager.Settings.PropertyChanged += OnSettingsPropertyChanged;
@@ -182,13 +189,6 @@ public partial class MainWindow
     _panels["logging"] = LogPanelNode;
     _panels["websocket"] = WebSocketPanelNode;
 
-    // 绑定日志面板
-    var logService = AppLogs.GetOrCreate();
-    LogPanelNode.BindToService(logService);
-
-    // 绑定 WebSocket 面板
-    WebSocketPanelNode.SetServer(_webSocketServer, _dataManager.Settings.WebSocketMode);
-
     SwitchPanel(DefaultPanel);
 
     // 启动 WebSocket 服务器
@@ -226,7 +226,7 @@ public partial class MainWindow
     _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
     // 更新面板绑定
-    WebSocketPanelNode.SetServer(_webSocketServer, _dataManager.Settings.WebSocketMode);
+    WebSocketPanelNode.UpdateServer(_webSocketServer, _dataManager.Settings.WebSocketMode);
 
     await _webSocketServer.StartAsync();
     wsLog.Print("MainWindow: WebSocket restarted.");

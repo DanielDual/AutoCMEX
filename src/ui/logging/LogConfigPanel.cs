@@ -13,56 +13,56 @@ using Godot;
 [Meta(typeof(IAutoNode))]
 public partial class LogConfigPanel : Control
 {
+  [Node("MaxFileCountInput")]
+  public SpinBox MaxFileCountInput { get; set; } = default!;
+
+  [Node("MinLevelOption")]
+  public OptionButton MinLevelOption { get; set; } = default!;
+
+  [Node("ApplyConfigBtn")]
+  public Button ApplyConfigBtn { get; set; } = default!;
+
+  [Node("StatusLabel")]
+  public RichTextLabel StatusLabel { get; set; } = default!;
+
+  [Dependency]
+  public ILogService LogService => this.DependOn<ILogService>();
+
   private ILogService? _service;
-
-  private SpinBox? _maxFileCountInput;
-  private OptionButton? _minLevelOption;
-  private Button? _applyConfigBtn;
-  private RichTextLabel? _statusLabel;
-
-  /// <summary>
-  /// 绑定到指定日志服务。
-  /// </summary>
-  public void BindToService(ILogService service)
-  {
-    ArgumentNullException.ThrowIfNull(service);
-    _service = service;
-
-    if (_maxFileCountInput != null)
-      _maxFileCountInput.Value = service.Config.MaxFileCount;
-    if (_minLevelOption != null)
-      _minLevelOption.Selected = (int)service.Config.MinLevel;
-  }
 
   public override void _Notification(int what) => this.Notify(what);
 
   public void OnReady()
   {
-    // 查找子节点（需要在 .tscn 中定义或使用程序化创建）
-    _maxFileCountInput = GetNode<SpinBox>("MaxFileCountInput");
-    _minLevelOption = GetNode<OptionButton>("MinLevelOption");
-    _applyConfigBtn = GetNode<Button>("ApplyConfigBtn");
-    _statusLabel = GetNode<RichTextLabel>("StatusLabel");
-
-    if (_maxFileCountInput != null)
+    if (MaxFileCountInput != null)
     {
-      _maxFileCountInput.MinValue = 1;
-      _maxFileCountInput.MaxValue = 1000;
+      MaxFileCountInput.MinValue = 1;
+      MaxFileCountInput.MaxValue = 1000;
     }
 
-    if (_minLevelOption != null)
+    if (MinLevelOption != null)
     {
-      _minLevelOption.Clear();
-      _minLevelOption.AddItem("Info", 0);
-      _minLevelOption.AddItem("Warn", 1);
-      _minLevelOption.AddItem("Error", 2);
+      MinLevelOption.Clear();
+      MinLevelOption.AddItem("Info", 0);
+      MinLevelOption.AddItem("Warn", 1);
+      MinLevelOption.AddItem("Error", 2);
     }
 
-    if (_applyConfigBtn != null)
+    if (ApplyConfigBtn != null)
     {
-      _applyConfigBtn.Text = "Apply Config";
-      _applyConfigBtn.Pressed += OnApplyConfigPressed;
+      ApplyConfigBtn.Text = "Apply Config";
+      ApplyConfigBtn.Pressed += OnApplyConfigPressed;
     }
+  }
+
+  public void OnResolved()
+  {
+    _service = LogService;
+    if (_service == null)
+      return;
+
+    MaxFileCountInput.Value = _service.Config.MaxFileCount;
+    MinLevelOption.Selected = (int)_service.Config.MinLevel;
   }
 
   private void OnApplyConfigPressed()
@@ -73,8 +73,8 @@ public partial class LogConfigPanel : Control
       return;
     }
 
-    _service.Config.MaxFileCount = (int)(_maxFileCountInput?.Value ?? 10);
-    var newMinLevel = (LogLevel)(_minLevelOption?.Selected ?? 0);
+    _service.Config.MaxFileCount = (int)MaxFileCountInput.Value;
+    var newMinLevel = (LogLevel)MinLevelOption.Selected;
     _service.Config.MinLevel = newMinLevel;
 
     if (_service.InMemoryWriter != null)
@@ -86,9 +86,7 @@ public partial class LogConfigPanel : Control
 
   private void SetStatus(string message)
   {
-    if (_statusLabel == null)
-      return;
-    _statusLabel.Clear();
-    _statusLabel.AppendText(message);
+    StatusLabel.Clear();
+    StatusLabel.AppendText(message);
   }
 }
