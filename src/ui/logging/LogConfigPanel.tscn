@@ -1,0 +1,29 @@
+[gd_scene format=3 uid="uid://e45jlfxjka2n"]
+
+[ext_resource type="Script" path="res://src/ui/logging/LogConfigPanel.cs" id="1_uqvur"]
+
+[node name="LogConfigPanel" type="Control" unique_id=1727407487]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_uqvur")
+
+[node name="MaxFileCountInput" type="SpinBox" parent="." unique_id=989565566]
+unique_name_in_owner = true
+layout_mode = 0
+min_value = 1.0
+max_value = 1000.0
+value = 30.0
+
+[node name="MinLevelOption" type="OptionButton" parent="." unique_id=308196909]
+unique_name_in_owner = true
+layout_mode = 0
+
+[node name="ApplyConfigBtn" type="Button" parent="." unique_id=1697423649]
+unique_name_in_owner = true
+layout_mode = 0
+text = "Apply Config"
+
+[node name="StatusLabel" type="RichTextLabel" parent="." unique_id=688121003]
+unique_name_in_owner = true
+layout_mode = 0
+text = "Ready"
