@@ -1,9 +1,6 @@
 namespace AutoCMEX.UI.Guessing;
 
 using System;
-using System.Collections.Specialized;
-using System.ComponentModel;
-using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -26,29 +23,29 @@ public partial class GuessingPanel : Control
 {
   #region AutoConnect Nodes
 
-  [Node]
+  [Node("%GuessInput")]
   public TextEdit GuessInput { get; set; } = default!;
 
-  [Node]
+  [Node("%FuzzifyBtn")]
   public Button FuzzifyBtn { get; set; } = default!;
 
-  [Node]
+  [Node("%ProcessBtn")]
   public Button ProcessBtn { get; set; } = default!;
 
-  [Node]
+  [Node("%ResponseDisplay")]
   public RichTextLabel ResponseDisplay { get; set; } = default!;
 
   #endregion
 
   #region Dropped UI Nodes
 
-  [Node]
+  [Node("%DroppedList")]
   public ItemList DroppedList { get; set; } = default!;
 
-  [Node]
+  [Node("%RetryDroppedBtn")]
   public Button RetryDroppedBtn { get; set; } = default!;
 
-  [Node]
+  [Node("%ClearDroppedBtn")]
   public Button ClearDroppedBtn { get; set; } = default!;
 
   #endregion
@@ -56,43 +53,13 @@ public partial class GuessingPanel : Control
   #region Dependencies
 
   [Dependency]
-  public DataManager DataManager =>
-    this.DependOn<DataManager>(() =>
-    {
-      // 尝试多个路径确保 fallback 不会抛出
-      string[] dirs = { Path.Combine(Path.GetTempPath(), "AutoCMEX_Fallback"), Path.GetTempPath() };
-      foreach (var dir in dirs)
-      {
-        try
-        {
-          Directory.CreateDirectory(dir);
-          return new DataManager(dir, new AesEncryptor(AesEncryptor.GetDefaultKeyPath(dir)));
-        }
-        catch (Exception ex)
-        {
-          GD.PrintErr($"[GuessingPanel] Fallback attempt {dir}: {ex.Message}");
-        }
-      }
-      // 最终兜底：使用内存中的临时路径
-      var tmpDir = Path.Combine(Path.GetTempPath(), $"AutoCMEX_{Guid.NewGuid():N}");
-      Directory.CreateDirectory(tmpDir);
-      return new DataManager(tmpDir, new AesEncryptor(AesEncryptor.GetDefaultKeyPath(tmpDir)));
-    });
+  public DataManager DataManager => this.DependOn<DataManager>();
 
   [Dependency]
-  public AiServiceFactory AiServiceFactory =>
-    this.DependOn<AiServiceFactory>(() => new AiServiceFactory(DataManager));
+  public AiServiceFactory AiServiceFactory => this.DependOn<AiServiceFactory>();
 
   [Dependency]
-  public IGuessProcessingService GuessProcessingService =>
-    this.DependOn<IGuessProcessingService>(() =>
-      new GuessProcessingService(
-        DataManager,
-        AiServiceFactory,
-        new GuessResponseHandler(),
-        new DroppedGuessRepository()
-      )
-    );
+  public IGuessProcessingService GuessProcessingService => this.DependOn<IGuessProcessingService>();
 
   #endregion
 
@@ -100,15 +67,7 @@ public partial class GuessingPanel : Control
   private IGuessProcessingService? _guessProcessingService;
   private ILog _log = AppLogs.GetOrCreate().GetLogger(nameof(GuessingPanel));
 
-  public override void _Notification(int what)
-  {
-    if (what == NotificationVisibilityChanged && Visible)
-    {
-      UpdateFuzzifyButtonState();
-      RefreshDroppedUI();
-    }
-    this.Notify(what);
-  }
+  public override void _Notification(int what) => this.Notify(what);
 
   public void OnReady()
   {
@@ -120,25 +79,19 @@ public partial class GuessingPanel : Control
     ClearDroppedBtn.Pressed += OnClearDropped;
   }
 
+  public void OnNotification(int what)
+  {
+    if (what == NotificationVisibilityChanged && Visible)
+    {
+      UpdateFuzzifyButtonState();
+      RefreshDroppedUI();
+    }
+  }
+
   public void OnResolved()
   {
-    try
-    {
-      _dm = DataManager;
-    }
-    catch (Exception ex)
-    {
-      GD.PrintErr($"[GuessingPanel] Resolve DataManager: {ex.Message}");
-      _dm = null;
-    }
-    try
-    {
-      _guessProcessingService = GuessProcessingService;
-    }
-    catch
-    {
-      _guessProcessingService = null;
-    }
+    _dm = DataManager;
+    _guessProcessingService = GuessProcessingService;
 
     if (_dm != null)
     {
@@ -155,15 +108,6 @@ public partial class GuessingPanel : Control
     CallDeferred(nameof(UpdateFuzzifyButtonState));
   }
 
-  /// <summary>
-  /// 注入测试数据管理器并刷新 UI。仅供测试使用。
-  /// </summary>
-  public void InjectTestData(DataManager dm)
-  {
-    _dm = dm;
-    UpdateFuzzifyButtonState();
-  }
-
   private void UpdateFuzzifyButtonState()
   {
     // Node references may not be resolved yet if called from _Notification
@@ -177,7 +121,7 @@ public partial class GuessingPanel : Control
       var activeId = _dm.Settings.ActiveAiModelId;
       if (!string.IsNullOrEmpty(activeId))
       {
-        var activeModel = _dm.Settings.AiModels.Find(m => m.Id == activeId);
+        var activeModel = _dm.Settings.AiModels.FirstOrDefault(m => m.Id == activeId);
         hasAi = activeModel != null && AiServiceFactory.IsModelValid(activeModel);
       }
     }
@@ -206,20 +150,8 @@ public partial class GuessingPanel : Control
     _log.Print(
       $"OnProcessGuess: processing guess (len={text.Length}) for boss '{currentBoss.Name}'."
     );
-    var service =
-      _guessProcessingService
-      ?? (
-        _dm != null
-          ? new GuessProcessingService(
-            _dm,
-            AiServiceFactory,
-            new GuessResponseHandler(),
-            new DroppedGuessRepository()
-          )
-          : GuessProcessingService
-      );
 
-    var result = await service.ProcessAsync(text);
+    var result = await _guessProcessingService!.ProcessAsync(text);
     RefreshDroppedUI();
     if (!result.IsGuess)
     {
