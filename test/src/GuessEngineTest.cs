@@ -1,10 +1,10 @@
 namespace AutoCMEX;
 
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using AutoCMEX.Core.Guessing;
 using AutoCMEX.Models;
 using Chickensoft.GoDotTest;
+using Chickensoft.Sync.Primitives;
 using Godot;
 using Shouldly;
 
@@ -185,7 +185,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new ObservableCollection<SpellCard>
+      SpellCards = new AutoList<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },
@@ -206,7 +206,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new ObservableCollection<SpellCard>
+      SpellCards = new AutoList<SpellCard>
       {
         new() { Name = "Card1" },
         new() { Name = "Card2" },
@@ -226,7 +226,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new ObservableCollection<SpellCard> { new() { Name = "Card1" } },
+      SpellCards = new AutoList<SpellCard> { new() { Name = "Card1" } },
     };
 
     var pipeline = new GuessPipeline(new GuessResponseHandler(), new List<CreatorAlias>());
@@ -242,7 +242,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new ObservableCollection<SpellCard>
+      SpellCards = new AutoList<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },
@@ -254,12 +254,12 @@ public class GuessEngineTest : TestClass
       new()
       {
         MainName = "Alice",
-        Aliases = new ObservableCollection<string> { "Ali" },
+        Aliases = new AutoList<string> { "Ali" },
       },
       new()
       {
         MainName = "Bob",
-        Aliases = new ObservableCollection<string> { "B" },
+        Aliases = new AutoList<string> { "B" },
       },
     };
 
@@ -276,7 +276,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new ObservableCollection<SpellCard>
+      SpellCards = new AutoList<SpellCard>
       {
         new()
         {
@@ -303,7 +303,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new ObservableCollection<SpellCard>
+      SpellCards = new AutoList<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },
@@ -323,7 +323,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new ObservableCollection<SpellCard>
+      SpellCards = new AutoList<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
       },
@@ -344,7 +344,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new ObservableCollection<SpellCard>
+      SpellCards = new AutoList<SpellCard>
       {
         new()
         {
@@ -372,7 +372,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new ObservableCollection<SpellCard>
+      SpellCards = new AutoList<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },
@@ -398,7 +398,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new ObservableCollection<SpellCard>
+      SpellCards = new AutoList<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },
@@ -424,7 +424,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new ObservableCollection<SpellCard>
+      SpellCards = new AutoList<SpellCard>
       {
         new()
         {
@@ -454,7 +454,7 @@ public class GuessEngineTest : TestClass
     var boss = new Boss
     {
       Name = "TestBoss",
-      SpellCards = new ObservableCollection<SpellCard>
+      SpellCards = new AutoList<SpellCard>
       {
         new() { Name = "Card1", Creator = "Alice" },
         new() { Name = "Card2", Creator = "Bob" },

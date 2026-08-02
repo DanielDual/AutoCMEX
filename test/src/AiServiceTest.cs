@@ -2,12 +2,12 @@ namespace AutoCMEX;
 
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.IO;
 using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.GoDotTest;
+using Chickensoft.Sync.Primitives;
 using Godot;
 using Shouldly;
 
@@ -76,7 +76,7 @@ public class AiServiceTest : TestClass
       var boss = new Boss
       {
         Name = "TestBoss",
-        SpellCards = new ObservableCollection<SpellCard>
+        SpellCards = new AutoList<SpellCard>
         {
           new() { Name = "Card1" },
           new() { Name = "Card2" },

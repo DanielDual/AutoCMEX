@@ -1,8 +1,6 @@
 namespace AutoCMEX;
 
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Runtime.CompilerServices;
 using AutoCMEX.Models;
 using Chickensoft.GoDotTest;
 using Godot;
@@ -118,44 +116,6 @@ public class ModelsTest : TestClass
     settings.AiModels.Add(new AiModelConfig { Id = "model-2" });
 
     settings.AiModels.Count.ShouldBe(2);
-  }
-
-  // ==================== INotifyPropertyChanged Tests ====================
-
-  [Test]
-  public void SpellCard_RaisesPropertyChanged_WhenNameChanges()
-  {
-    var card = new SpellCard();
-    var raisedProperties = new List<string>();
-    card.PropertyChanged += (_, args) => raisedProperties.Add(args.PropertyName!);
-
-    card.Name = "NewName";
-
-    raisedProperties.ShouldContain(nameof(SpellCard.Name));
-  }
-
-  [Test]
-  public void SpellCard_RaisesPropertyChanged_WhenCreatorChanges()
-  {
-    var card = new SpellCard();
-    var raisedProperties = new List<string>();
-    card.PropertyChanged += (_, args) => raisedProperties.Add(args.PropertyName!);
-
-    card.Creator = "NewCreator";
-
-    raisedProperties.ShouldContain(nameof(SpellCard.Creator));
-  }
-
-  [Test]
-  public void SpellCard_RaisesPropertyChanged_WhenIsGuessedOutChanges()
-  {
-    var card = new SpellCard();
-    var raisedProperties = new List<string>();
-    card.PropertyChanged += (_, args) => raisedProperties.Add(args.PropertyName!);
-
-    card.IsGuessedOut = true;
-
-    raisedProperties.ShouldContain(nameof(SpellCard.IsGuessedOut));
   }
 
   // ==================== Edge Case Tests ====================
