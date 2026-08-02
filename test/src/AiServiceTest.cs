@@ -70,7 +70,7 @@ public class AiServiceTest : TestClass
       var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(tmpDir));
       var dm = new DataManager(tmpDir, encryptor);
       dm.Settings.AiModels.Add(config);
-      dm.Settings.ActiveAiModelId = "test";
+      dm.Settings.ActiveAiModelId.Value = "test";
       var factory = new AiServiceFactory(dm);
 
       var boss = new Boss
@@ -143,7 +143,7 @@ public class AiServiceTest : TestClass
         EncryptedApiKey = "sk-test",
       };
       dm.Settings.AiModels.Add(openAiConfig);
-      dm.Settings.ActiveAiModelId = "openai-1";
+      dm.Settings.ActiveAiModelId.Value = "openai-1";
 
       var factory = new AiServiceFactory(dm);
       var service = factory.GetActiveService();
@@ -197,7 +197,7 @@ public class AiServiceTest : TestClass
         EncryptedApiKey = "",
       };
       dm.Settings.AiModels.Add(incompleteConfig);
-      dm.Settings.ActiveAiModelId = "bad-1";
+      dm.Settings.ActiveAiModelId.Value = "bad-1";
 
       var factory = new AiServiceFactory(dm);
       Should.Throw<System.InvalidOperationException>(() => factory.GetActiveService());

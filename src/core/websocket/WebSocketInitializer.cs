@@ -41,12 +41,12 @@ public class WebSocketInitializer
     messageRouter.RegisterHandler(eventHandler);
 
     var isClientMode = string.Equals(
-      settings.WebSocketMode,
+      settings.WebSocketMode.Value,
       "Client",
       StringComparison.OrdinalIgnoreCase
     );
 
-    if (isClientMode && !string.IsNullOrEmpty(settings.KoishiWebSocketUrl))
+    if (isClientMode && !string.IsNullOrEmpty(settings.KoishiWebSocketUrl.Value))
     {
       var clientUrl = WebSocketClient.BuildClientUrl(settings);
       return new WebSocketClient(
@@ -54,26 +54,26 @@ public class WebSocketInitializer
         protocolHandler,
         messageRouter,
         reconnectIntervalMs: 5000,
-        heartbeatIntervalMs: settings.WebSocketHeartbeatIntervalMs,
+        heartbeatIntervalMs: settings.WebSocketHeartbeatIntervalMs.Value,
         _log
       );
     }
 
-    var connectionManager = new ConnectionManager(settings.WebSocketMaxConnections);
+    var connectionManager = new ConnectionManager(settings.WebSocketMaxConnections.Value);
     var heartbeatService = new HeartbeatService(
-      settings.WebSocketHeartbeatIntervalMs,
-      settings.WebSocketHeartbeatTimeoutMs,
+      settings.WebSocketHeartbeatIntervalMs.Value,
+      settings.WebSocketHeartbeatTimeoutMs.Value,
       _log
     );
 
     return new WebSocketServer(
-      settings.WebSocketPort,
+      settings.WebSocketPort.Value,
       connectionManager,
       protocolHandler,
       messageRouter,
       heartbeatService,
-      settings.WebSocketEnableAuth,
-      settings.WebSocketAuthToken,
+      settings.WebSocketEnableAuth.Value,
+      settings.WebSocketAuthToken.Value,
       _log
     );
   }

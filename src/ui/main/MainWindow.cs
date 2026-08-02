@@ -151,7 +151,9 @@ public partial class MainWindow
     _logService = AppLogs.GetOrCreate();
 
     // 订阅配置变更事件，自动重启 WebSocket
-    _dataManager.Settings.PropertyChanged += OnSettingsPropertyChanged;
+    _dataManager.Settings.WebSocketMode.Bind().OnValue(_ => RestartWebSocket());
+    _dataManager.Settings.WebSocketPort.Bind().OnValue(_ => RestartWebSocket());
+    _dataManager.Settings.KoishiWebSocketUrl.Bind().OnValue(_ => RestartWebSocket());
 
     // 通知 AutoInject 依赖已就绪
     this.Provide();
@@ -226,7 +228,7 @@ public partial class MainWindow
     _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
     // 更新面板绑定
-    WebSocketPanelNode.UpdateServer(_webSocketServer, _dataManager.Settings.WebSocketMode);
+    WebSocketPanelNode.UpdateServer(_webSocketServer, _dataManager.Settings.WebSocketMode.Value);
 
     await _webSocketServer.StartAsync();
     wsLog.Print("MainWindow: WebSocket restarted.");

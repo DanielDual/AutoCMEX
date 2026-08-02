@@ -34,9 +34,9 @@ public class AiServiceFactory
     var settings = _dataManager.Settings;
 
     // 优先使用用户选中的模型
-    if (!string.IsNullOrEmpty(settings.ActiveAiModelId))
+    if (!string.IsNullOrEmpty(settings.ActiveAiModelId.Value))
     {
-      var selected = settings.AiModels.FirstOrDefault(m => m.Id == settings.ActiveAiModelId);
+      var selected = settings.AiModels.FirstOrDefault(m => m.Id == settings.ActiveAiModelId.Value);
       if (selected != null && IsModelValid(selected))
         return selected;
 

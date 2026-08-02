@@ -96,16 +96,10 @@ public partial class GuessingPanel : Control
     if (_dm != null)
     {
       _dm.LoadAll();
-      _dm.DataChanged += OnDataChanged;
       UpdateFuzzifyButtonState();
     }
 
     RefreshDroppedUI();
-  }
-
-  private void OnDataChanged()
-  {
-    CallDeferred(nameof(UpdateFuzzifyButtonState));
   }
 
   private void UpdateFuzzifyButtonState()
@@ -118,7 +112,7 @@ public partial class GuessingPanel : Control
     var hasAi = false;
     if (_dm != null)
     {
-      var activeId = _dm.Settings.ActiveAiModelId;
+      var activeId = _dm.Settings.ActiveAiModelId.Value;
       if (!string.IsNullOrEmpty(activeId))
       {
         var activeModel = _dm.Settings.AiModels.FirstOrDefault(m => m.Id == activeId);

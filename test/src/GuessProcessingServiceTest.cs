@@ -36,8 +36,8 @@ public class GuessProcessingServiceTest : TestClass
     };
 
     dataManager.Bosses.Add(boss);
-    dataManager.Settings.SelectedBossIndex = 0;
-    dataManager.Settings.MessageFilterMode = "strict";
+    dataManager.Settings.SelectedBossIndex.Value = 0;
+    dataManager.Settings.MessageFilterMode.Value = "strict";
     var service = new GuessProcessingService(
       dataManager,
       new FakeAiServiceFactory("unused"),
@@ -66,9 +66,9 @@ public class GuessProcessingServiceTest : TestClass
         },
       }
     );
-    dataManager.Settings.SelectedBossIndex = 0;
-    dataManager.Settings.MessageFilterMode = "ai";
-    dataManager.Settings.ActiveAiModelId = "fake-model";
+    dataManager.Settings.SelectedBossIndex.Value = 0;
+    dataManager.Settings.MessageFilterMode.Value = "ai";
+    dataManager.Settings.ActiveAiModelId.Value = "fake-model";
 
     var service = new GuessProcessingService(
       dataManager,
@@ -98,9 +98,9 @@ public class GuessProcessingServiceTest : TestClass
         },
       }
     );
-    dataManager.Settings.SelectedBossIndex = 0;
-    dataManager.Settings.MessageFilterMode = "strict_then_ai";
-    dataManager.Settings.ActiveAiModelId = "fake-model";
+    dataManager.Settings.SelectedBossIndex.Value = 0;
+    dataManager.Settings.MessageFilterMode.Value = "strict_then_ai";
+    dataManager.Settings.ActiveAiModelId.Value = "fake-model";
 
     var service = new GuessProcessingService(
       dataManager,

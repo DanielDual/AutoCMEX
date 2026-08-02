@@ -42,12 +42,42 @@ public class DataManager : IDisposable
   public void NotifyDataChanged() => DataChanged?.Invoke();
 
   /// <summary>
-  /// 当 AppSettings 属性变化时自动通知 UI 组件
+  /// 订阅 AutoValue 属性变更，自动通知 UI 组件
   /// </summary>
-  private void OnSettingsPropertyChanged(string propertyName)
+  private void BindSettingsChanges()
   {
-    _log.Print($"DataManager: Setting '{propertyName}' changed, notifying UI...");
-    NotifyDataChanged();
+    if (_settings.ActiveAiModelId != null)
+      _settings
+        .ActiveAiModelId.Bind()
+        .OnValue(_ =>
+        {
+          _log.Print("DataManager: ActiveAiModelId changed, notifying UI...");
+          NotifyDataChanged();
+        });
+    if (_settings.WebSocketPort != null)
+      _settings
+        .WebSocketPort.Bind()
+        .OnValue(_ =>
+        {
+          _log.Print("DataManager: WebSocketPort changed, notifying UI...");
+          NotifyDataChanged();
+        });
+    if (_settings.WebSocketMode != null)
+      _settings
+        .WebSocketMode.Bind()
+        .OnValue(_ =>
+        {
+          _log.Print("DataManager: WebSocketMode changed, notifying UI...");
+          NotifyDataChanged();
+        });
+    if (_settings.KoishiWebSocketUrl != null)
+      _settings
+        .KoishiWebSocketUrl.Bind()
+        .OnValue(_ =>
+        {
+          _log.Print("DataManager: KoishiWebSocketUrl changed, notifying UI...");
+          NotifyDataChanged();
+        });
   }
 
   public DataManager(string dataDir, AesEncryptor encryptor)
@@ -68,6 +98,7 @@ public class DataManager : IDisposable
         new AutoListConverter<CreatorAlias>(),
         new AutoListConverter<AiModelConfig>(),
         new AutoListConverter<string>(),
+        new AutoValueJsonConverterFactory(),
       },
     };
 
@@ -93,9 +124,8 @@ public class DataManager : IDisposable
     _aliases = new AutoList<CreatorAlias>(loadedAliases);
 
     _settings = LoadJson<AppSettings>("app_settings.json") ?? new();
-    // Subscribe to property changes to notify UI components
-    _settings.PropertyChanged -= OnSettingsPropertyChanged;
-    _settings.PropertyChanged += OnSettingsPropertyChanged;
+    // Subscribe to AutoValue changes to notify UI components
+    BindSettingsChanges();
     _log.Print(
       $"DataManager.LoadAll: bosses={_bosses.Count}, aliases={_aliases.Count}, "
         + $"aiModels={_settings.AiModels.Count}"
@@ -202,8 +232,8 @@ public class DataManager : IDisposable
 
   private AppSettings CloneSettingsForSave()
   {
-    var json = JsonSerializer.Serialize(_settings);
-    var clone = JsonSerializer.Deserialize<AppSettings>(json) ?? new AppSettings();
+    var json = JsonSerializer.Serialize(_settings, _jsonOptions);
+    var clone = JsonSerializer.Deserialize<AppSettings>(json, _jsonOptions) ?? new AppSettings();
 
     // 保存前加密 API 密钥
     foreach (var model in clone.AiModels)

@@ -56,11 +56,11 @@ public class GuessProcessingService : IGuessProcessingService
     if (_dataManager.Bosses.Count == 0)
       return null;
 
-    var selectedIndex = _dataManager.Settings.SelectedBossIndex;
+    var selectedIndex = _dataManager.Settings.SelectedBossIndex.Value;
     if (selectedIndex < 0 || selectedIndex >= _dataManager.Bosses.Count)
     {
       selectedIndex = 0;
-      _dataManager.Settings.SelectedBossIndex = 0;
+      _dataManager.Settings.SelectedBossIndex.Value = 0;
     }
 
     return _dataManager.Bosses[selectedIndex];
@@ -73,7 +73,7 @@ public class GuessProcessingService : IGuessProcessingService
     return ProcessAsync(
       rawText,
       currentBoss,
-      filterMode: _dataManager.Settings.MessageFilterMode ?? "strict",
+      filterMode: _dataManager.Settings.MessageFilterMode.Value ?? "strict",
       treatFailureAsNotGuess: true
     );
   }
@@ -202,7 +202,7 @@ public class GuessProcessingService : IGuessProcessingService
     var result = await ProcessAsync(
       dropped.RawText,
       currentBoss,
-      filterMode: _dataManager.Settings.MessageFilterMode ?? "strict",
+      filterMode: _dataManager.Settings.MessageFilterMode.Value ?? "strict",
       treatFailureAsNotGuess: true
     );
 

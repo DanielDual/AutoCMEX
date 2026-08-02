@@ -83,7 +83,7 @@ public partial class AiModelConfigPanel : VBoxContainer
       if (!AiServiceFactory.IsModelValid(model))
         ActiveModelSelect.SetItemDisabled(itemIdx, true);
 
-      if (model.Id == _settings.ActiveAiModelId)
+      if (model.Id == _settings.ActiveAiModelId.Value)
         selectedIdx = itemIdx;
     }
     ActiveModelSelect.Select(selectedIdx);
@@ -91,7 +91,7 @@ public partial class AiModelConfigPanel : VBoxContainer
 
   private void RefreshTimeout()
   {
-    TimeoutInput.Value = _settings.AiTimeoutSeconds;
+    TimeoutInput.Value = _settings.AiTimeoutSeconds.Value;
   }
 
   private void RefreshModelList()
@@ -132,7 +132,7 @@ public partial class AiModelConfigPanel : VBoxContainer
 
   private void OnTimeoutChanged(double value)
   {
-    _settings.AiTimeoutSeconds = (int)value;
+    _settings.AiTimeoutSeconds.Value = (int)value;
     _dm?.TriggerAutoSave();
   }
 

@@ -87,19 +87,19 @@ public partial class ChatConfigPanel : VBoxContainer
 
   public void Refresh()
   {
-    PortInput.Value = _settings.WebSocketPort;
+    PortInput.Value = _settings.WebSocketPort.Value;
 
     var isClient = string.Equals(
-      _settings.WebSocketMode,
+      _settings.WebSocketMode.Value,
       "Client",
       StringComparison.OrdinalIgnoreCase
     );
     ModeSelect.Select(isClient ? 1 : 0);
     KoishiUrlRow.Visible = isClient;
-    KoishiUrlInput.Text = _settings.KoishiWebSocketUrl;
+    KoishiUrlInput.Text = _settings.KoishiWebSocketUrl.Value;
 
     FilterSelect.Select(
-      _settings.MessageFilterMode switch
+      _settings.MessageFilterMode.Value switch
       {
         "ai" => 1,
         "strict_then_ai" => 2,
@@ -110,20 +110,20 @@ public partial class ChatConfigPanel : VBoxContainer
 
   private void OnPortChanged(double value)
   {
-    _settings.WebSocketPort = (int)value;
+    _settings.WebSocketPort.Value = (int)value;
     _dm?.TriggerAutoSave();
   }
 
   private void OnModeChanged(long index)
   {
-    _settings.WebSocketMode = index == 1 ? "Client" : "Server";
+    _settings.WebSocketMode.Value = index == 1 ? "Client" : "Server";
     KoishiUrlRow.Visible = index == 1;
     _dm?.TriggerAutoSave();
   }
 
   private void OnFilterChanged(long index)
   {
-    _settings.MessageFilterMode = index switch
+    _settings.MessageFilterMode.Value = index switch
     {
       1 => "ai",
       2 => "strict_then_ai",
@@ -142,7 +142,7 @@ public partial class ChatConfigPanel : VBoxContainer
     var sourceDir = "res://src/plugin/koishi/";
     var destDir = System.IO.Path.Combine(dir, "auto-cmex");
     PluginInstaller.CopyPluginDir(sourceDir, destDir);
-    _settings.KoishiPluginPath = destDir;
+    _settings.KoishiPluginPath.Value = destDir;
     _dm?.TriggerAutoSave();
 
     PluginOkDialog.DialogText = $"插件已安装到 {destDir}";

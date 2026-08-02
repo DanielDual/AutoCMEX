@@ -129,7 +129,7 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   /// <returns>完整的 WebSocket URL。</returns>
   public static string BuildClientUrl(AppSettings settings)
   {
-    var url = settings.KoishiWebSocketUrl.Trim();
+    var url = settings.KoishiWebSocketUrl.Value.Trim();
 
     // 自动补全 ws:// 前缀
     if (
@@ -141,10 +141,12 @@ public class WebSocketClient : IWebSocketServer, IDisposable
     }
 
     // 自动附加 Token
-    if (settings.WebSocketEnableAuth && !string.IsNullOrEmpty(settings.WebSocketAuthToken))
+    if (
+      settings.WebSocketEnableAuth.Value && !string.IsNullOrEmpty(settings.WebSocketAuthToken.Value)
+    )
     {
       var separator = url.Contains('?') ? "&" : "?";
-      url = $"{url}{separator}token={Uri.EscapeDataString(settings.WebSocketAuthToken)}";
+      url = $"{url}{separator}token={Uri.EscapeDataString(settings.WebSocketAuthToken.Value)}";
     }
 
     return url;

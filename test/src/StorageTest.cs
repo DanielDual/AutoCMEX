@@ -207,7 +207,7 @@ public class StorageTest : TestClass
 
     dm.Bosses.Add(new Boss { Name = "TestBoss" });
     dm.Aliases.Add(new CreatorAlias { MainName = "Alice" });
-    dm.Settings.WebSocketPort = 9999;
+    dm.Settings.WebSocketPort.Value = 9999;
 
     dm.SaveAll();
 
@@ -219,7 +219,7 @@ public class StorageTest : TestClass
     dm2.Bosses[0].Name.ShouldBe("TestBoss");
     dm2.Aliases.Count.ShouldBe(1);
     dm2.Aliases[0].MainName.ShouldBe("Alice");
-    dm2.Settings.WebSocketPort.ShouldBe(9999);
+    dm2.Settings.WebSocketPort.Value.ShouldBe(9999);
   }
 
   [Test]

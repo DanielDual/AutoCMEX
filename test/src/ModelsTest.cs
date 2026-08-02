@@ -103,9 +103,9 @@ public class ModelsTest : TestClass
     var settings = new AppSettings();
     settings.AiModels.ShouldNotBeNull();
     settings.AiModels.ShouldBeEmpty();
-    settings.WebSocketPort.ShouldBe(5140);
-    settings.MessageFilterMode.ShouldBe("strict");
-    settings.KoishiPluginPath.ShouldBe(string.Empty);
+    settings.WebSocketPort.Value.ShouldBe(5140);
+    settings.MessageFilterMode.Value.ShouldBe("strict");
+    settings.KoishiPluginPath.Value.ShouldBe(string.Empty);
   }
 
   [Test]
@@ -152,13 +152,13 @@ public class ModelsTest : TestClass
   public void AppSettings_DefaultWebSocketPort_Is5140()
   {
     var settings = new AppSettings();
-    settings.WebSocketPort.ShouldBe(5140);
+    settings.WebSocketPort.Value.ShouldBe(5140);
   }
 
   [Test]
   public void AppSettings_DefaultMessageFilterMode_IsStrict()
   {
     var settings = new AppSettings();
-    settings.MessageFilterMode.ShouldBe("strict");
+    settings.MessageFilterMode.Value.ShouldBe("strict");
   }
 }
