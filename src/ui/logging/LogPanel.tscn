@@ -1,6 +1,7 @@
 [gd_scene format=3 uid="uid://b4urpmt0s8fl6"]
 
 [ext_resource type="Script" uid="uid://dqi1jkjb7r7xb" path="res://src/ui/logging/LogPanel.cs" id="1_rrnkb"]
+[ext_resource type="PackedScene" uid="uid://e45jlfxjka2n" path="res://src/ui/logging/LogConfigPanel.tscn" id="2_logconfig"]
 
 [node name="Control" type="Control" unique_id=487608559]
 layout_mode = 3
