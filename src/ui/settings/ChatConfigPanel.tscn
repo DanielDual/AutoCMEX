@@ -1,0 +1,65 @@
+[gd_scene format=3 uid="uid://hht0r77y8b4y"]
+
+[ext_resource type="Script" uid="uid://vwn0wnq3t4w3" path="res://src/ui/settings/ChatConfigPanel.cs" id="1_l1bxc"]
+
+[node name="VBoxContainer" type="VBoxContainer" unique_id=918890615]
+script = ExtResource("1_l1bxc")
+
+[node name="PortRow" type="HBoxContainer" parent="." unique_id=204211340]
+layout_mode = 2
+
+[node name="PortLabel" type="Label" parent="PortRow" unique_id=538589693]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "WebSocket 端口:"
+
+[node name="PortInput" type="SpinBox" parent="PortRow" unique_id=170734722]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ModeRow" type="HBoxContainer" parent="." unique_id=766142972]
+layout_mode = 2
+
+[node name="ModeLabel" type="Label" parent="ModeRow" unique_id=4442429]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "连接模式:"
+
+[node name="ModeSelect" type="OptionButton" parent="ModeRow" unique_id=1655082806]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="KoishiUrlRow" type="HBoxContainer" parent="." unique_id=1259742743]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="KoishiUrlLabel" type="Label" parent="KoishiUrlRow" unique_id=283849647]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "Koishi 地址:"
+
+[node name="KoishiUrlInput" type="LineEdit" parent="KoishiUrlRow" unique_id=1155116009]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "ws://localhost:5140"
+
+[node name="FilterRow" type="HBoxContainer" parent="." unique_id=418384798]
+layout_mode = 2
+
+[node name="FilterLabel" type="Label" parent="FilterRow" unique_id=1669121136]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "消息筛选:"
+
+[node name="FilterSelect" type="OptionButton" parent="FilterRow" unique_id=995800878]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="InstallBtn" type="Button" parent="." unique_id=898187845]
+unique_name_in_owner = true
+layout_mode = 2
+text = "一键安装 Koishi 插件"

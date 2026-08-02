@@ -1,0 +1,43 @@
+[gd_scene format=3 uid="uid://0y1bexufiiq8"]
+
+[ext_resource type="Script" uid="uid://brn7j3xhjgple" path="res://src/ui/guessing/SpellCardPanel.cs" id="1_xdmy1"]
+
+[node name="VBoxContainer" type="VBoxContainer" unique_id=1844652216]
+script = ExtResource("1_xdmy1")
+
+[node name="SpellCardTree" type="Tree" parent="." unique_id=880972495]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+columns = 2
+
+[node name="@Timer@20325" type="Timer" parent="SpellCardTree" unique_id=1328162637]
+one_shot = true
+
+[node name="SpellCardButtons" type="HBoxContainer" parent="." unique_id=853356656]
+layout_mode = 2
+
+[node name="ImportCardBtn" type="Button" parent="SpellCardButtons" unique_id=515332475]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导入对应表"
+
+[node name="ExportCardBtn" type="Button" parent="SpellCardButtons" unique_id=911245081]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导出"
+
+[node name="AddBossBtn" type="Button" parent="SpellCardButtons" unique_id=489460474]
+unique_name_in_owner = true
+layout_mode = 2
+text = "添加 Boss"
+
+[node name="DeleteBtn" type="Button" parent="SpellCardButtons" unique_id=267183185]
+unique_name_in_owner = true
+layout_mode = 2
+text = "删除"
+
+[node name="AddCardBtn" type="Button" parent="SpellCardButtons" unique_id=10058675]
+unique_name_in_owner = true
+layout_mode = 2
+text = "添加符卡"

@@ -1,0 +1,44 @@
+[gd_scene format=3 uid="uid://dmclev4tq27j"]
+
+[ext_resource type="Script" uid="uid://dljgmqsk7p1ol" path="res://src/ui/guessing/AliasPanel.cs" id="1_4s5xw"]
+
+[node name="VBoxContainer" type="VBoxContainer" unique_id=278137501]
+script = ExtResource("1_4s5xw")
+
+[node name="AliasButtons" type="HBoxContainer" parent="." unique_id=333199836]
+layout_mode = 2
+
+[node name="ImportAliasBtn" type="Button" parent="AliasButtons" unique_id=528812490]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导入别名表"
+
+[node name="AddAliasBtn" type="Button" parent="AliasButtons" unique_id=2033059872]
+unique_name_in_owner = true
+layout_mode = 2
+text = "添加"
+
+[node name="DeleteAliasBtn" type="Button" parent="AliasButtons" unique_id=989869803]
+unique_name_in_owner = true
+layout_mode = 2
+text = "删除"
+
+[node name="ExportAliasBtn" type="Button" parent="AliasButtons" unique_id=1677441250]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导出别名表"
+
+[node name="AddAliasToCreatorBtn" type="Button" parent="AliasButtons" unique_id=1344980923]
+unique_name_in_owner = true
+layout_mode = 2
+text = "添加别名"
+
+[node name="AliasTree" type="Tree" parent="." unique_id=1144966751]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+columns = 2
+hide_root = true
+
+[node name="@Timer@20492" type="Timer" parent="AliasTree" unique_id=1151328532]
+one_shot = true
