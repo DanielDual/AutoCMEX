@@ -53,30 +53,35 @@ public class LogConfigPanelTest : TestClass
     var panel = new LogConfigPanel();
     _panels.Add(panel);
 
-    // Create child nodes programmatically
+    // Create child nodes with UniqueNameInOwner for [Node("%Name")] resolution
     var maxFileCountInput = new SpinBox
     {
       Name = "MaxFileCountInput",
+      UniqueNameInOwner = true,
       MinValue = 1,
       MaxValue = 1000,
       Value = 30,
     };
     panel.AddChild(maxFileCountInput);
+    panel.MaxFileCountInput = maxFileCountInput;
 
-    var minLevelOption = new OptionButton { Name = "MinLevelOption" };
+    var minLevelOption = new OptionButton { Name = "MinLevelOption", UniqueNameInOwner = true };
     panel.AddChild(minLevelOption);
+    panel.MinLevelOption = minLevelOption;
 
-    var applyConfigBtn = new Button { Name = "ApplyConfigBtn" };
+    var applyConfigBtn = new Button { Name = "ApplyConfigBtn", UniqueNameInOwner = true };
     panel.AddChild(applyConfigBtn);
+    panel.ApplyConfigBtn = applyConfigBtn;
 
-    var statusLabel = new RichTextLabel { Name = "StatusLabel" };
+    var statusLabel = new RichTextLabel { Name = "StatusLabel", UniqueNameInOwner = true };
     panel.AddChild(statusLabel);
+    panel.StatusLabel = statusLabel;
 
-    // Fake dependency BEFORE adding to scene tree
+    // Fake dependency
     if (service != null)
       panel.FakeDependency<ILogService>(service);
 
-    // Add to scene tree so AutoInject can resolve [Node] attributes
+    // Add to scene tree
     TestScene.GetTree().Root.AddChild(panel);
 
     return panel;

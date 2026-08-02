@@ -34,28 +34,28 @@ public partial class MainWindow
 
   #region AutoConnect Nodes
 
-  [Node("MainContainer/LeftPanel")]
+  [Node("%LeftPanel")]
   public VBoxContainer LeftPanel { get; set; } = default!;
 
-  [Node("MainContainer/RightPanel")]
+  [Node("%RightPanel")]
   public Control RightPanel { get; set; } = default!;
 
-  [Node("MainContainer/LeftPanel/MergeBtn")]
+  [Node("%MergeBtn")]
   public Button MergeBtn { get; set; } = default!;
 
-  [Node("MainContainer/LeftPanel/GuessingBtn")]
+  [Node("%GuessingBtn")]
   public Button GuessingBtn { get; set; } = default!;
 
-  [Node("MainContainer/LeftPanel/InfoBtn")]
+  [Node("%InfoBtn")]
   public Button InfoBtn { get; set; } = default!;
 
-  [Node("MainContainer/LeftPanel/SettingsBtn")]
+  [Node("%SettingsBtn")]
   public Button SettingsBtn { get; set; } = default!;
 
-  [Node("MainContainer/LeftPanel/HelpBtn")]
+  [Node("%HelpBtn")]
   public Button HelpBtn { get; set; } = default!;
 
-  [Node("MainContainer/LeftPanel/LogBtn")]
+  [Node("%LogBtn")]
   public Button LogBtn { get; set; } = default!;
 
   [Node("MainContainer/LeftPanel/WebSocketBtn")]

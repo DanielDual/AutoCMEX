@@ -21,31 +21,31 @@ public partial class LogPanel : Control
 {
   #region AutoConnect Nodes
 
-  [Node]
+  [Node("%LogView")]
   public RichTextLabel LogView { get; set; } = default!;
 
-  [Node]
+  [Node("%LevelFilter")]
   public OptionButton LevelFilter { get; set; } = default!;
 
-  [Node]
+  [Node("%ModuleFilter")]
   public OptionButton ModuleFilter { get; set; } = default!;
 
-  [Node]
+  [Node("%PauseBtn")]
   public Button PauseBtn { get; set; } = default!;
 
-  [Node]
+  [Node("%ClearBtn")]
   public Button ClearBtn { get; set; } = default!;
 
-  [Node]
+  [Node("%MaxFileCountInput")]
   public SpinBox MaxFileCountInput { get; set; } = default!;
 
-  [Node]
+  [Node("%MinLevelOption")]
   public OptionButton MinLevelOption { get; set; } = default!;
 
-  [Node]
+  [Node("%ApplyConfigBtn")]
   public Button ApplyConfigBtn { get; set; } = default!;
 
-  [Node]
+  [Node("%StatusLabel")]
   public RichTextLabel StatusLabel { get; set; } = default!;
 
   #endregion

@@ -13,16 +13,16 @@ using Godot;
 [Meta(typeof(IAutoNode))]
 public partial class LogConfigPanel : Control
 {
-  [Node("MaxFileCountInput")]
+  [Node("%MaxFileCountInput")]
   public SpinBox MaxFileCountInput { get; set; } = default!;
 
-  [Node("MinLevelOption")]
+  [Node("%MinLevelOption")]
   public OptionButton MinLevelOption { get; set; } = default!;
 
-  [Node("ApplyConfigBtn")]
+  [Node("%ApplyConfigBtn")]
   public Button ApplyConfigBtn { get; set; } = default!;
 
-  [Node("StatusLabel")]
+  [Node("%StatusLabel")]
   public RichTextLabel StatusLabel { get; set; } = default!;
 
   [Dependency]

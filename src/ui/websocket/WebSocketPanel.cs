@@ -12,25 +12,25 @@ using Godot;
 [Meta(typeof(IAutoNode))]
 public partial class WebSocketPanel : Control
 {
-  [Node("MainContainer/StatusContainer/StatusLabel")]
+  [Node("%StatusLabel")]
   public Label StatusLabel { get; set; } = default!;
 
-  [Node("MainContainer/ModeLabel")]
+  [Node("%ModeLabel")]
   public Label ModeLabel { get; set; } = default!;
 
-  [Node("MainContainer/PortLabel")]
+  [Node("%PortLabel")]
   public Label PortLabel { get; set; } = default!;
 
-  [Node("MainContainer/ConnectionCountLabel")]
+  [Node("%ConnectionCountLabel")]
   public Label ConnectionCountLabel { get; set; } = default!;
 
-  [Node("MainContainer/EventLabel")]
+  [Node("%EventLabel")]
   public Label EventLabel { get; set; } = default!;
 
-  [Node("MainContainer/StartStopBtn")]
+  [Node("%StartStopBtn")]
   public Button StartStopBtn { get; set; } = default!;
 
-  [Node("MainContainer/ClientList")]
+  [Node("%ClientList")]
   public ItemList ClientList { get; set; } = default!;
 
   [Dependency]

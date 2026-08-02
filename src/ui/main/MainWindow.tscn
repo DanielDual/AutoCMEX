@@ -4,10 +4,14 @@
 [ext_resource type="PackedScene" uid="uid://b0o67jk40412y" path="res://src/ui/guessing/GuessingPanel.tscn" id="2_guessing"]
 [ext_resource type="PackedScene" uid="uid://gihori8we6rx" path="res://src/ui/settings/SettingsPanel.tscn" id="3_settings"]
 [ext_resource type="PackedScene" uid="uid://b4urpmt0s8fl6" path="res://src/ui/logging/LogPanel.tscn" id="4_log"]
+[ext_resource type="Script" uid="uid://c41htm0llrugj" path="res://src/ui/guessing/GuessingPanel.cs" id="4_qts5r"]
 [ext_resource type="PackedScene" uid="uid://wsdpnl001" path="res://src/ui/websocket/WebSocketPanel.tscn" id="5_ws"]
 [ext_resource type="PackedScene" uid="uid://xa0vkqnpj1n0" path="res://src/ui/merge/MergePanel.tscn" id="6_merge"]
+[ext_resource type="Script" uid="uid://cmxsol0aje66q" path="res://src/ui/settings/SettingsPanel.cs" id="7_8a7bm"]
 [ext_resource type="PackedScene" uid="uid://cmb8ndpqvxtot" path="res://src/ui/info/InfoPanel.tscn" id="7_info"]
 [ext_resource type="PackedScene" uid="uid://lpqr6wef3tj8" path="res://src/ui/help/HelpPanel.tscn" id="8_help"]
+[ext_resource type="Script" uid="uid://dqi1jkjb7r7xb" path="res://src/ui/logging/LogPanel.cs" id="10_sdns3"]
+[ext_resource type="Script" uid="uid://jk08wt8jy0bg" path="res://src/ui/websocket/WebSocketPanel.cs" id="12_7oob7"]
 
 [node name="Control2" type="Control" unique_id=764712909]
 layout_mode = 3
@@ -29,6 +33,7 @@ split_offsets = PackedInt32Array(200)
 split_offset = 200
 
 [node name="LeftPanel" type="VBoxContainer" parent="MainContainer" unique_id=1652975084]
+unique_name_in_owner = true
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 
@@ -41,16 +46,19 @@ horizontal_alignment = 1
 layout_mode = 2
 
 [node name="MergeBtn" type="Button" parent="MainContainer/LeftPanel" unique_id=1541808589]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "整合"
 
 [node name="GuessingBtn" type="Button" parent="MainContainer/LeftPanel" unique_id=1887520162]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "猜测"
 
 [node name="InfoBtn" type="Button" parent="MainContainer/LeftPanel" unique_id=1492759787]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "信息"
@@ -63,16 +71,19 @@ size_flags_vertical = 3
 layout_mode = 2
 
 [node name="SettingsBtn" type="Button" parent="MainContainer/LeftPanel" unique_id=911810570]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "设置"
 
 [node name="HelpBtn" type="Button" parent="MainContainer/LeftPanel" unique_id=279100390]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "帮助"
 
 [node name="LogBtn" type="Button" parent="MainContainer/LeftPanel" unique_id=1543099073]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 text = "日志"
@@ -91,10 +102,11 @@ text = "v0.0.1"
 horizontal_alignment = 1
 
 [node name="RightPanel" type="Control" parent="MainContainer" unique_id=1925822448]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="MergePanel" parent="MainContainer/RightPanel" unique_id=1266187082 instance=ExtResource("6_merge")]
+[node name="MergePanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187082 instance=ExtResource("6_merge")]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -103,7 +115,17 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="GuessingPanel" parent="MainContainer/RightPanel" unique_id=1266187084 instance=ExtResource("2_guessing")]
+[node name="GuessingPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187084 instance=ExtResource("2_guessing")]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("4_qts5r")
+
+[node name="InfoPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187085 instance=ExtResource("7_info")]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -112,7 +134,17 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="InfoPanel" parent="MainContainer/RightPanel" unique_id=1266187085 instance=ExtResource("7_info")]
+[node name="SettingsPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187087 instance=ExtResource("3_settings")]
+visible = false
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("7_8a7bm")
+
+[node name="HelpPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187088 instance=ExtResource("8_help")]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -121,7 +153,7 @@ anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
 
-[node name="SettingsPanel" parent="MainContainer/RightPanel" unique_id=1266187087 instance=ExtResource("3_settings")]
+[node name="LogPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187090 instance=ExtResource("4_log")]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -129,8 +161,9 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("10_sdns3")
 
-[node name="HelpPanel" parent="MainContainer/RightPanel" unique_id=1266187088 instance=ExtResource("8_help")]
+[node name="WebSocketPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187091 instance=ExtResource("5_ws")]
 visible = false
 layout_mode = 1
 anchors_preset = 15
@@ -138,11 +171,4 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-
-[node name="LogPanel" parent="MainContainer/RightPanel" unique_id=1266187090 instance=ExtResource("4_log")]
-visible = false
-layout_mode = 1
-
-[node name="WebSocketPanel" parent="MainContainer/RightPanel" unique_id=1266187091 instance=ExtResource("5_ws")]
-visible = false
-layout_mode = 1
+script = ExtResource("12_7oob7")
