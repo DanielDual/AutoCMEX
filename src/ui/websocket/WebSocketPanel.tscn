@@ -75,3 +75,7 @@ text = "已连接客户端:"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+
+[node name="RefreshTimer" type="Timer" parent="." unique_id=597801032]
+unique_name_in_owner = true
+autostart = true

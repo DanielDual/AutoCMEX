@@ -33,23 +33,21 @@ public partial class WebSocketPanel : Control
   [Node("%ClientList")]
   public ItemList ClientList { get; set; } = default!;
 
+  [Node("%RefreshTimer")]
+  public Timer RefreshTimer { get; set; } = default!;
+
   [Dependency]
   public IWebSocketServer Server => this.DependOn<IWebSocketServer>();
 
   private IWebSocketServer? _server;
   private string _mode = "Server";
   private string _lastEvent = "";
-  private Timer? _refreshTimer;
 
   public override void _Notification(int what) => this.Notify(what);
 
   public void OnReady()
   {
-    _refreshTimer = new Timer();
-    _refreshTimer.WaitTime = 1.0;
-    _refreshTimer.Autostart = true;
-    _refreshTimer.Timeout += OnRefreshTimerTimeout;
-    AddChild(_refreshTimer);
+    RefreshTimer.Timeout += OnRefreshTimerTimeout;
   }
 
   public void OnResolved()
@@ -90,10 +88,9 @@ public partial class WebSocketPanel : Control
 
   public override void _ExitTree()
   {
-    if (_refreshTimer != null)
+    if (RefreshTimer != null)
     {
-      _refreshTimer.Timeout -= OnRefreshTimerTimeout;
-      _refreshTimer.Stop();
+      RefreshTimer.Timeout -= OnRefreshTimerTimeout;
     }
 
     if (_server != null)

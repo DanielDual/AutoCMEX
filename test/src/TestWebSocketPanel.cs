@@ -51,6 +51,10 @@ public class TestWebSocketPanel : TestClass
     _panel.AddChild(clientList);
     _panel.ClientList = clientList;
 
+    var refreshTimer = new Timer();
+    _panel.AddChild(refreshTimer);
+    _panel.RefreshTimer = refreshTimer;
+
     _panel.FakeDependency<IWebSocketServer>(new MockWebSocketServer());
     _panel._Notification((int)Node.NotificationReady);
   }
