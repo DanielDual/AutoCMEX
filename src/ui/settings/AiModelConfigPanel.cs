@@ -102,117 +102,19 @@ public partial class AiModelConfigPanel : VBoxContainer
 
     foreach (var model in _settings.AiModels)
     {
-      var entry = CreateModelEntry(model);
+      var entry = GD.Load<PackedScene>("res://src/ui/settings/ModelEntryPanel.tscn")
+        .Instantiate<ModelEntryPanel>();
+      entry.Setup(model, _dm);
+      entry.SetTestCallback(() => TestModelConnection(model));
+      entry.SetDeleteCallback(() =>
+      {
+        _settings.AiModels.Remove(model);
+        _dm?.TriggerAutoSave();
+        _dm?.NotifyDataChanged();
+        Refresh();
+      });
       ModelList.AddChild(entry);
     }
-  }
-
-  private Control CreateModelEntry(AiModelConfig model)
-  {
-    var entry = new VBoxContainer();
-
-    // API Format
-    var formatRow = new HBoxContainer();
-    var formatLabel = new Label { Text = "API 格式:", CustomMinimumSize = new Vector2(100, 0) };
-    formatRow.AddChild(formatLabel);
-    var formatOption = new OptionButton();
-    formatOption.AddItem("OpenAI");
-    formatOption.AddItem("Anthropic");
-    formatOption.Select(model.ApiFormat == "Anthropic" ? 1 : 0);
-    formatOption.ItemSelected += (idx) =>
-    {
-      model.ApiFormat = idx == 1 ? "Anthropic" : "OpenAI";
-      _dm?.TriggerAutoSave();
-    };
-    formatRow.AddChild(formatOption);
-    entry.AddChild(formatRow);
-
-    // Endpoint URL
-    var urlRow = new HBoxContainer();
-    var urlLabel = new Label { Text = "请求地址:", CustomMinimumSize = new Vector2(100, 0) };
-    urlRow.AddChild(urlLabel);
-    var urlInput = new LineEdit
-    {
-      Text = model.EndpointUrl,
-      SizeFlagsHorizontal = SizeFlags.Expand | SizeFlags.Fill,
-    };
-    urlInput.TextChanged += (text) =>
-    {
-      model.EndpointUrl = text;
-      _dm?.TriggerAutoSave();
-    };
-    urlRow.AddChild(urlInput);
-    entry.AddChild(urlRow);
-
-    // Model ID
-    var modelIdRow = new HBoxContainer();
-    var modelIdLabel = new Label { Text = "模型 ID:", CustomMinimumSize = new Vector2(100, 0) };
-    modelIdRow.AddChild(modelIdLabel);
-    var modelIdInput = new LineEdit
-    {
-      Text = model.ModelId,
-      SizeFlagsHorizontal = SizeFlags.Expand | SizeFlags.Fill,
-    };
-    modelIdInput.TextChanged += (text) =>
-    {
-      model.ModelId = text;
-      _dm?.TriggerAutoSave();
-    };
-    modelIdRow.AddChild(modelIdInput);
-    entry.AddChild(modelIdRow);
-
-    // API Key
-    var keyRow = new HBoxContainer();
-    var keyLabel = new Label { Text = "API 密钥:", CustomMinimumSize = new Vector2(100, 0) };
-    keyRow.AddChild(keyLabel);
-    var keyInput = new LineEdit
-    {
-      Secret = true,
-      PlaceholderText = "****",
-      SizeFlagsHorizontal = SizeFlags.Expand | SizeFlags.Fill,
-    };
-    keyInput.TextChanged += (text) =>
-    {
-      model.EncryptedApiKey = text;
-      _dm?.TriggerAutoSave();
-    };
-    keyRow.AddChild(keyInput);
-    var toggleBtn = new Button { Text = "显示" };
-    toggleBtn.Toggled += (on) =>
-    {
-      keyInput.Secret = !on;
-      toggleBtn.Text = on ? "隐藏" : "显示";
-    };
-    keyRow.AddChild(toggleBtn);
-    entry.AddChild(keyRow);
-
-    // Action buttons
-    var actionRow = new HBoxContainer();
-    var testBtn = new Button { Text = "测试连接" };
-    testBtn.Pressed += async () =>
-    {
-      testBtn.Disabled = true;
-      testBtn.Text = "测试中...";
-      var success = await TestModelConnection(model);
-      testBtn.Disabled = false;
-      testBtn.Text = success ? "连接成功" : "连接失败";
-      await ToSignal(GetTree().CreateTimer(2), "timeout");
-      testBtn.Text = "测试连接";
-    };
-    actionRow.AddChild(testBtn);
-    var deleteBtn = new Button { Text = "删除" };
-    deleteBtn.Pressed += () =>
-    {
-      _settings.AiModels.Remove(model);
-      _dm?.TriggerAutoSave();
-      _dm?.NotifyDataChanged();
-      Refresh();
-    };
-    actionRow.AddChild(deleteBtn);
-    entry.AddChild(actionRow);
-    entry.AddChild(new HSeparator());
-
-    return entry;
   }
 
   private static async Task<bool> TestModelConnection(AiModelConfig model)

@@ -1,0 +1,81 @@
+[gd_scene format=3 uid="uid://buvq6apacx0l0"]
+
+[ext_resource type="Script" uid="uid://cpauw1whl7ec6" path="res://src/ui/settings/ModelEntryPanel.cs" id="1_0xnsy"]
+
+[node name="ModelEntryPanel" type="VBoxContainer" unique_id=1540126069]
+script = ExtResource("1_0xnsy")
+
+[node name="FormatRow" type="HBoxContainer" parent="." unique_id=987778376]
+layout_mode = 2
+
+[node name="FormatLabel" type="Label" parent="FormatRow" unique_id=887663843]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "API 格式:"
+
+[node name="FormatOption" type="OptionButton" parent="FormatRow" unique_id=880038434]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="UrlRow" type="HBoxContainer" parent="." unique_id=632754231]
+layout_mode = 2
+
+[node name="UrlLabel" type="Label" parent="UrlRow" unique_id=807204785]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "请求地址:"
+
+[node name="UrlInput" type="LineEdit" parent="UrlRow" unique_id=1831471973]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 7
+
+[node name="ModelIdRow" type="HBoxContainer" parent="." unique_id=1009696941]
+layout_mode = 2
+
+[node name="ModelIdLabel" type="Label" parent="ModelIdRow" unique_id=2091602582]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "模型 ID:"
+
+[node name="ModelIdInput" type="LineEdit" parent="ModelIdRow" unique_id=1021519792]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 7
+
+[node name="KeyRow" type="HBoxContainer" parent="." unique_id=674499417]
+layout_mode = 2
+
+[node name="KeyLabel" type="Label" parent="KeyRow" unique_id=1447346380]
+custom_minimum_size = Vector2(100, 0)
+layout_mode = 2
+text = "API 密钥:"
+
+[node name="KeyInput" type="LineEdit" parent="KeyRow" unique_id=640458011]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 7
+placeholder_text = "****"
+secret = true
+
+[node name="ToggleKeyBtn" type="Button" parent="KeyRow" unique_id=934192143]
+unique_name_in_owner = true
+layout_mode = 2
+toggle_mode = true
+text = "显示"
+
+[node name="ActionRow" type="HBoxContainer" parent="." unique_id=612843887]
+layout_mode = 2
+
+[node name="TestBtn" type="Button" parent="ActionRow" unique_id=1705827110]
+unique_name_in_owner = true
+layout_mode = 2
+text = "测试连接"
+
+[node name="DeleteBtn" type="Button" parent="ActionRow" unique_id=1553022478]
+unique_name_in_owner = true
+layout_mode = 2
+text = "删除"
+
+[node name="Separator" type="HSeparator" parent="." unique_id=1136554688]
+layout_mode = 2
