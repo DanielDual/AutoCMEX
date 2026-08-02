@@ -126,7 +126,6 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-script = ExtResource("4_qts5r")
 
 [node name="InfoPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187085 instance=ExtResource("7_info")]
 unique_name_in_owner = true
@@ -147,7 +146,6 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-script = ExtResource("7_8a7bm")
 
 [node name="HelpPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187088 instance=ExtResource("8_help")]
 unique_name_in_owner = true
@@ -168,7 +166,6 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-script = ExtResource("10_sdns3")
 
 [node name="WebSocketPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187091 instance=ExtResource("5_ws")]
 unique_name_in_owner = true
@@ -179,4 +176,3 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
-script = ExtResource("12_7oob7")
