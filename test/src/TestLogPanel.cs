@@ -57,7 +57,9 @@ public class TestLogPanel : TestClass
     _panel.AddChild(statusLabel);
     _panel.StatusLabel = statusLabel;
 
-    _panel.OnReady();
+    var logCfg = new LogConfig { LogDirectory = System.IO.Path.GetTempPath() };
+    _panel.FakeDependency<ILogService>(new LogService(logCfg, includeGodotConsole: false));
+    _panel._Notification((int)Node.NotificationReady);
   }
 
   [Cleanup]

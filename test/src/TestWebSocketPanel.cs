@@ -51,7 +51,8 @@ public class TestWebSocketPanel : TestClass
     _panel.AddChild(clientList);
     _panel.ClientList = clientList;
 
-    _panel.OnReady();
+    _panel.FakeDependency<IWebSocketServer>(new MockWebSocketServer());
+    _panel._Notification((int)Node.NotificationReady);
   }
 
   [Cleanup]

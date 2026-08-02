@@ -101,8 +101,7 @@ public class LogConfigPanelTest : TestClass
     var panel = CreatePanel(svc);
 
     // After binding, the UI should reflect the service config
-    var input = panel.GetNode<SpinBox>("MaxFileCountInput");
-    ((int)input.Value).ShouldBe(10);
+    ((int)panel.MaxFileCountInput.Value).ShouldBe(10);
   }
 
   [Test]
@@ -119,15 +118,12 @@ public class LogConfigPanelTest : TestClass
     var panel = CreatePanel(svc);
 
     // Change values and apply
-    var input = panel.GetNode<SpinBox>("MaxFileCountInput");
-    input.Value = 20;
+    panel.MaxFileCountInput.Value = 20;
 
-    var minLevelOption = panel.GetNode<OptionButton>("MinLevelOption");
-    minLevelOption.Selected = 1; // Warn
+    panel.MinLevelOption.Selected = 1; // Warn
 
     // Trigger apply
-    var applyBtn = panel.GetNode<Button>("ApplyConfigBtn");
-    applyBtn.EmitSignal("pressed");
+    panel.ApplyConfigBtn.EmitSignal("pressed");
 
     // Verify config was updated
     svc.Config.MaxFileCount.ShouldBe(20);
@@ -139,31 +135,25 @@ public class LogConfigPanelTest : TestClass
     var panel = CreatePanel();
 
     // Try to apply without binding to a service — should not throw
-    var applyBtn = panel.GetNode<Button>("ApplyConfigBtn");
-    applyBtn.EmitSignal("pressed");
+    panel.ApplyConfigBtn.EmitSignal("pressed");
 
     // Verify status label was updated
-    var statusLabel = panel.GetNode<RichTextLabel>("StatusLabel");
-    statusLabel.ShouldNotBeNull();
+    panel.StatusLabel.ShouldNotBeNull();
   }
 
   [Test]
   public void MinLevel_HasThreeOptions()
   {
     var panel = CreatePanel();
-    var minLevelOption = panel.GetNode<OptionButton>("MinLevelOption");
-
     // Should have 3 items: Info, Warn, Error
-    minLevelOption.ItemCount.ShouldBe(3);
+    panel.MinLevelOption.ItemCount.ShouldBe(3);
   }
 
   [Test]
   public void MaxFileCount_HasValidRange()
   {
     var panel = CreatePanel();
-    var input = panel.GetNode<SpinBox>("MaxFileCountInput");
-
-    input.MinValue.ShouldBe(1);
-    input.MaxValue.ShouldBe(1000);
+    panel.MaxFileCountInput.MinValue.ShouldBe(1);
+    panel.MaxFileCountInput.MaxValue.ShouldBe(1000);
   }
 }
