@@ -11,6 +11,7 @@
 **/addons/godot_mcp_editor/
 **/addons/godot_mcp_runtime/
 *.old*
+test-key
 
 
 # [Coverage]
