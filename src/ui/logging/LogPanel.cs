@@ -2,7 +2,6 @@ namespace AutoCMEX.UI.Logging;
 
 using System;
 using System.Collections.Generic;
-using System.IO;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Helpers;
 using Chickensoft.AutoInject;
@@ -13,8 +12,9 @@ using Godot;
 /// 日志面板：实时显示 <see cref="InMemoryLogWriter"/> 中的日志条目。
 /// </summary>
 /// <remarks>
-/// <para>提供日志级别过滤、模块筛选、自动滚动、清空、配置入口。</para>
+/// <para>提供日志级别过滤、模块筛选、自动滚动、清空功能。</para>
 /// <para>通过 [Dependency] 获取 ILogService。</para>
+/// <para>日志配置由独立的 LogConfigPanel 子场景处理。</para>
 /// </remarks>
 [Meta(typeof(IAutoNode))]
 public partial class LogPanel : Control
@@ -36,17 +36,8 @@ public partial class LogPanel : Control
   [Node("%ClearBtn")]
   public Button ClearBtn { get; set; } = default!;
 
-  [Node("%MaxFileCountInput")]
-  public SpinBox MaxFileCountInput { get; set; } = default!;
-
-  [Node("%MinLevelOption")]
-  public OptionButton MinLevelOption { get; set; } = default!;
-
-  [Node("%ApplyConfigBtn")]
-  public Button ApplyConfigBtn { get; set; } = default!;
-
-  [Node("%StatusLabel")]
-  public RichTextLabel StatusLabel { get; set; } = default!;
+  [Node("%LogDirLabel")]
+  public Label LogDirLabel { get; set; } = default!;
 
   #endregion
 
@@ -97,21 +88,6 @@ public partial class LogPanel : Control
     ClearBtn.Text = "清空";
     ClearBtn.Pressed += OnClearPressed;
 
-    // 配置项
-    MaxFileCountInput.MinValue = 1;
-    MaxFileCountInput.MaxValue = 1000;
-    ApplyConfigBtn.Text = "应用配置";
-    ApplyConfigBtn.Pressed += OnApplyConfigPressed;
-
-    MinLevelOption.Clear();
-    MinLevelOption.AddItem("Info", 0);
-    MinLevelOption.AddItem("Warn", 1);
-    MinLevelOption.AddItem("Error", 2);
-    MinLevelOption.Selected = 0;
-
-    // 点击日志目录路径时打开文件资源管理器
-    StatusLabel.MetaClicked += OnStatusMetaClicked;
-
     _suppressEvents = false;
   }
 
@@ -125,17 +101,10 @@ public partial class LogPanel : Control
     _writer.OnNewLogEntry -= OnNewLogEntry;
     _writer.OnNewLogEntry += OnNewLogEntry;
 
-    // 初始化配置 UI
-    _suppressEvents = true;
-    MaxFileCountInput.Value = _service.Config.MaxFileCount;
-    MinLevelOption.Selected = (int)_service.Config.MinLevel;
-    _suppressEvents = false;
-
     // 初次显示历史条目
     RefreshFromBuffer();
-    SetStatus(
-      $"日志目录: [url=file://{_service.Config.LogDirectory}]{_service.Config.LogDirectory}[/url]  ·  缓冲 {_service.Config.InMemoryBufferSize} 条"
-    );
+    LogDirLabel.Text =
+      $"日志目录: {_service.Config.LogDirectory}  ·  缓冲 {_service.Config.InMemoryBufferSize} 条";
   }
 
   public override void _ExitTree()
@@ -240,23 +209,6 @@ public partial class LogPanel : Control
   {
     LogView?.Clear();
     _writer?.Clear();
-    SetStatus("已清空显示(文件不受影响)");
-  }
-
-  private void OnApplyConfigPressed()
-  {
-    if (_service == null)
-    {
-      SetStatus("日志服务未就绪");
-      return;
-    }
-    _service.Config.MaxFileCount = (int)MaxFileCountInput.Value;
-    var newMinLevel = (LogLevel)MinLevelOption.Selected;
-    _service.Config.MinLevel = newMinLevel;
-    if (_writer != null)
-      _writer.MinLevel = newMinLevel;
-    _service.RotateIfNeeded();
-    SetStatus($"已应用: MaxFileCount={_service.Config.MaxFileCount}, MinLevel={newMinLevel}");
   }
 
   private void EnsureModuleRegistered(string module)
@@ -273,27 +225,5 @@ public partial class LogPanel : Control
         return;
     }
     ModuleFilter.AddItem(module);
-  }
-
-  private void SetStatus(string message)
-  {
-    if (StatusLabel == null)
-      return;
-    StatusLabel.Clear();
-    StatusLabel.AppendText(message);
-  }
-
-  private void OnStatusMetaClicked(Variant meta)
-  {
-    var url = meta.AsString();
-    if (string.IsNullOrEmpty(url))
-      return;
-    // 去掉 file:// 前缀
-    var path = url.StartsWith("file://", StringComparison.Ordinal) ? url[7..] : url;
-    path = path.Replace('/', '\\');
-    if (Directory.Exists(path) || File.Exists(path))
-      OS.ShellOpen(ProjectSettings.GlobalizePath(path));
-    else
-      OS.ShellOpen(ProjectSettings.GlobalizePath(Path.GetDirectoryName(path) ?? path));
   }
 }

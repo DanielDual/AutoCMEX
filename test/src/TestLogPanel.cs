@@ -41,21 +41,9 @@ public class TestLogPanel : TestClass
     _panel.AddChild(clearBtn);
     _panel.ClearBtn = clearBtn;
 
-    var maxFileCountInput = new SpinBox();
-    _panel.AddChild(maxFileCountInput);
-    _panel.MaxFileCountInput = maxFileCountInput;
-
-    var minLevelOption = new OptionButton();
-    _panel.AddChild(minLevelOption);
-    _panel.MinLevelOption = minLevelOption;
-
-    var applyConfigBtn = new Button();
-    _panel.AddChild(applyConfigBtn);
-    _panel.ApplyConfigBtn = applyConfigBtn;
-
-    var statusLabel = new RichTextLabel();
-    _panel.AddChild(statusLabel);
-    _panel.StatusLabel = statusLabel;
+    var logDirLabel = new Label();
+    _panel.AddChild(logDirLabel);
+    _panel.LogDirLabel = logDirLabel;
 
     var logCfg = new LogConfig { LogDirectory = System.IO.Path.GetTempPath() };
     _panel.FakeDependency<ILogService>(new LogService(logCfg, includeGodotConsole: false));
