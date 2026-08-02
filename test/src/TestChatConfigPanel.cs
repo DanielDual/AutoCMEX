@@ -62,8 +62,7 @@ public class TestChatConfigPanel : TestClass
     _panel.PluginOkDialog = pluginOkDialog;
 
     _panel.FakeDependency<DataManager>(_dm);
-    _panel.OnReady();
-    _panel.OnResolved();
+    _panel._Notification((int)Node.NotificationReady);
   }
 
   [Cleanup]

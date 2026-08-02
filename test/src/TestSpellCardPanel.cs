@@ -71,10 +71,8 @@ public class TestSpellCardPanel : TestClass
     // 设置 FakeDependency
     _panel.FakeDependency<DataManager>(_dm);
 
-    // 不加入场景树，避免触发 [Node] 解析
-    // 手动调用生命周期方法
-    _panel.OnReady();
-    _panel.OnResolved();
+    // 触发 AutoInject 生命周期
+    _panel._Notification((int)Node.NotificationReady);
   }
 
   [Cleanup]

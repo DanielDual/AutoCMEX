@@ -198,21 +198,6 @@ public partial class MainWindow
   }
 
   /// <summary>
-  /// 配置变更回调：当 WebSocket 相关配置变化时自动重启
-  /// </summary>
-  private void OnSettingsPropertyChanged(string propertyName)
-  {
-    if (
-      propertyName == nameof(AppSettings.WebSocketMode)
-      || propertyName == nameof(AppSettings.WebSocketPort)
-      || propertyName == nameof(AppSettings.KoishiWebSocketUrl)
-    )
-    {
-      RestartWebSocket();
-    }
-  }
-
-  /// <summary>
   /// 重启 WebSocket 服务（切换模式或配置变更时调用）
   /// </summary>
   public async void RestartWebSocket()

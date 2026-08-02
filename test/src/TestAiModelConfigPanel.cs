@@ -47,8 +47,7 @@ public class TestAiModelConfigPanel : TestClass
     _panel.AddModelBtn = addModelBtn;
 
     _panel.FakeDependency<DataManager>(_dm);
-    _panel.OnReady();
-    _panel.OnResolved();
+    _panel._Notification((int)Node.NotificationReady);
   }
 
   [Cleanup]
