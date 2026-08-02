@@ -42,6 +42,16 @@ layout_mode = 2
 size_flags_vertical = 3
 script = ExtResource("3_drv0c")
 
+[node name="@VBoxContainer@22766" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=1915020899]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("2_lfa72")
+
+[node name="@VBoxContainer@22844" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=1557759205]
+unique_name_in_owner = true
+layout_mode = 2
+script = ExtResource("3_drv0c")
+
 [node name="RightPanel" type="VBoxContainer" parent="MainContainer/ContentArea" unique_id=489645881]
 layout_mode = 2
 size_flags_horizontal = 3

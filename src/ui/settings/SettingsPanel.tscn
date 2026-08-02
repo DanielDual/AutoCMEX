@@ -1,6 +1,8 @@
 [gd_scene format=3 uid="uid://gihori8we6rx"]
 
 [ext_resource type="Script" uid="uid://cmxsol0aje66q" path="res://src/ui/settings/SettingsPanel.cs" id="1_4c3qi"]
+[ext_resource type="Script" uid="uid://bubjcl7bce0df" path="res://src/ui/settings/AiModelConfigPanel.cs" id="2_k8gk3"]
+[ext_resource type="Script" uid="uid://vwn0wnq3t4w3" path="res://src/ui/settings/ChatConfigPanel.cs" id="3_e1yje"]
 
 [node name="Control" type="Control" unique_id=1958570285]
 layout_mode = 3
@@ -40,8 +42,10 @@ size_flags_horizontal = 3
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
+script = ExtResource("2_k8gk3")
 
 [node name="ChatConfigPanel" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea" unique_id=2068780662]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
+script = ExtResource("3_e1yje")
