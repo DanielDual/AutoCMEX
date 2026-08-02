@@ -1,7 +1,7 @@
 namespace AutoCMEX.Models;
 
 /// <summary>
-/// 符卡数据模型
+/// 符卡数据模型 — 纯 POCO，属性变更由 AutoList&lt;SpellCard&gt; 的集合级通知驱动
 /// </summary>
 public class SpellCard
 {

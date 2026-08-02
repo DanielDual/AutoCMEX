@@ -77,12 +77,14 @@ public class LogConfigPanelTest : TestClass
     panel.AddChild(statusLabel);
     panel.StatusLabel = statusLabel;
 
-    // Fake dependency
-    if (service != null)
-      panel.FakeDependency<ILogService>(service);
+    // Always provide a service for AutoInject resolution; use a default if none given
+    var resolvedService =
+      service
+      ?? new LogService(new LogConfig { LogDirectory = _testLogDir }, includeGodotConsole: false);
+    panel.FakeDependency<ILogService>(resolvedService);
 
-    // Add to scene tree
-    TestScene.GetTree().Root.AddChild(panel);
+    // Trigger AutoInject resolution: OnReady() + OnResolved()
+    panel._Notification((int)Node.NotificationReady);
 
     return panel;
   }
@@ -130,11 +132,11 @@ public class LogConfigPanelTest : TestClass
   }
 
   [Test]
-  public void ApplyConfig_NoService_DoesNotThrow()
+  public void ApplyConfig_WithDefaultService_DoesNotThrow()
   {
     var panel = CreatePanel();
 
-    // Try to apply without binding to a service — should not throw
+    // Apply with the default service — should not throw
     panel.ApplyConfigBtn.EmitSignal("pressed");
 
     // Verify status label was updated

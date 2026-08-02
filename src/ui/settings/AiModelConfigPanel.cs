@@ -110,7 +110,6 @@ public partial class AiModelConfigPanel : VBoxContainer
       {
         _settings.AiModels.Remove(model);
         _dm?.TriggerAutoSave();
-        _dm?.NotifyDataChanged();
         Refresh();
       });
       ModelList.AddChild(entry);
@@ -145,7 +144,6 @@ public partial class AiModelConfigPanel : VBoxContainer
     };
     _settings.AiModels.Add(newModel);
     _dm?.TriggerAutoSave();
-    _dm?.NotifyDataChanged();
     Refresh();
   }
 }

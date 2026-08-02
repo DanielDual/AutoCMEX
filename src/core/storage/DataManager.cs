@@ -35,13 +35,9 @@ public class DataManager : IDisposable
   public AutoList<CreatorAlias> Aliases => _aliases;
   public AppSettings Settings => _settings;
 
-  /// <summary>数据变更事件（用于 UI 刷新）</summary>
-  public event Action? DataChanged;
-
-  /// <summary>触发数据变更通知</summary>
-  public void NotifyDataChanged() => DataChanged?.Invoke();
-
   /// <summary>
+  /// UI 刷新由 AutoList/AutoValue 的 Bind().OnModify() / Bind().OnValue() 自动驱动
+  /// </summary>
   /// 订阅 AutoValue 属性变更，自动通知 UI 组件
   /// </summary>
   private void BindSettingsChanges()
@@ -49,35 +45,15 @@ public class DataManager : IDisposable
     if (_settings.ActiveAiModelId != null)
       _settings
         .ActiveAiModelId.Bind()
-        .OnValue(_ =>
-        {
-          _log.Print("DataManager: ActiveAiModelId changed, notifying UI...");
-          NotifyDataChanged();
-        });
+        .OnValue(_ => _log.Print("DataManager: ActiveAiModelId changed"));
     if (_settings.WebSocketPort != null)
-      _settings
-        .WebSocketPort.Bind()
-        .OnValue(_ =>
-        {
-          _log.Print("DataManager: WebSocketPort changed, notifying UI...");
-          NotifyDataChanged();
-        });
+      _settings.WebSocketPort.Bind().OnValue(_ => _log.Print("DataManager: WebSocketPort changed"));
     if (_settings.WebSocketMode != null)
-      _settings
-        .WebSocketMode.Bind()
-        .OnValue(_ =>
-        {
-          _log.Print("DataManager: WebSocketMode changed, notifying UI...");
-          NotifyDataChanged();
-        });
+      _settings.WebSocketMode.Bind().OnValue(_ => _log.Print("DataManager: WebSocketMode changed"));
     if (_settings.KoishiWebSocketUrl != null)
       _settings
         .KoishiWebSocketUrl.Bind()
-        .OnValue(_ =>
-        {
-          _log.Print("DataManager: KoishiWebSocketUrl changed, notifying UI...");
-          NotifyDataChanged();
-        });
+        .OnValue(_ => _log.Print("DataManager: KoishiWebSocketUrl changed"));
   }
 
   public DataManager(string dataDir, AesEncryptor encryptor)
