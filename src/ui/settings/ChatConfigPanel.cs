@@ -35,6 +35,12 @@ public partial class ChatConfigPanel : VBoxContainer
   [Node("%InstallBtn")]
   public Button InstallBtn { get; set; } = default!;
 
+  [Node("%PluginFileDialog")]
+  public FileDialog PluginFileDialog { get; set; } = default!;
+
+  [Node("%PluginOkDialog")]
+  public AcceptDialog PluginOkDialog { get; set; } = default!;
+
   [Dependency]
   public DataManager DataManager => this.DependOn<DataManager>();
 
@@ -59,6 +65,14 @@ public partial class ChatConfigPanel : VBoxContainer
     FilterSelect.ItemSelected += OnFilterChanged;
 
     InstallBtn.Pressed += OnInstallPlugin;
+
+    // 配置预置对话框
+    PluginFileDialog.FileMode = FileDialog.FileModeEnum.OpenDir;
+    PluginFileDialog.Access = FileDialog.AccessEnum.Filesystem;
+    PluginFileDialog.Title = "选择 Koishi plugins 目录";
+    PluginFileDialog.DirSelected += OnPluginDirSelected;
+
+    PluginOkDialog.Title = "安装完成";
   }
 
   public void OnResolved()
@@ -120,25 +134,18 @@ public partial class ChatConfigPanel : VBoxContainer
 
   private void OnInstallPlugin()
   {
-    var dialog = new FileDialog();
-    dialog.FileMode = FileDialog.FileModeEnum.OpenDir;
-    dialog.Access = FileDialog.AccessEnum.Filesystem;
-    dialog.Title = "选择 Koishi plugins 目录";
-    dialog.DirSelected += (dir) =>
-    {
-      var sourceDir = "res://src/plugin/koishi/";
-      var destDir = System.IO.Path.Combine(dir, "auto-cmex");
-      PluginInstaller.CopyPluginDir(sourceDir, destDir);
-      _settings.KoishiPluginPath = destDir;
-      _dm?.TriggerAutoSave();
+    PluginFileDialog.PopupCentered();
+  }
 
-      var okDialog = new AcceptDialog();
-      okDialog.Title = "安装完成";
-      okDialog.DialogText = $"插件已安装到 {destDir}";
-      AddChild(okDialog);
-      okDialog.PopupCentered();
-    };
-    AddChild(dialog);
-    dialog.PopupCentered();
+  private void OnPluginDirSelected(string dir)
+  {
+    var sourceDir = "res://src/plugin/koishi/";
+    var destDir = System.IO.Path.Combine(dir, "auto-cmex");
+    PluginInstaller.CopyPluginDir(sourceDir, destDir);
+    _settings.KoishiPluginPath = destDir;
+    _dm?.TriggerAutoSave();
+
+    PluginOkDialog.DialogText = $"插件已安装到 {destDir}";
+    PluginOkDialog.PopupCentered();
   }
 }

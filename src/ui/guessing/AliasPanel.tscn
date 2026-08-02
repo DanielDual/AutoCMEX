@@ -42,3 +42,12 @@ hide_root = true
 
 [node name="@Timer@20492" type="Timer" parent="AliasTree" unique_id=1151328532]
 one_shot = true
+
+[node name="ImportFileDialog" type="FileDialog" parent="." unique_id=202851446]
+unique_name_in_owner = true
+
+[node name="ExportFileDialog" type="FileDialog" parent="." unique_id=442866840]
+unique_name_in_owner = true
+
+[node name="ErrorDialog" type="AcceptDialog" parent="." unique_id=1518352035]
+unique_name_in_owner = true

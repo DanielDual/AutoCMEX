@@ -39,6 +39,15 @@ public partial class AliasPanel : VBoxContainer
   [Node("%DeleteAliasBtn")]
   public Button DeleteAliasBtn { get; set; } = default!;
 
+  [Node("%ImportFileDialog")]
+  public FileDialog ImportFileDialog { get; set; } = default!;
+
+  [Node("%ExportFileDialog")]
+  public FileDialog ExportFileDialog { get; set; } = default!;
+
+  [Node("%ErrorDialog")]
+  public AcceptDialog ErrorDialog { get; set; } = default!;
+
   [Dependency]
   public DataManager DataManager => this.DependOn<DataManager>();
 
@@ -69,6 +78,21 @@ public partial class AliasPanel : VBoxContainer
     AddAliasBtn.Pressed += OnAddAlias;
     AddAliasToCreatorBtn.Pressed += OnAddAliasToCreator;
     DeleteAliasBtn.Pressed += OnDeleteSelected;
+
+    // 配置预置对话框
+    ImportFileDialog.FileMode = FileDialog.FileModeEnum.OpenFile;
+    ImportFileDialog.Access = FileDialog.AccessEnum.Filesystem;
+    ImportFileDialog.AddFilter("*.csv, *.xlsx", "*.csv, *.xlsx");
+    ImportFileDialog.AddFilter("*.csv", "*.csv");
+    ImportFileDialog.AddFilter("*.xlsx", "*.xlsx");
+    ImportFileDialog.FileSelected += OnAliasFileSelected;
+
+    ExportFileDialog.FileMode = FileDialog.FileModeEnum.SaveFile;
+    ExportFileDialog.Access = FileDialog.AccessEnum.Filesystem;
+    ExportFileDialog.AddFilter("*.csv", "*.csv");
+    ExportFileDialog.FileSelected += OnAliasExportFileSelected;
+
+    ErrorDialog.Title = "错误";
   }
 
   public void OnResolved()
@@ -131,26 +155,12 @@ public partial class AliasPanel : VBoxContainer
 
   private void OnImportAliasTable()
   {
-    var d = new FileDialog();
-    d.FileMode = FileDialog.FileModeEnum.OpenFile;
-    d.Access = FileDialog.AccessEnum.Filesystem;
-    d.AddFilter("*.csv, *.xlsx", "*.csv, *.xlsx");
-    d.AddFilter("*.csv", "*.csv");
-    d.AddFilter("*.xlsx", "*.xlsx");
-    d.FileSelected += OnAliasFileSelected;
-    AddChild(d);
-    d.PopupCentered();
+    ImportFileDialog.PopupCentered();
   }
 
   private void OnExportAliasTable()
   {
-    var d = new FileDialog();
-    d.FileMode = FileDialog.FileModeEnum.SaveFile;
-    d.Access = FileDialog.AccessEnum.Filesystem;
-    d.AddFilter("*.csv", "*.csv");
-    d.FileSelected += OnAliasExportFileSelected;
-    AddChild(d);
-    d.PopupCentered();
+    ExportFileDialog.PopupCentered();
   }
 
   private void OnAliasExportFileSelected(string path)
@@ -219,10 +229,7 @@ public partial class AliasPanel : VBoxContainer
 
   private void ShowError(string msg)
   {
-    var d = new AcceptDialog();
-    d.Title = "错误";
-    d.DialogText = msg;
-    AddChild(d);
-    d.PopupCentered();
+    ErrorDialog.DialogText = msg;
+    ErrorDialog.PopupCentered();
   }
 }

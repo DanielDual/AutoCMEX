@@ -35,3 +35,13 @@ layout_mode = 2
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
+
+[node name="AiModelConfigPanel" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea" unique_id=2118296807]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+
+[node name="ChatConfigPanel" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea" unique_id=2068780662]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0

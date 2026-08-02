@@ -55,6 +55,19 @@ public class TestAliasPanel : TestClass
     _panel.AddChild(deleteBtn);
     _panel.DeleteAliasBtn = deleteBtn;
 
+    // 添加对话框节点
+    var importDialog = new FileDialog();
+    _panel.AddChild(importDialog);
+    _panel.ImportFileDialog = importDialog;
+
+    var exportDialog = new FileDialog();
+    _panel.AddChild(exportDialog);
+    _panel.ExportFileDialog = exportDialog;
+
+    var errorDialog = new AcceptDialog();
+    _panel.AddChild(errorDialog);
+    _panel.ErrorDialog = errorDialog;
+
     _panel.FakeDependency<DataManager>(_dm);
     _panel._Notification((int)Node.NotificationReady);
   }

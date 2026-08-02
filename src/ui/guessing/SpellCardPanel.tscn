@@ -41,3 +41,12 @@ text = "删除"
 unique_name_in_owner = true
 layout_mode = 2
 text = "添加符卡"
+
+[node name="ImportFileDialog" type="FileDialog" parent="." unique_id=313535915]
+unique_name_in_owner = true
+
+[node name="ExportFileDialog" type="FileDialog" parent="." unique_id=849317577]
+unique_name_in_owner = true
+
+[node name="ErrorDialog" type="AcceptDialog" parent="." unique_id=1500833481]
+unique_name_in_owner = true

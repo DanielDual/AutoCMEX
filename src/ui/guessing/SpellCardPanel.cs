@@ -39,6 +39,15 @@ public partial class SpellCardPanel : VBoxContainer
   [Node("%DeleteBtn")]
   public Button DeleteBtn { get; set; } = default!;
 
+  [Node("%ImportFileDialog")]
+  public FileDialog ImportFileDialog { get; set; } = default!;
+
+  [Node("%ExportFileDialog")]
+  public FileDialog ExportFileDialog { get; set; } = default!;
+
+  [Node("%ErrorDialog")]
+  public AcceptDialog ErrorDialog { get; set; } = default!;
+
   [Dependency]
   public DataManager DataManager => this.DependOn<DataManager>();
 
@@ -82,6 +91,21 @@ public partial class SpellCardPanel : VBoxContainer
     AddBossBtn.Pressed += OnAddBoss;
     AddCardBtn.Pressed += OnAddSpellCard;
     DeleteBtn.Pressed += OnDeleteSelected;
+
+    // 配置预置对话框
+    ImportFileDialog.FileMode = FileDialog.FileModeEnum.OpenFile;
+    ImportFileDialog.Access = FileDialog.AccessEnum.Filesystem;
+    ImportFileDialog.AddFilter("*.csv, *.xlsx", "*.csv, *.xlsx");
+    ImportFileDialog.AddFilter("*.csv", "*.csv");
+    ImportFileDialog.AddFilter("*.xlsx", "*.xlsx");
+    ImportFileDialog.FileSelected += OnCardFileSelected;
+
+    ExportFileDialog.FileMode = FileDialog.FileModeEnum.SaveFile;
+    ExportFileDialog.Access = FileDialog.AccessEnum.Filesystem;
+    ExportFileDialog.AddFilter("*.csv", "*.csv");
+    ExportFileDialog.FileSelected += OnCardExportFileSelected;
+
+    ErrorDialog.Title = "错误";
   }
 
   public void OnResolved()
@@ -179,26 +203,12 @@ public partial class SpellCardPanel : VBoxContainer
 
   private void OnImportCardTable()
   {
-    var d = new FileDialog();
-    d.FileMode = FileDialog.FileModeEnum.OpenFile;
-    d.Access = FileDialog.AccessEnum.Filesystem;
-    d.AddFilter("*.csv, *.xlsx", "*.csv, *.xlsx");
-    d.AddFilter("*.csv", "*.csv");
-    d.AddFilter("*.xlsx", "*.xlsx");
-    d.FileSelected += OnCardFileSelected;
-    AddChild(d);
-    d.PopupCentered();
+    ImportFileDialog.PopupCentered();
   }
 
   private void OnExportCardTable()
   {
-    var d = new FileDialog();
-    d.FileMode = FileDialog.FileModeEnum.SaveFile;
-    d.Access = FileDialog.AccessEnum.Filesystem;
-    d.AddFilter("*.csv", "*.csv");
-    d.FileSelected += OnCardExportFileSelected;
-    AddChild(d);
-    d.PopupCentered();
+    ExportFileDialog.PopupCentered();
   }
 
   private void OnCardExportFileSelected(string path)
@@ -281,10 +291,7 @@ public partial class SpellCardPanel : VBoxContainer
 
   private void ShowError(string msg)
   {
-    var d = new AcceptDialog();
-    d.Title = "错误";
-    d.DialogText = msg;
-    AddChild(d);
-    d.PopupCentered();
+    ErrorDialog.DialogText = msg;
+    ErrorDialog.PopupCentered();
   }
 }
