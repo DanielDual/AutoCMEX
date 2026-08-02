@@ -90,7 +90,7 @@ public class LogConfigPanelTest : TestClass
   }
 
   [Test]
-  public void BindToService_UpdatesUIFromServiceConfig()
+  public void FakeDependency_UpdatesUIFromServiceConfig()
   {
     var cfg = new LogConfig
     {
