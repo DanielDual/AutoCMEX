@@ -1,25 +1,15 @@
 namespace AutoCMEX.Models;
 
 using System;
-using System.Collections.Generic;
+using Chickensoft.Sync.Primitives;
 
 /// <summary>
 /// 应用全局配置数据模型
 /// </summary>
 public class AppSettings
 {
-  /// <summary>属性变更事件（参数：属性名）</summary>
-  public event Action<string>? PropertyChanged;
-
-  private void OnPropertyChanged(
-    [System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null
-  )
-  {
-    PropertyChanged?.Invoke(propertyName ?? string.Empty);
-  }
-
   /// <summary>AI 模型配置列表</summary>
-  public List<AiModelConfig> AiModels { get; set; } = new();
+  public AutoList<AiModelConfig> AiModels { get; set; } = new();
 
   private string? _activeAiModelId;
 
@@ -99,4 +89,14 @@ public class AppSettings
 
   /// <summary>当前选中的 Boss 下标，用于共享手动与托管猜测流程的上下文</summary>
   public int SelectedBossIndex { get; set; } = 0;
+
+  /// <summary>属性变更事件（参数：属性名）</summary>
+  public event Action<string>? PropertyChanged;
+
+  private void OnPropertyChanged(
+    [System.Runtime.CompilerServices.CallerMemberName] string? propertyName = null
+  )
+  {
+    PropertyChanged?.Invoke(propertyName ?? string.Empty);
+  }
 }

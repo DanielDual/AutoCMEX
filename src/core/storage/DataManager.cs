@@ -2,7 +2,6 @@ namespace AutoCMEX.Core.Storage;
 
 using System;
 using System.Collections.Generic;
-using System.Collections.ObjectModel;
 using System.IO;
 using System.Text.Json;
 using System.Threading;
@@ -10,6 +9,7 @@ using System.Threading.Tasks;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Models;
 using Chickensoft.Log;
+using Chickensoft.Sync.Primitives;
 
 /// <summary>
 /// 数据持久化管理：JSON 读写 + 自动保存防抖
@@ -21,8 +21,8 @@ public class DataManager : IDisposable
   private readonly JsonSerializerOptions _jsonOptions;
   private readonly ILog _log;
 
-  private ObservableCollection<Boss> _bosses = new();
-  private ObservableCollection<CreatorAlias> _aliases = new();
+  private AutoList<Boss> _bosses = new();
+  private AutoList<CreatorAlias> _aliases = new();
   private AppSettings _settings = new();
 
   private CancellationTokenSource? _saveCts;
@@ -31,8 +31,8 @@ public class DataManager : IDisposable
   private volatile bool _isSaving;
   private bool _disposed;
 
-  public ObservableCollection<Boss> Bosses => _bosses;
-  public ObservableCollection<CreatorAlias> Aliases => _aliases;
+  public AutoList<Boss> Bosses => _bosses;
+  public AutoList<CreatorAlias> Aliases => _aliases;
   public AppSettings Settings => _settings;
 
   /// <summary>数据变更事件（用于 UI 刷新）</summary>
@@ -62,6 +62,13 @@ public class DataManager : IDisposable
     {
       WriteIndented = true,
       PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+      Converters =
+      {
+        new AutoListConverter<Boss>(),
+        new AutoListConverter<CreatorAlias>(),
+        new AutoListConverter<AiModelConfig>(),
+        new AutoListConverter<string>(),
+      },
     };
 
     if (!Directory.Exists(_dataDir))
@@ -78,20 +85,16 @@ public class DataManager : IDisposable
   {
     _log.Print($"DataManager.LoadAll: dir={_dataDir}");
 
-    // 清空并重新填充现有集合，保持 CollectionChanged 事件订阅有效
+    // 加载并创建新的 AutoList
     var loadedBosses = LoadJson<List<Boss>>("spellcard_table.json") ?? new();
-    _bosses.Clear();
-    foreach (var item in loadedBosses)
-      _bosses.Add(item);
+    _bosses = new AutoList<Boss>(loadedBosses);
 
     var loadedAliases = LoadJson<List<CreatorAlias>>("alias_table.json") ?? new();
-    _aliases.Clear();
-    foreach (var item in loadedAliases)
-      _aliases.Add(item);
+    _aliases = new AutoList<CreatorAlias>(loadedAliases);
 
     _settings = LoadJson<AppSettings>("app_settings.json") ?? new();
     // Subscribe to property changes to notify UI components
-    _settings.PropertyChanged -= OnSettingsPropertyChanged; // Avoid duplicate subscriptions
+    _settings.PropertyChanged -= OnSettingsPropertyChanged;
     _settings.PropertyChanged += OnSettingsPropertyChanged;
     _log.Print(
       $"DataManager.LoadAll: bosses={_bosses.Count}, aliases={_aliases.Count}, "
@@ -169,8 +172,9 @@ public class DataManager : IDisposable
 
     try
     {
-      SaveJson("spellcard_table.json", _bosses);
-      SaveJson("alias_table.json", _aliases);
+      // 将 AutoList 转换为 List<T> 以便 JSON 序列化
+      SaveJson("spellcard_table.json", new List<Boss>(_bosses));
+      SaveJson("alias_table.json", new List<CreatorAlias>(_aliases));
       SaveJson("app_settings.json", settingsToSave);
       _log.Print("DataManager: SaveAll succeeded.");
     }
@@ -191,6 +195,8 @@ public class DataManager : IDisposable
     _saveCts?.Cancel();
     _saveCts?.Dispose();
     _saveCts = null;
+    _bosses.Dispose();
+    _aliases.Dispose();
     GC.SuppressFinalize(this);
   }
 
@@ -225,7 +231,6 @@ public class DataManager : IDisposable
     }
     catch (Exception)
     {
-      // 文件损坏，返回 null
       return null;
     }
   }
