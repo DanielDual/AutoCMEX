@@ -67,6 +67,11 @@ public partial class AliasPanel : VBoxContainer
 
   public override void _Notification(int what) => this.Notify(what);
 
+  public override void _ExitTree()
+  {
+    _aliasesBinding?.Dispose();
+  }
+
   public void OnReady()
   {
     AliasTree.Columns = 2;

@@ -45,6 +45,12 @@ public class DataManager : IDisposable
   /// </summary>
   private void BindSettingsChanges()
   {
+    // 重新绑定时先释放旧绑定，避免重复 LoadAll() 时订阅泄漏
+    _activeAiModelIdBinding?.Dispose();
+    _webSocketPortBinding?.Dispose();
+    _webSocketModeBinding?.Dispose();
+    _koishiWebSocketUrlBinding?.Dispose();
+
     if (_settings.ActiveAiModelId != null)
       _activeAiModelIdBinding = _settings
         .ActiveAiModelId.Bind()

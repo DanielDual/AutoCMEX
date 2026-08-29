@@ -14,6 +14,7 @@ using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
+using Chickensoft.Sync.Primitives;
 using Godot;
 
 /// <summary>
@@ -118,43 +119,64 @@ public partial class MainWindow
   private readonly Dictionary<string, INode> _panels = new();
   private readonly Dictionary<string, IButton> _navButtons = new();
 
+  private AutoValue<string>.Binding? _webSocketModeBinding;
+  private AutoValue<int>.Binding? _webSocketPortBinding;
+  private AutoValue<string>.Binding? _koishiWebSocketUrlBinding;
+
   private IControl? _currentPanel;
   private const string DefaultPanel = "guessing";
 
   public override void _Notification(int what) => this.Notify(what);
 
+  public override void _ExitTree()
+  {
+    _webSocketModeBinding?.Dispose();
+    _webSocketPortBinding?.Dispose();
+    _koishiWebSocketUrlBinding?.Dispose();
+  }
+
   public void OnReady()
   {
-    // 初始化核心服务
-    var dataDir = ProjectSettings.GlobalizePath("user://data/");
-    var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(dataDir));
-    _dataManager = new DataManager(dataDir, encryptor);
-    _dataManager.LoadAll();
+    var isTesting = (this as IAutoInit).IsTesting;
+    if (!isTesting)
+    {
+      // 初始化核心服务
+      var dataDir = ProjectSettings.GlobalizePath("user://data/");
+      var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(dataDir));
+      _dataManager = new DataManager(dataDir, encryptor);
+      _dataManager.LoadAll();
 
-    _aiServiceFactory = new AiServiceFactory(_dataManager);
+      _aiServiceFactory = new AiServiceFactory(_dataManager);
 
-    _guessResponseHandler = new GuessResponseHandler();
-    _guessPipeline = new GuessPipeline(_guessResponseHandler, _dataManager.Aliases);
-    var droppedGuessRepository = new DroppedGuessRepository();
-    _guessProcessingService = new GuessProcessingService(
-      _dataManager,
-      _aiServiceFactory,
-      _guessResponseHandler,
-      droppedGuessRepository
-    );
+      _guessResponseHandler = new GuessResponseHandler();
+      _guessPipeline = new GuessPipeline(_guessResponseHandler, _dataManager.Aliases);
+      var droppedGuessRepository = new DroppedGuessRepository();
+      _guessProcessingService = new GuessProcessingService(
+        _dataManager,
+        _aiServiceFactory,
+        _guessResponseHandler,
+        droppedGuessRepository
+      );
 
-    // 初始化 WebSocket（Server 或 Client 模式）
-    var wsLog = AppLogs.GetOrCreate().GetLogger("WebSocket");
-    var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService);
-    _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
+      // 初始化 WebSocket（Server 或 Client 模式）
+      var wsLog = AppLogs.GetOrCreate().GetLogger("WebSocket");
+      var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService);
+      _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
-    // 初始化日志服务
-    _logService = AppLogs.GetOrCreate();
+      // 初始化日志服务
+      _logService = AppLogs.GetOrCreate();
 
-    // 订阅配置变更事件，自动重启 WebSocket
-    _dataManager.Settings.WebSocketMode.Bind().OnValue(_ => RestartWebSocket());
-    _dataManager.Settings.WebSocketPort.Bind().OnValue(_ => RestartWebSocket());
-    _dataManager.Settings.KoishiWebSocketUrl.Bind().OnValue(_ => RestartWebSocket());
+      // 订阅配置变更事件，自动重启 WebSocket（保存 Binding 引用以便释放）
+      _webSocketModeBinding = _dataManager
+        .Settings.WebSocketMode.Bind()
+        .OnValue(_ => RestartWebSocket());
+      _webSocketPortBinding = _dataManager
+        .Settings.WebSocketPort.Bind()
+        .OnValue(_ => RestartWebSocket());
+      _koishiWebSocketUrlBinding = _dataManager
+        .Settings.KoishiWebSocketUrl.Bind()
+        .OnValue(_ => RestartWebSocket());
+    }
 
     // 通知 AutoInject 依赖已就绪
     this.Provide();
@@ -194,8 +216,9 @@ public partial class MainWindow
 
     SwitchPanel(DefaultPanel);
 
-    // 启动 WebSocket 服务器
-    _ = _webSocketServer.StartAsync();
+    // 启动 WebSocket 服务器（测试模式下跳过，避免启动真实网络服务）
+    if (!(this as IAutoInit).IsTesting)
+      _ = _webSocketServer.StartAsync();
   }
 
   /// <summary>

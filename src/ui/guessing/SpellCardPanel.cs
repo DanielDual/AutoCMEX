@@ -79,6 +79,12 @@ public partial class SpellCardPanel : VBoxContainer
 
   public override void _Notification(int what) => this.Notify(what);
 
+  public override void _ExitTree()
+  {
+    _bossesBinding?.Dispose();
+    _spellCardsBinding?.Dispose();
+  }
+
   public void OnReady()
   {
     SpellCardTree.Columns = 3;
