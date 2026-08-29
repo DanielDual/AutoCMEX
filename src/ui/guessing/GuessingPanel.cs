@@ -87,7 +87,7 @@ public partial class GuessingPanel : Control
 
     if (_dm != null)
     {
-      _dm.LoadAll();
+      // 数据加载统一由 MainWindow/DataManager 负责，面板不重复 LoadAll
       UpdateFuzzifyButtonState();
     }
 
