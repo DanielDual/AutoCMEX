@@ -11,6 +11,7 @@ using AutoCMEX.Core.Storage;
 using AutoCMEX.Helpers;
 using AutoCMEX.Models;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Chickensoft.Sync.Primitives;
 using Godot;
@@ -22,31 +23,31 @@ using Godot;
 public partial class SpellCardPanel : VBoxContainer
 {
   [Node("%SpellCardTree")]
-  public Tree SpellCardTree { get; set; } = default!;
+  public ITree SpellCardTree { get; set; } = default!;
 
   [Node("%ImportCardBtn")]
-  public Button ImportCardBtn { get; set; } = default!;
+  public IButton ImportCardBtn { get; set; } = default!;
 
   [Node("%ExportCardBtn")]
-  public Button ExportCardBtn { get; set; } = default!;
+  public IButton ExportCardBtn { get; set; } = default!;
 
   [Node("%AddBossBtn")]
-  public Button AddBossBtn { get; set; } = default!;
+  public IButton AddBossBtn { get; set; } = default!;
 
   [Node("%AddCardBtn")]
-  public Button AddCardBtn { get; set; } = default!;
+  public IButton AddCardBtn { get; set; } = default!;
 
   [Node("%DeleteBtn")]
-  public Button DeleteBtn { get; set; } = default!;
+  public IButton DeleteBtn { get; set; } = default!;
 
   [Node("%ImportFileDialog")]
-  public FileDialog ImportFileDialog { get; set; } = default!;
+  public IFileDialog ImportFileDialog { get; set; } = default!;
 
   [Node("%ExportFileDialog")]
-  public FileDialog ExportFileDialog { get; set; } = default!;
+  public IFileDialog ExportFileDialog { get; set; } = default!;
 
   [Node("%ErrorDialog")]
-  public AcceptDialog ErrorDialog { get; set; } = default!;
+  public IAcceptDialog ErrorDialog { get; set; } = default!;
 
   [Dependency]
   public DataManager DataManager => this.DependOn<DataManager>();

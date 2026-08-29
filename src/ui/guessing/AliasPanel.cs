@@ -11,6 +11,7 @@ using AutoCMEX.Core.Storage;
 using AutoCMEX.Helpers;
 using AutoCMEX.Models;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Chickensoft.Sync.Primitives;
 using Godot;
@@ -22,31 +23,31 @@ using Godot;
 public partial class AliasPanel : VBoxContainer
 {
   [Node("%AliasTree")]
-  public Tree AliasTree { get; set; } = default!;
+  public ITree AliasTree { get; set; } = default!;
 
   [Node("%ImportAliasBtn")]
-  public Button ImportAliasBtn { get; set; } = default!;
+  public IButton ImportAliasBtn { get; set; } = default!;
 
   [Node("%ExportAliasBtn")]
-  public Button ExportAliasBtn { get; set; } = default!;
+  public IButton ExportAliasBtn { get; set; } = default!;
 
   [Node("%AddAliasBtn")]
-  public Button AddAliasBtn { get; set; } = default!;
+  public IButton AddAliasBtn { get; set; } = default!;
 
   [Node("%AddAliasToCreatorBtn")]
-  public Button AddAliasToCreatorBtn { get; set; } = default!;
+  public IButton AddAliasToCreatorBtn { get; set; } = default!;
 
   [Node("%DeleteAliasBtn")]
-  public Button DeleteAliasBtn { get; set; } = default!;
+  public IButton DeleteAliasBtn { get; set; } = default!;
 
   [Node("%ImportFileDialog")]
-  public FileDialog ImportFileDialog { get; set; } = default!;
+  public IFileDialog ImportFileDialog { get; set; } = default!;
 
   [Node("%ExportFileDialog")]
-  public FileDialog ExportFileDialog { get; set; } = default!;
+  public IFileDialog ExportFileDialog { get; set; } = default!;
 
   [Node("%ErrorDialog")]
-  public AcceptDialog ErrorDialog { get; set; } = default!;
+  public IAcceptDialog ErrorDialog { get; set; } = default!;
 
   [Dependency]
   public DataManager DataManager => this.DependOn<DataManager>();

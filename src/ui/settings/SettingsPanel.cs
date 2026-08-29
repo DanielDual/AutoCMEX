@@ -8,6 +8,7 @@ using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Chickensoft.Log;
 using Godot;
@@ -21,19 +22,19 @@ public partial class SettingsPanel : Control
   #region AutoConnect Nodes
 
   [Node("%SearchBar")]
-  public LineEdit SearchBar { get; set; } = default!;
+  public ILineEdit SearchBar { get; set; } = default!;
 
   [Node("%CategoryList")]
-  public ItemList CategoryList { get; set; } = default!;
+  public IItemList CategoryList { get; set; } = default!;
 
   [Node("%ConfigArea")]
-  public Control ConfigArea { get; set; } = default!;
+  public IControl ConfigArea { get; set; } = default!;
 
   [Node("%AiModelConfigPanel")]
-  public Control AiModelConfigPanel { get; set; } = default!;
+  public IControl AiModelConfigPanel { get; set; } = default!;
 
   [Node("%ChatConfigPanel")]
-  public Control ChatConfigPanel { get; set; } = default!;
+  public IControl ChatConfigPanel { get; set; } = default!;
 
   #endregion
 

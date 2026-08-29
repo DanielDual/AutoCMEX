@@ -5,6 +5,7 @@ using System.Threading.Tasks;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Godot;
 
@@ -15,25 +16,25 @@ using Godot;
 public partial class ModelEntryPanel : VBoxContainer
 {
   [Node("%FormatOption")]
-  public OptionButton FormatOption { get; set; } = default!;
+  public IOptionButton FormatOption { get; set; } = default!;
 
   [Node("%UrlInput")]
-  public LineEdit UrlInput { get; set; } = default!;
+  public ILineEdit UrlInput { get; set; } = default!;
 
   [Node("%ModelIdInput")]
-  public LineEdit ModelIdInput { get; set; } = default!;
+  public ILineEdit ModelIdInput { get; set; } = default!;
 
   [Node("%KeyInput")]
-  public LineEdit KeyInput { get; set; } = default!;
+  public ILineEdit KeyInput { get; set; } = default!;
 
   [Node("%ToggleKeyBtn")]
-  public Button ToggleKeyBtn { get; set; } = default!;
+  public IButton ToggleKeyBtn { get; set; } = default!;
 
   [Node("%TestBtn")]
-  public Button TestBtn { get; set; } = default!;
+  public IButton TestBtn { get; set; } = default!;
 
   [Node("%DeleteBtn")]
-  public Button DeleteBtn { get; set; } = default!;
+  public IButton DeleteBtn { get; set; } = default!;
 
   private AiModelConfig _model = default!;
   private DataManager? _dm;

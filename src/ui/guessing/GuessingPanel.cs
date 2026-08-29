@@ -11,6 +11,7 @@ using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Chickensoft.Log;
 using Godot;
@@ -24,29 +25,29 @@ public partial class GuessingPanel : Control
   #region AutoConnect Nodes
 
   [Node("%GuessInput")]
-  public TextEdit GuessInput { get; set; } = default!;
+  public ITextEdit GuessInput { get; set; } = default!;
 
   [Node("%FuzzifyBtn")]
-  public Button FuzzifyBtn { get; set; } = default!;
+  public IButton FuzzifyBtn { get; set; } = default!;
 
   [Node("%ProcessBtn")]
-  public Button ProcessBtn { get; set; } = default!;
+  public IButton ProcessBtn { get; set; } = default!;
 
   [Node("%ResponseDisplay")]
-  public RichTextLabel ResponseDisplay { get; set; } = default!;
+  public IRichTextLabel ResponseDisplay { get; set; } = default!;
 
   #endregion
 
   #region Dropped UI Nodes
 
   [Node("%DroppedList")]
-  public ItemList DroppedList { get; set; } = default!;
+  public IItemList DroppedList { get; set; } = default!;
 
   [Node("%RetryDroppedBtn")]
-  public Button RetryDroppedBtn { get; set; } = default!;
+  public IButton RetryDroppedBtn { get; set; } = default!;
 
   [Node("%ClearDroppedBtn")]
-  public Button ClearDroppedBtn { get; set; } = default!;
+  public IButton ClearDroppedBtn { get; set; } = default!;
 
   #endregion
 

@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Helpers;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Godot;
 
@@ -22,22 +23,22 @@ public partial class LogPanel : Control
   #region AutoConnect Nodes
 
   [Node("%LogView")]
-  public RichTextLabel LogView { get; set; } = default!;
+  public IRichTextLabel LogView { get; set; } = default!;
 
   [Node("%LevelFilter")]
-  public OptionButton LevelFilter { get; set; } = default!;
+  public IOptionButton LevelFilter { get; set; } = default!;
 
   [Node("%ModuleFilter")]
-  public OptionButton ModuleFilter { get; set; } = default!;
+  public IOptionButton ModuleFilter { get; set; } = default!;
 
   [Node("%PauseBtn")]
-  public Button PauseBtn { get; set; } = default!;
+  public IButton PauseBtn { get; set; } = default!;
 
   [Node("%ClearBtn")]
-  public Button ClearBtn { get; set; } = default!;
+  public IButton ClearBtn { get; set; } = default!;
 
   [Node("%LogDirLabel")]
-  public Label LogDirLabel { get; set; } = default!;
+  public ILabel LogDirLabel { get; set; } = default!;
 
   #endregion
 

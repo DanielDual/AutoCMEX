@@ -3,6 +3,7 @@ namespace AutoCMEX.UI.Logging;
 using System;
 using AutoCMEX.Core.Logging;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Godot;
 
@@ -14,16 +15,16 @@ using Godot;
 public partial class LogConfigPanel : Control
 {
   [Node("%MaxFileCountInput")]
-  public SpinBox MaxFileCountInput { get; set; } = default!;
+  public ISpinBox MaxFileCountInput { get; set; } = default!;
 
   [Node("%MinLevelOption")]
-  public OptionButton MinLevelOption { get; set; } = default!;
+  public IOptionButton MinLevelOption { get; set; } = default!;
 
   [Node("%ApplyConfigBtn")]
-  public Button ApplyConfigBtn { get; set; } = default!;
+  public IButton ApplyConfigBtn { get; set; } = default!;
 
   [Node("%StatusLabel")]
-  public RichTextLabel StatusLabel { get; set; } = default!;
+  public IRichTextLabel StatusLabel { get; set; } = default!;
 
   [Dependency]
   public ILogService LogService => this.DependOn<ILogService>();

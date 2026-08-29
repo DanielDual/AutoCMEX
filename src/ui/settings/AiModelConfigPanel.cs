@@ -9,6 +9,7 @@ using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Chickensoft.Log;
 using Godot;
@@ -20,16 +21,16 @@ using Godot;
 public partial class AiModelConfigPanel : VBoxContainer
 {
   [Node("%ActiveModelSelect")]
-  public OptionButton ActiveModelSelect { get; set; } = default!;
+  public IOptionButton ActiveModelSelect { get; set; } = default!;
 
   [Node("%TimeoutInput")]
-  public SpinBox TimeoutInput { get; set; } = default!;
+  public ISpinBox TimeoutInput { get; set; } = default!;
 
   [Node("%ModelList")]
-  public VBoxContainer ModelList { get; set; } = default!;
+  public IVBoxContainer ModelList { get; set; } = default!;
 
   [Node("%AddModelBtn")]
-  public Button AddModelBtn { get; set; } = default!;
+  public IButton AddModelBtn { get; set; } = default!;
 
   [Dependency]
   public DataManager DataManager => this.DependOn<DataManager>();

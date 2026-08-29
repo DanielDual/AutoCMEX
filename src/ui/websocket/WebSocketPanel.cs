@@ -3,38 +3,52 @@ namespace AutoCMEX.UI.WebSocket;
 using System;
 using AutoCMEX.Core.WebSocket;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Godot;
+
+/// <summary>
+/// WebSocket 面板接口：解耦 MainWindow 对具体面板类型的依赖。
+/// </summary>
+/// <remarks>
+/// 注意：不继承 <see cref="IControl"/>，因为 Godot 4.7.1 的 <see cref="Control"/>
+/// 无法直接实现 <see cref="IControl"/>（AccessibilityLive 返回类型不匹配）。
+/// </remarks>
+public interface IWebSocketPanel
+{
+  /// <summary>更新服务器引用（重启 WebSocket 时由 MainWindow 调用）。</summary>
+  void UpdateServer(IWebSocketServer server, string mode);
+}
 
 /// <summary>
 /// WebSocket 面板：显示服务器状态和已连接客户端列表
 /// </summary>
 [Meta(typeof(IAutoNode))]
-public partial class WebSocketPanel : Control
+public partial class WebSocketPanel : Control, IWebSocketPanel
 {
   [Node("%StatusLabel")]
-  public Label StatusLabel { get; set; } = default!;
+  public ILabel StatusLabel { get; set; } = default!;
 
   [Node("%ModeLabel")]
-  public Label ModeLabel { get; set; } = default!;
+  public ILabel ModeLabel { get; set; } = default!;
 
   [Node("%PortLabel")]
-  public Label PortLabel { get; set; } = default!;
+  public ILabel PortLabel { get; set; } = default!;
 
   [Node("%ConnectionCountLabel")]
-  public Label ConnectionCountLabel { get; set; } = default!;
+  public ILabel ConnectionCountLabel { get; set; } = default!;
 
   [Node("%EventLabel")]
-  public Label EventLabel { get; set; } = default!;
+  public ILabel EventLabel { get; set; } = default!;
 
   [Node("%StartStopBtn")]
-  public Button StartStopBtn { get; set; } = default!;
+  public IButton StartStopBtn { get; set; } = default!;
 
   [Node("%ClientList")]
-  public ItemList ClientList { get; set; } = default!;
+  public IItemList ClientList { get; set; } = default!;
 
   [Node("%RefreshTimer")]
-  public Timer RefreshTimer { get; set; } = default!;
+  public ITimer RefreshTimer { get; set; } = default!;
 
   [Dependency]
   public IWebSocketServer Server => this.DependOn<IWebSocketServer>();

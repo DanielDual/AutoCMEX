@@ -7,6 +7,7 @@ using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.Services;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Chickensoft.Log;
 using Godot;
@@ -18,28 +19,28 @@ using Godot;
 public partial class ChatConfigPanel : VBoxContainer
 {
   [Node("%PortInput")]
-  public SpinBox PortInput { get; set; } = default!;
+  public ISpinBox PortInput { get; set; } = default!;
 
   [Node("%ModeSelect")]
-  public OptionButton ModeSelect { get; set; } = default!;
+  public IOptionButton ModeSelect { get; set; } = default!;
 
   [Node("%KoishiUrlInput")]
-  public LineEdit KoishiUrlInput { get; set; } = default!;
+  public ILineEdit KoishiUrlInput { get; set; } = default!;
 
   [Node("%KoishiUrlRow")]
-  public HBoxContainer KoishiUrlRow { get; set; } = default!;
+  public IHBoxContainer KoishiUrlRow { get; set; } = default!;
 
   [Node("%FilterSelect")]
-  public OptionButton FilterSelect { get; set; } = default!;
+  public IOptionButton FilterSelect { get; set; } = default!;
 
   [Node("%InstallBtn")]
-  public Button InstallBtn { get; set; } = default!;
+  public IButton InstallBtn { get; set; } = default!;
 
   [Node("%PluginFileDialog")]
-  public FileDialog PluginFileDialog { get; set; } = default!;
+  public IFileDialog PluginFileDialog { get; set; } = default!;
 
   [Node("%PluginOkDialog")]
-  public AcceptDialog PluginOkDialog { get; set; } = default!;
+  public IAcceptDialog PluginOkDialog { get; set; } = default!;
 
   [Dependency]
   public DataManager DataManager => this.DependOn<DataManager>();
