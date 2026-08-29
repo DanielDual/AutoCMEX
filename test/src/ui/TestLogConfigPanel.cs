@@ -30,7 +30,7 @@ public class TestLogConfigPanel : TestClass
     var maxFileCountInput = new Mock<ISpinBox>();
     maxFileCountInput.SetupProperty(m => m.MinValue);
     maxFileCountInput.SetupProperty(m => m.MaxValue);
-    maxFileCountInput.SetupProperty(m => m.Value, 30);
+    maxFileCountInput.SetupProperty(m => m.Value);
 
     _minLevelOption = new Mock<IOptionButton>();
     var applyConfigBtn = new Mock<IButton>();

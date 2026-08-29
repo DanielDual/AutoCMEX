@@ -16,6 +16,7 @@ public class TestAiModelConfigPanel : TestClass
 {
   private AiModelConfigPanel _panel = default!;
   private DataManager _dm = default!;
+  private Mock<IOptionButton> _activeModelSelect = default!;
   private readonly List<Node> _toCleanup = new();
 
   public TestAiModelConfigPanel(Node testScene)
@@ -34,12 +35,11 @@ public class TestAiModelConfigPanel : TestClass
     (_panel as IAutoInit).IsTesting = true;
     _toCleanup.Add(_panel);
 
-    var activeModelSelect = new Mock<IOptionButton>();
-    activeModelSelect.SetupProperty(m => m.ItemCount, 0);
-    activeModelSelect
+    _activeModelSelect = new Mock<IOptionButton>();
+    _activeModelSelect.SetupProperty(m => m.ItemCount, 0);
+    _activeModelSelect
       .Setup(m => m.AddItem(It.IsAny<string>(), It.IsAny<int>()))
-      .Callback(() => activeModelSelect.Object.ItemCount++);
-    activeModelSelect.Setup(m => m.GetItemText(0)).Returns("(未选择)");
+      .Callback(() => _activeModelSelect.Object.ItemCount++);
     var timeoutInput = new Mock<ISpinBox>();
     timeoutInput.SetupProperty(m => m.MinValue);
     timeoutInput.SetupProperty(m => m.MaxValue);
@@ -53,7 +53,7 @@ public class TestAiModelConfigPanel : TestClass
     _panel.FakeNodeTree(
       new()
       {
-        ["%ActiveModelSelect"] = activeModelSelect.Object,
+        ["%ActiveModelSelect"] = _activeModelSelect.Object,
         ["%TimeoutInput"] = timeoutInput.Object,
         ["%ModelList"] = modelList.Object,
         ["%AddModelBtn"] = addModelBtn.Object,
@@ -105,7 +105,7 @@ public class TestAiModelConfigPanel : TestClass
   public void ActiveModelSelect_HasDefaultOption()
   {
     _panel.ActiveModelSelect.ItemCount.ShouldBe(1);
-    _panel.ActiveModelSelect.GetItemText(0).ShouldBe("(未选择)");
+    _activeModelSelect.Verify(m => m.AddItem("(未选择)", It.IsAny<int>()), Times.Once);
   }
 
   [Test]
