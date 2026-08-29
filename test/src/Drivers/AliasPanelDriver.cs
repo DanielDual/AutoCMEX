@@ -4,68 +4,57 @@ using System;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.UI.Guessing;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Godot;
+using Moq;
 
-/// <summary>
-/// Test driver for <see cref="AliasPanel"/> — encapsulates setup with
-/// fake node tree and fake dependency for unit testing.
-/// </summary>
 public sealed class AliasPanelDriver : IDisposable
 {
   public AliasPanel Panel { get; }
-  public Tree AliasTree { get; }
-  public Button ImportAliasBtn { get; }
-  public Button ExportAliasBtn { get; }
-  public Button AddAliasBtn { get; }
-  public Button AddAliasToCreatorBtn { get; }
-  public Button DeleteAliasBtn { get; }
-  public FileDialog ImportFileDialog { get; }
-  public FileDialog ExportFileDialog { get; }
-  public AcceptDialog ErrorDialog { get; }
+  public Mock<ITree> AliasTree { get; }
+  public Mock<IButton> ImportAliasBtn { get; }
+  public Mock<IButton> ExportAliasBtn { get; }
+  public Mock<IButton> AddAliasBtn { get; }
+  public Mock<IButton> AddAliasToCreatorBtn { get; }
+  public Mock<IButton> DeleteAliasBtn { get; }
+  public Mock<IFileDialog> ImportFileDialog { get; }
+  public Mock<IFileDialog> ExportFileDialog { get; }
+  public Mock<IAcceptDialog> ErrorDialog { get; }
 
   public AliasPanelDriver(DataManager? dm = null)
   {
     Panel = new AliasPanel();
+    (Panel as IAutoInit).IsTesting = true;
 
-    AliasTree = new Tree { Name = "AliasTree", UniqueNameInOwner = true };
-    Panel.AddChild(AliasTree);
-    Panel.AliasTree = AliasTree;
+    AliasTree = new Mock<ITree>();
+    ImportAliasBtn = new Mock<IButton>();
+    ExportAliasBtn = new Mock<IButton>();
+    AddAliasBtn = new Mock<IButton>();
+    AddAliasToCreatorBtn = new Mock<IButton>();
+    DeleteAliasBtn = new Mock<IButton>();
+    ImportFileDialog = new Mock<IFileDialog>();
+    ExportFileDialog = new Mock<IFileDialog>();
+    ErrorDialog = new Mock<IAcceptDialog>();
 
-    ImportAliasBtn = new Button { Name = "ImportAliasBtn", UniqueNameInOwner = true };
-    Panel.AddChild(ImportAliasBtn);
-    Panel.ImportAliasBtn = ImportAliasBtn;
-
-    ExportAliasBtn = new Button { Name = "ExportAliasBtn", UniqueNameInOwner = true };
-    Panel.AddChild(ExportAliasBtn);
-    Panel.ExportAliasBtn = ExportAliasBtn;
-
-    AddAliasBtn = new Button { Name = "AddAliasBtn", UniqueNameInOwner = true };
-    Panel.AddChild(AddAliasBtn);
-    Panel.AddAliasBtn = AddAliasBtn;
-
-    AddAliasToCreatorBtn = new Button { Name = "AddAliasToCreatorBtn", UniqueNameInOwner = true };
-    Panel.AddChild(AddAliasToCreatorBtn);
-    Panel.AddAliasToCreatorBtn = AddAliasToCreatorBtn;
-
-    DeleteAliasBtn = new Button { Name = "DeleteAliasBtn", UniqueNameInOwner = true };
-    Panel.AddChild(DeleteAliasBtn);
-    Panel.DeleteAliasBtn = DeleteAliasBtn;
-
-    ImportFileDialog = new FileDialog { Name = "ImportFileDialog", UniqueNameInOwner = true };
-    Panel.AddChild(ImportFileDialog);
-    Panel.ImportFileDialog = ImportFileDialog;
-
-    ExportFileDialog = new FileDialog { Name = "ExportFileDialog", UniqueNameInOwner = true };
-    Panel.AddChild(ExportFileDialog);
-    Panel.ExportFileDialog = ExportFileDialog;
-
-    ErrorDialog = new AcceptDialog { Name = "ErrorDialog", UniqueNameInOwner = true };
-    Panel.AddChild(ErrorDialog);
-    Panel.ErrorDialog = ErrorDialog;
+    Panel.FakeNodeTree(
+      new()
+      {
+        ["%AliasTree"] = AliasTree.Object,
+        ["%ImportAliasBtn"] = ImportAliasBtn.Object,
+        ["%ExportAliasBtn"] = ExportAliasBtn.Object,
+        ["%AddAliasBtn"] = AddAliasBtn.Object,
+        ["%AddAliasToCreatorBtn"] = AddAliasToCreatorBtn.Object,
+        ["%DeleteAliasBtn"] = DeleteAliasBtn.Object,
+        ["%ImportFileDialog"] = ImportFileDialog.Object,
+        ["%ExportFileDialog"] = ExportFileDialog.Object,
+        ["%ErrorDialog"] = ErrorDialog.Object,
+      }
+    );
 
     if (dm != null)
       Panel.FakeDependency<DataManager>(dm);
 
+    Panel._Notification((int)Node.NotificationEnterTree);
     Panel._Notification((int)Node.NotificationReady);
   }
 

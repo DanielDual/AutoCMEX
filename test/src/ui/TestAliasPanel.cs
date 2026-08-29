@@ -6,14 +6,17 @@ using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Guessing;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
 using Godot;
+using Moq;
 using Shouldly;
 
 public class TestAliasPanel : TestClass
 {
   private AliasPanel _panel = default!;
   private DataManager _dm = default!;
+  private Mock<ITree> _aliasTree = default!;
   private readonly List<Node> _toCleanup = new();
 
   public TestAliasPanel(Node testScene)
@@ -29,46 +32,43 @@ public class TestAliasPanel : TestClass
     _dm.LoadAll();
 
     _panel = new AliasPanel();
+    (_panel as IAutoInit).IsTesting = true;
     _toCleanup.Add(_panel);
 
     var tree = new Tree();
-    _panel.AddChild(tree);
-    _panel.AliasTree = tree;
+    TestScene.AddChild(tree);
+    _toCleanup.Add(tree);
+    _aliasTree = new Mock<ITree>();
+    _aliasTree
+      .Setup(m => m.CreateItem(It.IsAny<TreeItem>(), It.IsAny<int>()))
+      .Returns((TreeItem p, int i) => tree.CreateItem(p, i));
+    _aliasTree.Setup(m => m.GetRoot()).Returns(() => tree.GetRoot());
+    var importAliasBtn = new Mock<IButton>();
+    var exportAliasBtn = new Mock<IButton>();
+    var addAliasBtn = new Mock<IButton>();
+    var addAliasToCreatorBtn = new Mock<IButton>();
+    var deleteAliasBtn = new Mock<IButton>();
+    var importFileDialog = new Mock<IFileDialog>();
+    var exportFileDialog = new Mock<IFileDialog>();
+    var errorDialog = new Mock<IAcceptDialog>();
 
-    var importBtn = new Button();
-    _panel.AddChild(importBtn);
-    _panel.ImportAliasBtn = importBtn;
-
-    var exportBtn = new Button();
-    _panel.AddChild(exportBtn);
-    _panel.ExportAliasBtn = exportBtn;
-
-    var addBtn = new Button();
-    _panel.AddChild(addBtn);
-    _panel.AddAliasBtn = addBtn;
-
-    var addToCreatorBtn = new Button();
-    _panel.AddChild(addToCreatorBtn);
-    _panel.AddAliasToCreatorBtn = addToCreatorBtn;
-
-    var deleteBtn = new Button();
-    _panel.AddChild(deleteBtn);
-    _panel.DeleteAliasBtn = deleteBtn;
-
-    // 添加对话框节点
-    var importDialog = new FileDialog();
-    _panel.AddChild(importDialog);
-    _panel.ImportFileDialog = importDialog;
-
-    var exportDialog = new FileDialog();
-    _panel.AddChild(exportDialog);
-    _panel.ExportFileDialog = exportDialog;
-
-    var errorDialog = new AcceptDialog();
-    _panel.AddChild(errorDialog);
-    _panel.ErrorDialog = errorDialog;
+    _panel.FakeNodeTree(
+      new()
+      {
+        ["%AliasTree"] = _aliasTree.Object,
+        ["%ImportAliasBtn"] = importAliasBtn.Object,
+        ["%ExportAliasBtn"] = exportAliasBtn.Object,
+        ["%AddAliasBtn"] = addAliasBtn.Object,
+        ["%AddAliasToCreatorBtn"] = addAliasToCreatorBtn.Object,
+        ["%DeleteAliasBtn"] = deleteAliasBtn.Object,
+        ["%ImportFileDialog"] = importFileDialog.Object,
+        ["%ExportFileDialog"] = exportFileDialog.Object,
+        ["%ErrorDialog"] = errorDialog.Object,
+      }
+    );
 
     _panel.FakeDependency<DataManager>(_dm);
+    _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
   }
 
@@ -97,7 +97,7 @@ public class TestAliasPanel : TestClass
   {
     _dm.Aliases.Add(new CreatorAlias { MainName = "测试创作者" });
     _panel.Refresh();
-    var root = _panel.AliasTree.GetRoot();
+    var root = _aliasTree.Object.GetRoot();
     root.ShouldNotBeNull();
     root.GetChildCount().ShouldBe(1);
   }

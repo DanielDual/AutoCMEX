@@ -4,68 +4,57 @@ using System;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.UI.Guessing;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Godot;
+using Moq;
 
-/// <summary>
-/// Test driver for <see cref="SpellCardPanel"/> — encapsulates setup with
-/// fake node tree and fake dependency for unit testing.
-/// </summary>
 public sealed class SpellCardPanelDriver : IDisposable
 {
   public SpellCardPanel Panel { get; }
-  public Tree SpellCardTree { get; }
-  public Button ImportCardBtn { get; }
-  public Button ExportCardBtn { get; }
-  public Button AddBossBtn { get; }
-  public Button AddCardBtn { get; }
-  public Button DeleteBtn { get; }
-  public FileDialog ImportFileDialog { get; }
-  public FileDialog ExportFileDialog { get; }
-  public AcceptDialog ErrorDialog { get; }
+  public Mock<ITree> SpellCardTree { get; }
+  public Mock<IButton> ImportCardBtn { get; }
+  public Mock<IButton> ExportCardBtn { get; }
+  public Mock<IButton> AddBossBtn { get; }
+  public Mock<IButton> AddCardBtn { get; }
+  public Mock<IButton> DeleteBtn { get; }
+  public Mock<IFileDialog> ImportFileDialog { get; }
+  public Mock<IFileDialog> ExportFileDialog { get; }
+  public Mock<IAcceptDialog> ErrorDialog { get; }
 
   public SpellCardPanelDriver(DataManager? dm = null)
   {
     Panel = new SpellCardPanel();
+    (Panel as IAutoInit).IsTesting = true;
 
-    SpellCardTree = new Tree { Name = "SpellCardTree", UniqueNameInOwner = true };
-    Panel.AddChild(SpellCardTree);
-    Panel.SpellCardTree = SpellCardTree;
+    SpellCardTree = new Mock<ITree>();
+    ImportCardBtn = new Mock<IButton>();
+    ExportCardBtn = new Mock<IButton>();
+    AddBossBtn = new Mock<IButton>();
+    AddCardBtn = new Mock<IButton>();
+    DeleteBtn = new Mock<IButton>();
+    ImportFileDialog = new Mock<IFileDialog>();
+    ExportFileDialog = new Mock<IFileDialog>();
+    ErrorDialog = new Mock<IAcceptDialog>();
 
-    ImportCardBtn = new Button { Name = "ImportCardBtn", UniqueNameInOwner = true };
-    Panel.AddChild(ImportCardBtn);
-    Panel.ImportCardBtn = ImportCardBtn;
-
-    ExportCardBtn = new Button { Name = "ExportCardBtn", UniqueNameInOwner = true };
-    Panel.AddChild(ExportCardBtn);
-    Panel.ExportCardBtn = ExportCardBtn;
-
-    AddBossBtn = new Button { Name = "AddBossBtn", UniqueNameInOwner = true };
-    Panel.AddChild(AddBossBtn);
-    Panel.AddBossBtn = AddBossBtn;
-
-    AddCardBtn = new Button { Name = "AddCardBtn", UniqueNameInOwner = true };
-    Panel.AddChild(AddCardBtn);
-    Panel.AddCardBtn = AddCardBtn;
-
-    DeleteBtn = new Button { Name = "DeleteBtn", UniqueNameInOwner = true };
-    Panel.AddChild(DeleteBtn);
-    Panel.DeleteBtn = DeleteBtn;
-
-    ImportFileDialog = new FileDialog { Name = "ImportFileDialog", UniqueNameInOwner = true };
-    Panel.AddChild(ImportFileDialog);
-    Panel.ImportFileDialog = ImportFileDialog;
-
-    ExportFileDialog = new FileDialog { Name = "ExportFileDialog", UniqueNameInOwner = true };
-    Panel.AddChild(ExportFileDialog);
-    Panel.ExportFileDialog = ExportFileDialog;
-
-    ErrorDialog = new AcceptDialog { Name = "ErrorDialog", UniqueNameInOwner = true };
-    Panel.AddChild(ErrorDialog);
-    Panel.ErrorDialog = ErrorDialog;
+    Panel.FakeNodeTree(
+      new()
+      {
+        ["%SpellCardTree"] = SpellCardTree.Object,
+        ["%ImportCardBtn"] = ImportCardBtn.Object,
+        ["%ExportCardBtn"] = ExportCardBtn.Object,
+        ["%AddBossBtn"] = AddBossBtn.Object,
+        ["%AddCardBtn"] = AddCardBtn.Object,
+        ["%DeleteBtn"] = DeleteBtn.Object,
+        ["%ImportFileDialog"] = ImportFileDialog.Object,
+        ["%ExportFileDialog"] = ExportFileDialog.Object,
+        ["%ErrorDialog"] = ErrorDialog.Object,
+      }
+    );
 
     if (dm != null)
       Panel.FakeDependency<DataManager>(dm);
 
+    Panel._Notification((int)Node.NotificationEnterTree);
     Panel._Notification((int)Node.NotificationReady);
   }
 

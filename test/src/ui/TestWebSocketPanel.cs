@@ -6,13 +6,16 @@ using System.Threading.Tasks;
 using AutoCMEX.Core.WebSocket;
 using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
 using Godot;
+using Moq;
 using Shouldly;
 
 public class TestWebSocketPanel : TestClass
 {
   private WebSocketPanel _panel = default!;
+  private Mock<ILabel> _modeLabel = default!;
   private readonly List<Node> _toCleanup = new();
 
   public TestWebSocketPanel(Node testScene)
@@ -22,40 +25,33 @@ public class TestWebSocketPanel : TestClass
   public void Setup()
   {
     _panel = new WebSocketPanel();
+    (_panel as IAutoInit).IsTesting = true;
 
-    var statusLabel = new Label();
-    _panel.AddChild(statusLabel);
-    _panel.StatusLabel = statusLabel;
+    var statusLabel = new Mock<ILabel>();
+    _modeLabel = new Mock<ILabel>();
+    var portLabel = new Mock<ILabel>();
+    var connCountLabel = new Mock<ILabel>();
+    var eventLabel = new Mock<ILabel>();
+    var startStopBtn = new Mock<IButton>();
+    var clientList = new Mock<IItemList>();
+    var refreshTimer = new Mock<ITimer>();
 
-    var modeLabel = new Label();
-    _panel.AddChild(modeLabel);
-    _panel.ModeLabel = modeLabel;
-
-    var portLabel = new Label();
-    _panel.AddChild(portLabel);
-    _panel.PortLabel = portLabel;
-
-    var connCountLabel = new Label();
-    _panel.AddChild(connCountLabel);
-    _panel.ConnectionCountLabel = connCountLabel;
-
-    var eventLabel = new Label();
-    _panel.AddChild(eventLabel);
-    _panel.EventLabel = eventLabel;
-
-    var startStopBtn = new Button();
-    _panel.AddChild(startStopBtn);
-    _panel.StartStopBtn = startStopBtn;
-
-    var clientList = new ItemList();
-    _panel.AddChild(clientList);
-    _panel.ClientList = clientList;
-
-    var refreshTimer = new Timer();
-    _panel.AddChild(refreshTimer);
-    _panel.RefreshTimer = refreshTimer;
+    _panel.FakeNodeTree(
+      new()
+      {
+        ["%StatusLabel"] = statusLabel.Object,
+        ["%ModeLabel"] = _modeLabel.Object,
+        ["%PortLabel"] = portLabel.Object,
+        ["%ConnectionCountLabel"] = connCountLabel.Object,
+        ["%EventLabel"] = eventLabel.Object,
+        ["%StartStopBtn"] = startStopBtn.Object,
+        ["%ClientList"] = clientList.Object,
+        ["%RefreshTimer"] = refreshTimer.Object,
+      }
+    );
 
     _panel.FakeDependency<IWebSocketServer>(new MockWebSocketServer());
+    _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
   }
 
@@ -99,7 +95,7 @@ public class TestWebSocketPanel : TestClass
   {
     var mockServer = new MockWebSocketServer();
     _panel.UpdateServer(mockServer, "Server");
-    _panel.ModeLabel.Text.ShouldContain("Server");
+    _modeLabel.VerifySet(m => m.Text = It.Is<string>(s => s.Contains("Server")));
   }
 
   [Test]
@@ -107,18 +103,14 @@ public class TestWebSocketPanel : TestClass
   {
     var mockServer = new MockWebSocketServer();
     _panel.UpdateServer(mockServer, "Client");
-    _panel.ModeLabel.Text.ShouldContain("Client");
+    _modeLabel.VerifySet(m => m.Text = It.Is<string>(s => s.Contains("Client")));
   }
 }
 
-/// <summary>
-/// 用于测试的模拟 WebSocket 服务器
-/// </summary>
 public class MockWebSocketServer : IWebSocketServer
 {
   public bool IsRunning { get; set; }
   public int ConnectionCount => 0;
-
   public event Action<string>? OnClientConnected;
   public event Action<string>? OnClientDisconnected;
 

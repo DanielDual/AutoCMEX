@@ -3,8 +3,10 @@ namespace AutoCMEX;
 using System.Collections.Generic;
 using AutoCMEX.UI.Main;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
 using Godot;
+using Moq;
 using Shouldly;
 
 /// <summary>
@@ -15,6 +17,22 @@ public class MainWindowTest : TestClass
   private MainWindow _mainWindow = default!;
   private readonly List<Node> _toCleanup = new();
 
+  private Mock<IControl> _mergePanel = default!;
+  private Mock<IControl> _guessingPanel = default!;
+  private Mock<IControl> _infoPanel = default!;
+  private Mock<IControl> _settingsPanel = default!;
+  private Mock<IControl> _helpPanel = default!;
+  private Mock<IControl> _logPanel = default!;
+  private Mock<IControl> _webSocketPanel = default!;
+
+  private Mock<IButton> _mergeBtn = default!;
+  private Mock<IButton> _guessingBtn = default!;
+  private Mock<IButton> _infoBtn = default!;
+  private Mock<IButton> _settingsBtn = default!;
+  private Mock<IButton> _helpBtn = default!;
+  private Mock<IButton> _logBtn = default!;
+  private Mock<IButton> _webSocketBtn = default!;
+
   public MainWindowTest(Node testScene)
     : base(testScene) { }
 
@@ -22,73 +40,68 @@ public class MainWindowTest : TestClass
   public void Setup()
   {
     _mainWindow = new MainWindow();
+    (_mainWindow as IAutoInit).IsTesting = true;
 
-    // 手动设置 [Node] 属性
-    var leftPanel = new VBoxContainer();
-    _mainWindow.AddChild(leftPanel);
-    _mainWindow.LeftPanel = leftPanel;
+    var leftPanel = new Mock<IVBoxContainer>();
+    var rightPanel = new Mock<IControl>();
 
-    var rightPanel = new Control();
-    _mainWindow.AddChild(rightPanel);
-    _mainWindow.RightPanel = rightPanel;
+    _mergeBtn = new Mock<IButton>();
+    _guessingBtn = new Mock<IButton>();
+    _infoBtn = new Mock<IButton>();
+    _settingsBtn = new Mock<IButton>();
+    _helpBtn = new Mock<IButton>();
+    _logBtn = new Mock<IButton>();
+    _webSocketBtn = new Mock<IButton>();
 
-    var mergeBtn = new Button();
-    _mainWindow.AddChild(mergeBtn);
-    _mainWindow.MergeBtn = mergeBtn;
+    _mergePanel = new Mock<IControl>();
+    _guessingPanel = new Mock<IControl>();
+    _infoPanel = new Mock<IControl>();
+    _settingsPanel = new Mock<IControl>();
+    _helpPanel = new Mock<IControl>();
+    _logPanel = new Mock<IControl>();
+    _webSocketPanel = new Mock<IControl>();
 
-    var guessingBtn = new Button();
-    _mainWindow.AddChild(guessingBtn);
-    _mainWindow.GuessingBtn = guessingBtn;
+    // 面板 Visible 属性需要 SetupProperty 才能验证切换行为
+    foreach (
+      var panel in new[]
+      {
+        _mergePanel,
+        _guessingPanel,
+        _infoPanel,
+        _settingsPanel,
+        _helpPanel,
+        _logPanel,
+        _webSocketPanel,
+      }
+    )
+    {
+      panel.SetupProperty(m => m.Visible, false);
+    }
 
-    var infoBtn = new Button();
-    _mainWindow.AddChild(infoBtn);
-    _mainWindow.InfoBtn = infoBtn;
-
-    var settingsBtn = new Button();
-    _mainWindow.AddChild(settingsBtn);
-    _mainWindow.SettingsBtn = settingsBtn;
-
-    var helpBtn = new Button();
-    _mainWindow.AddChild(helpBtn);
-    _mainWindow.HelpBtn = helpBtn;
-
-    var logBtn = new Button();
-    _mainWindow.AddChild(logBtn);
-    _mainWindow.LogBtn = logBtn;
-
-    var webSocketBtn = new Button();
-    _mainWindow.AddChild(webSocketBtn);
-    _mainWindow.WebSocketBtn = webSocketBtn;
-
-    var mergePanel = new Control();
-    _mainWindow.AddChild(mergePanel);
-    _mainWindow.MergePanelNode = mergePanel;
-
-    var guessingPanel = new Control();
-    _mainWindow.AddChild(guessingPanel);
-    _mainWindow.GuessingPanelNode = guessingPanel;
-
-    var infoPanel = new Control();
-    _mainWindow.AddChild(infoPanel);
-    _mainWindow.InfoPanelNode = infoPanel;
-
-    var settingsPanel = new Control();
-    _mainWindow.AddChild(settingsPanel);
-    _mainWindow.SettingsPanelNode = settingsPanel;
-
-    var helpPanel = new Control();
-    _mainWindow.AddChild(helpPanel);
-    _mainWindow.HelpPanelNode = helpPanel;
-
-    var logPanel = new AutoCMEX.UI.Logging.LogPanel();
-    _mainWindow.AddChild(logPanel);
-    _mainWindow.LogPanelNode = logPanel;
-
-    var webSocketPanel = new AutoCMEX.UI.WebSocket.WebSocketPanel();
-    _mainWindow.AddChild(webSocketPanel);
-    _mainWindow.WebSocketPanelNode = webSocketPanel;
+    _mainWindow.FakeNodeTree(
+      new()
+      {
+        ["%LeftPanel"] = leftPanel.Object,
+        ["%RightPanel"] = rightPanel.Object,
+        ["%MergeBtn"] = _mergeBtn.Object,
+        ["%GuessingBtn"] = _guessingBtn.Object,
+        ["%InfoBtn"] = _infoBtn.Object,
+        ["%SettingsBtn"] = _settingsBtn.Object,
+        ["%HelpBtn"] = _helpBtn.Object,
+        ["%LogBtn"] = _logBtn.Object,
+        ["%WebSocketBtn"] = _webSocketBtn.Object,
+        ["%MergePanel"] = _mergePanel.Object,
+        ["%GuessingPanel"] = _guessingPanel.Object,
+        ["%InfoPanel"] = _infoPanel.Object,
+        ["%SettingsPanel"] = _settingsPanel.Object,
+        ["%HelpPanel"] = _helpPanel.Object,
+        ["%LogPanel"] = _logPanel.Object,
+        ["%WebSocketPanel"] = _webSocketPanel.Object,
+      }
+    );
 
     // 触发 AutoInject 生命周期
+    _mainWindow._Notification((int)Node.NotificationEnterTree);
     _mainWindow._Notification((int)Node.NotificationReady);
   }
 
@@ -125,5 +138,34 @@ public class MainWindowTest : TestClass
   public void MainWindow_LeftPanelWidth_IsPositive()
   {
     _mainWindow.LeftPanelWidth.ShouldBeGreaterThan(0);
+  }
+
+  [Test]
+  public void SwitchPanel_ShowsTargetPanel()
+  {
+    // 初始状态：默认面板 guessing 可见，其余隐藏
+    _guessingPanel.Object.Visible.ShouldBeTrue();
+    _mergePanel.Object.Visible.ShouldBeFalse();
+    _logPanel.Object.Visible.ShouldBeFalse();
+    _webSocketPanel.Object.Visible.ShouldBeFalse();
+
+    // 切换到 merge 面板
+    _mergeBtn.Raise(b => b.Pressed += null);
+
+    // 目标面板可见，原面板隐藏
+    _mergePanel.Object.Visible.ShouldBeTrue();
+    _guessingPanel.Object.Visible.ShouldBeFalse();
+
+    // 切换到 logging 面板（INode 适配器在运行时实现 IControl）
+    _logBtn.Raise(b => b.Pressed += null);
+
+    _logPanel.Object.Visible.ShouldBeTrue();
+    _mergePanel.Object.Visible.ShouldBeFalse();
+
+    // 切换到 websocket 面板
+    _webSocketBtn.Raise(b => b.Pressed += null);
+
+    _webSocketPanel.Object.Visible.ShouldBeTrue();
+    _logPanel.Object.Visible.ShouldBeFalse();
   }
 }

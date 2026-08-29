@@ -5,8 +5,10 @@ using System.Collections.Generic;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.UI.Settings;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
 using Godot;
+using Moq;
 using Shouldly;
 
 public class TestChatConfigPanel : TestClass
@@ -28,40 +30,43 @@ public class TestChatConfigPanel : TestClass
     _dm.LoadAll();
 
     _panel = new ChatConfigPanel();
+    (_panel as IAutoInit).IsTesting = true;
 
-    var portInput = new SpinBox();
-    _panel.AddChild(portInput);
-    _panel.PortInput = portInput;
+    var portInput = new Mock<ISpinBox>();
+    portInput.SetupProperty(m => m.MinValue, 1);
+    portInput.SetupProperty(m => m.MaxValue, 65535);
+    var modeSelect = new Mock<IOptionButton>();
+    modeSelect.SetupProperty(m => m.ItemCount, 0);
+    modeSelect
+      .Setup(m => m.AddItem(It.IsAny<string>(), It.IsAny<int>()))
+      .Callback(() => modeSelect.Object.ItemCount++);
+    var koishiUrlInput = new Mock<ILineEdit>();
+    var koishiUrlRow = new Mock<IHBoxContainer>();
+    var filterSelect = new Mock<IOptionButton>();
+    filterSelect.SetupProperty(m => m.ItemCount, 0);
+    filterSelect
+      .Setup(m => m.AddItem(It.IsAny<string>(), It.IsAny<int>()))
+      .Callback(() => filterSelect.Object.ItemCount++);
+    var installBtn = new Mock<IButton>();
+    var pluginFileDialog = new Mock<IFileDialog>();
+    var pluginOkDialog = new Mock<IAcceptDialog>();
 
-    var modeSelect = new OptionButton();
-    _panel.AddChild(modeSelect);
-    _panel.ModeSelect = modeSelect;
-
-    var koishiUrlInput = new LineEdit();
-    _panel.AddChild(koishiUrlInput);
-    _panel.KoishiUrlInput = koishiUrlInput;
-
-    var koishiUrlRow = new HBoxContainer();
-    _panel.AddChild(koishiUrlRow);
-    _panel.KoishiUrlRow = koishiUrlRow;
-
-    var filterSelect = new OptionButton();
-    _panel.AddChild(filterSelect);
-    _panel.FilterSelect = filterSelect;
-
-    var installBtn = new Button();
-    _panel.AddChild(installBtn);
-    _panel.InstallBtn = installBtn;
-
-    var pluginFileDialog = new FileDialog();
-    _panel.AddChild(pluginFileDialog);
-    _panel.PluginFileDialog = pluginFileDialog;
-
-    var pluginOkDialog = new AcceptDialog();
-    _panel.AddChild(pluginOkDialog);
-    _panel.PluginOkDialog = pluginOkDialog;
+    _panel.FakeNodeTree(
+      new()
+      {
+        ["%PortInput"] = portInput.Object,
+        ["%ModeSelect"] = modeSelect.Object,
+        ["%KoishiUrlInput"] = koishiUrlInput.Object,
+        ["%KoishiUrlRow"] = koishiUrlRow.Object,
+        ["%FilterSelect"] = filterSelect.Object,
+        ["%InstallBtn"] = installBtn.Object,
+        ["%PluginFileDialog"] = pluginFileDialog.Object,
+        ["%PluginOkDialog"] = pluginOkDialog.Object,
+      }
+    );
 
     _panel.FakeDependency<DataManager>(_dm);
+    _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
   }
 

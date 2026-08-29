@@ -6,8 +6,10 @@ using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Settings;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
 using Godot;
+using Moq;
 using Shouldly;
 
 public class TestAiModelConfigPanel : TestClass
@@ -29,24 +31,36 @@ public class TestAiModelConfigPanel : TestClass
     _dm.LoadAll();
 
     _panel = new AiModelConfigPanel();
+    (_panel as IAutoInit).IsTesting = true;
 
-    var activeModelSelect = new OptionButton();
-    _panel.AddChild(activeModelSelect);
-    _panel.ActiveModelSelect = activeModelSelect;
+    var activeModelSelect = new Mock<IOptionButton>();
+    activeModelSelect.SetupProperty(m => m.ItemCount, 0);
+    activeModelSelect
+      .Setup(m => m.AddItem(It.IsAny<string>(), It.IsAny<int>()))
+      .Callback(() => activeModelSelect.Object.ItemCount++);
+    activeModelSelect.Setup(m => m.GetItemText(0)).Returns("(未选择)");
+    var timeoutInput = new Mock<ISpinBox>();
+    timeoutInput.SetupProperty(m => m.MinValue, 1);
+    timeoutInput.SetupProperty(m => m.MaxValue, 600);
+    timeoutInput.SetupProperty(m => m.Value);
+    var modelList = new Mock<IVBoxContainer>();
+    modelList
+      .Setup(m => m.GetChildren(It.IsAny<bool>()))
+      .Returns(new Godot.Collections.Array<Node>());
+    var addModelBtn = new Mock<IButton>();
 
-    var timeoutInput = new SpinBox();
-    _panel.AddChild(timeoutInput);
-    _panel.TimeoutInput = timeoutInput;
-
-    var modelList = new VBoxContainer();
-    _panel.AddChild(modelList);
-    _panel.ModelList = modelList;
-
-    var addModelBtn = new Button();
-    _panel.AddChild(addModelBtn);
-    _panel.AddModelBtn = addModelBtn;
+    _panel.FakeNodeTree(
+      new()
+      {
+        ["%ActiveModelSelect"] = activeModelSelect.Object,
+        ["%TimeoutInput"] = timeoutInput.Object,
+        ["%ModelList"] = modelList.Object,
+        ["%AddModelBtn"] = addModelBtn.Object,
+      }
+    );
 
     _panel.FakeDependency<DataManager>(_dm);
+    _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
   }
 

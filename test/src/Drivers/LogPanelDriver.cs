@@ -4,53 +4,48 @@ using System;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.UI.Logging;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Godot;
+using Moq;
 
-/// <summary>
-/// Test driver for <see cref="LogPanel"/> — encapsulates setup with
-/// fake node tree and fake dependency for unit testing.
-/// </summary>
 public sealed class LogPanelDriver : IDisposable
 {
   public LogPanel Panel { get; }
-  public RichTextLabel LogView { get; }
-  public OptionButton LevelFilter { get; }
-  public OptionButton ModuleFilter { get; }
-  public Button PauseBtn { get; }
-  public Button ClearBtn { get; }
-  public Label LogDirLabel { get; }
+  public Mock<IRichTextLabel> LogView { get; }
+  public Mock<IOptionButton> LevelFilter { get; }
+  public Mock<IOptionButton> ModuleFilter { get; }
+  public Mock<IButton> PauseBtn { get; }
+  public Mock<IButton> ClearBtn { get; }
+  public Mock<ILabel> LogDirLabel { get; }
 
   public LogPanelDriver(ILogService? service = null)
   {
     Panel = new LogPanel();
+    (Panel as IAutoInit).IsTesting = true;
 
-    LogView = new RichTextLabel { Name = "LogView", UniqueNameInOwner = true };
-    Panel.AddChild(LogView);
-    Panel.LogView = LogView;
+    LogView = new Mock<IRichTextLabel>();
+    LevelFilter = new Mock<IOptionButton>();
+    ModuleFilter = new Mock<IOptionButton>();
+    PauseBtn = new Mock<IButton>();
+    ClearBtn = new Mock<IButton>();
+    LogDirLabel = new Mock<ILabel>();
 
-    LevelFilter = new OptionButton { Name = "LevelFilter", UniqueNameInOwner = true };
-    Panel.AddChild(LevelFilter);
-    Panel.LevelFilter = LevelFilter;
-
-    ModuleFilter = new OptionButton { Name = "ModuleFilter", UniqueNameInOwner = true };
-    Panel.AddChild(ModuleFilter);
-    Panel.ModuleFilter = ModuleFilter;
-
-    PauseBtn = new Button { Name = "PauseBtn", UniqueNameInOwner = true };
-    Panel.AddChild(PauseBtn);
-    Panel.PauseBtn = PauseBtn;
-
-    ClearBtn = new Button { Name = "ClearBtn", UniqueNameInOwner = true };
-    Panel.AddChild(ClearBtn);
-    Panel.ClearBtn = ClearBtn;
-
-    LogDirLabel = new Label { Name = "LogDirLabel", UniqueNameInOwner = true };
-    Panel.AddChild(LogDirLabel);
-    Panel.LogDirLabel = LogDirLabel;
+    Panel.FakeNodeTree(
+      new()
+      {
+        ["%LogView"] = LogView.Object,
+        ["%LevelFilter"] = LevelFilter.Object,
+        ["%ModuleFilter"] = ModuleFilter.Object,
+        ["%PauseBtn"] = PauseBtn.Object,
+        ["%ClearBtn"] = ClearBtn.Object,
+        ["%LogDirLabel"] = LogDirLabel.Object,
+      }
+    );
 
     if (service != null)
       Panel.FakeDependency<ILogService>(service);
 
+    Panel._Notification((int)Node.NotificationEnterTree);
     Panel._Notification((int)Node.NotificationReady);
   }
 

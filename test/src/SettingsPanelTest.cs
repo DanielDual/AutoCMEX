@@ -5,8 +5,10 @@ using System.Collections.Generic;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.UI.Settings;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
 using Godot;
+using Moq;
 using Shouldly;
 
 /// <summary>
@@ -31,28 +33,28 @@ public class SettingsPanelTest : TestClass
     _dm.LoadAll();
 
     _panel = new SettingsPanel();
+    (_panel as IAutoInit).IsTesting = true;
 
-    var searchBar = new LineEdit { PlaceholderText = "搜索配置项..." };
-    _panel.AddChild(searchBar);
-    _panel.SearchBar = searchBar;
+    var searchBar = new Mock<ILineEdit>();
+    searchBar.SetupProperty(m => m.PlaceholderText, "搜索配置项...");
+    var categoryList = new Mock<IItemList>();
+    var configArea = new Mock<IControl>();
+    var aiModelConfigPanel = new Mock<IControl>();
+    var chatConfigPanel = new Mock<IControl>();
 
-    var categoryList = new ItemList();
-    _panel.AddChild(categoryList);
-    _panel.CategoryList = categoryList;
-
-    var configArea = new Control();
-    _panel.AddChild(configArea);
-    _panel.ConfigArea = configArea;
-
-    var aiModelConfigPanel = new Control();
-    _panel.AddChild(aiModelConfigPanel);
-    _panel.AiModelConfigPanel = aiModelConfigPanel;
-
-    var chatConfigPanel = new Control();
-    _panel.AddChild(chatConfigPanel);
-    _panel.ChatConfigPanel = chatConfigPanel;
+    _panel.FakeNodeTree(
+      new()
+      {
+        ["%SearchBar"] = searchBar.Object,
+        ["%CategoryList"] = categoryList.Object,
+        ["%ConfigArea"] = configArea.Object,
+        ["%AiModelConfigPanel"] = aiModelConfigPanel.Object,
+        ["%ChatConfigPanel"] = chatConfigPanel.Object,
+      }
+    );
 
     _panel.FakeDependency<DataManager>(_dm);
+    _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
   }
 

@@ -4,63 +4,54 @@ using System;
 using AutoCMEX.Core.WebSocket;
 using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Godot;
+using Moq;
 
-/// <summary>
-/// Test driver for <see cref="WebSocketPanel"/> — encapsulates setup with
-/// fake node tree and fake dependency for unit testing.
-/// </summary>
 public sealed class WebSocketPanelDriver : IDisposable
 {
   public WebSocketPanel Panel { get; }
-  public Label StatusLabel { get; }
-  public Label ModeLabel { get; }
-  public Label PortLabel { get; }
-  public Label ConnectionCountLabel { get; }
-  public Label EventLabel { get; }
-  public Button StartStopBtn { get; }
-  public ItemList ClientList { get; }
-  public Timer RefreshTimer { get; }
+  public Mock<ILabel> StatusLabel { get; }
+  public Mock<ILabel> ModeLabel { get; }
+  public Mock<ILabel> PortLabel { get; }
+  public Mock<ILabel> ConnectionCountLabel { get; }
+  public Mock<ILabel> EventLabel { get; }
+  public Mock<IButton> StartStopBtn { get; }
+  public Mock<IItemList> ClientList { get; }
+  public Mock<ITimer> RefreshTimer { get; }
 
   public WebSocketPanelDriver(IWebSocketServer? server = null)
   {
     Panel = new WebSocketPanel();
+    (Panel as IAutoInit).IsTesting = true;
 
-    StatusLabel = new Label { Name = "StatusLabel", UniqueNameInOwner = true };
-    Panel.AddChild(StatusLabel);
-    Panel.StatusLabel = StatusLabel;
+    StatusLabel = new Mock<ILabel>();
+    ModeLabel = new Mock<ILabel>();
+    PortLabel = new Mock<ILabel>();
+    ConnectionCountLabel = new Mock<ILabel>();
+    EventLabel = new Mock<ILabel>();
+    StartStopBtn = new Mock<IButton>();
+    ClientList = new Mock<IItemList>();
+    RefreshTimer = new Mock<ITimer>();
 
-    ModeLabel = new Label { Name = "ModeLabel", UniqueNameInOwner = true };
-    Panel.AddChild(ModeLabel);
-    Panel.ModeLabel = ModeLabel;
-
-    PortLabel = new Label { Name = "PortLabel", UniqueNameInOwner = true };
-    Panel.AddChild(PortLabel);
-    Panel.PortLabel = PortLabel;
-
-    ConnectionCountLabel = new Label { Name = "ConnectionCountLabel", UniqueNameInOwner = true };
-    Panel.AddChild(ConnectionCountLabel);
-    Panel.ConnectionCountLabel = ConnectionCountLabel;
-
-    EventLabel = new Label { Name = "EventLabel", UniqueNameInOwner = true };
-    Panel.AddChild(EventLabel);
-    Panel.EventLabel = EventLabel;
-
-    StartStopBtn = new Button { Name = "StartStopBtn", UniqueNameInOwner = true };
-    Panel.AddChild(StartStopBtn);
-    Panel.StartStopBtn = StartStopBtn;
-
-    ClientList = new ItemList { Name = "ClientList", UniqueNameInOwner = true };
-    Panel.AddChild(ClientList);
-    Panel.ClientList = ClientList;
-
-    RefreshTimer = new Timer { Name = "RefreshTimer", UniqueNameInOwner = true };
-    Panel.AddChild(RefreshTimer);
-    Panel.RefreshTimer = RefreshTimer;
+    Panel.FakeNodeTree(
+      new()
+      {
+        ["%StatusLabel"] = StatusLabel.Object,
+        ["%ModeLabel"] = ModeLabel.Object,
+        ["%PortLabel"] = PortLabel.Object,
+        ["%ConnectionCountLabel"] = ConnectionCountLabel.Object,
+        ["%EventLabel"] = EventLabel.Object,
+        ["%StartStopBtn"] = StartStopBtn.Object,
+        ["%ClientList"] = ClientList.Object,
+        ["%RefreshTimer"] = RefreshTimer.Object,
+      }
+    );
 
     if (server != null)
       Panel.FakeDependency<IWebSocketServer>(server);
 
+    Panel._Notification((int)Node.NotificationEnterTree);
     Panel._Notification((int)Node.NotificationReady);
   }
 

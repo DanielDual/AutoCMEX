@@ -6,15 +6,18 @@ using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Guessing;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
 using Chickensoft.Sync.Primitives;
 using Godot;
+using Moq;
 using Shouldly;
 
 public class TestSpellCardPanel : TestClass
 {
   private SpellCardPanel _panel = default!;
   private DataManager _dm = default!;
+  private Mock<ITree> _spellCardTree = default!;
   private readonly List<Node> _toCleanup = new();
 
   public TestSpellCardPanel(Node testScene)
@@ -30,49 +33,42 @@ public class TestSpellCardPanel : TestClass
     _dm.LoadAll();
 
     _panel = new SpellCardPanel();
+    (_panel as IAutoInit).IsTesting = true;
 
-    // 手动设置子节点属性（不依赖 [Node] 解析）
     var tree = new Tree();
-    _panel.AddChild(tree);
-    _panel.SpellCardTree = tree;
+    TestScene.AddChild(tree);
+    _toCleanup.Add(tree);
+    _spellCardTree = new Mock<ITree>();
+    _spellCardTree
+      .Setup(m => m.CreateItem(It.IsAny<TreeItem>(), It.IsAny<int>()))
+      .Returns((TreeItem p, int i) => tree.CreateItem(p, i));
+    _spellCardTree.Setup(m => m.GetRoot()).Returns(() => tree.GetRoot());
+    var importCardBtn = new Mock<IButton>();
+    var exportCardBtn = new Mock<IButton>();
+    var addBossBtn = new Mock<IButton>();
+    var addCardBtn = new Mock<IButton>();
+    var deleteBtn = new Mock<IButton>();
+    var importFileDialog = new Mock<IFileDialog>();
+    var exportFileDialog = new Mock<IFileDialog>();
+    var errorDialog = new Mock<IAcceptDialog>();
 
-    var importBtn = new Button();
-    _panel.AddChild(importBtn);
-    _panel.ImportCardBtn = importBtn;
+    _panel.FakeNodeTree(
+      new()
+      {
+        ["%SpellCardTree"] = _spellCardTree.Object,
+        ["%ImportCardBtn"] = importCardBtn.Object,
+        ["%ExportCardBtn"] = exportCardBtn.Object,
+        ["%AddBossBtn"] = addBossBtn.Object,
+        ["%AddCardBtn"] = addCardBtn.Object,
+        ["%DeleteBtn"] = deleteBtn.Object,
+        ["%ImportFileDialog"] = importFileDialog.Object,
+        ["%ExportFileDialog"] = exportFileDialog.Object,
+        ["%ErrorDialog"] = errorDialog.Object,
+      }
+    );
 
-    var exportBtn = new Button();
-    _panel.AddChild(exportBtn);
-    _panel.ExportCardBtn = exportBtn;
-
-    var addBossBtn = new Button();
-    _panel.AddChild(addBossBtn);
-    _panel.AddBossBtn = addBossBtn;
-
-    var addCardBtn = new Button();
-    _panel.AddChild(addCardBtn);
-    _panel.AddCardBtn = addCardBtn;
-
-    var deleteBtn = new Button();
-    _panel.AddChild(deleteBtn);
-    _panel.DeleteBtn = deleteBtn;
-
-    // 添加对话框节点
-    var importDialog = new FileDialog();
-    _panel.AddChild(importDialog);
-    _panel.ImportFileDialog = importDialog;
-
-    var exportDialog = new FileDialog();
-    _panel.AddChild(exportDialog);
-    _panel.ExportFileDialog = exportDialog;
-
-    var errorDialog = new AcceptDialog();
-    _panel.AddChild(errorDialog);
-    _panel.ErrorDialog = errorDialog;
-
-    // 设置 FakeDependency
     _panel.FakeDependency<DataManager>(_dm);
-
-    // 触发 AutoInject 生命周期
+    _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
   }
 
@@ -103,7 +99,7 @@ public class TestSpellCardPanel : TestClass
     _dm.Bosses[0].SpellCards.Add(new SpellCard { Name = new AutoValue<string>("符卡1") });
     _panel.GetSelectBoss()(_dm.Bosses[0]);
     _panel.Refresh();
-    var root = _panel.SpellCardTree.GetRoot();
+    var root = _spellCardTree.Object.GetRoot();
     root.ShouldNotBeNull();
     root.GetChildCount().ShouldBeGreaterThan(0);
   }

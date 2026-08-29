@@ -8,8 +8,10 @@ using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Guessing;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
 using Godot;
+using Moq;
 using Shouldly;
 
 public class GuessingPanelTest : TestClass
@@ -31,34 +33,31 @@ public class GuessingPanelTest : TestClass
     _dm.LoadAll();
 
     _panel = new GuessingPanel();
+    (_panel as IAutoInit).IsTesting = true;
 
-    var guessInput = new TextEdit();
-    _panel.AddChild(guessInput);
-    _panel.GuessInput = guessInput;
+    var guessInput = new Mock<ITextEdit>();
+    var fuzzifyBtn = new Mock<IButton>();
+    fuzzifyBtn.SetupProperty(m => m.Disabled);
+    var processBtn = new Mock<IButton>();
+    var responseDisplay = new Mock<IRichTextLabel>();
+    var droppedList = new Mock<IItemList>();
+    var retryDroppedBtn = new Mock<IButton>();
+    retryDroppedBtn.SetupProperty(m => m.Disabled);
+    var clearDroppedBtn = new Mock<IButton>();
+    clearDroppedBtn.SetupProperty(m => m.Disabled);
 
-    var fuzzifyBtn = new Button();
-    _panel.AddChild(fuzzifyBtn);
-    _panel.FuzzifyBtn = fuzzifyBtn;
-
-    var processBtn = new Button();
-    _panel.AddChild(processBtn);
-    _panel.ProcessBtn = processBtn;
-
-    var responseDisplay = new RichTextLabel();
-    _panel.AddChild(responseDisplay);
-    _panel.ResponseDisplay = responseDisplay;
-
-    var droppedList = new ItemList();
-    _panel.AddChild(droppedList);
-    _panel.DroppedList = droppedList;
-
-    var retryDroppedBtn = new Button();
-    _panel.AddChild(retryDroppedBtn);
-    _panel.RetryDroppedBtn = retryDroppedBtn;
-
-    var clearDroppedBtn = new Button();
-    _panel.AddChild(clearDroppedBtn);
-    _panel.ClearDroppedBtn = clearDroppedBtn;
+    _panel.FakeNodeTree(
+      new()
+      {
+        ["%GuessInput"] = guessInput.Object,
+        ["%FuzzifyBtn"] = fuzzifyBtn.Object,
+        ["%ProcessBtn"] = processBtn.Object,
+        ["%ResponseDisplay"] = responseDisplay.Object,
+        ["%DroppedList"] = droppedList.Object,
+        ["%RetryDroppedBtn"] = retryDroppedBtn.Object,
+        ["%ClearDroppedBtn"] = clearDroppedBtn.Object,
+      }
+    );
 
     _panel.FakeDependency<DataManager>(_dm);
     _panel.FakeDependency<AiServiceFactory>(new AiServiceFactory(_dm));
@@ -71,6 +70,7 @@ public class GuessingPanelTest : TestClass
       )
     );
 
+    _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
   }
 

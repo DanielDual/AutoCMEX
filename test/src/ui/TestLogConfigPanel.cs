@@ -5,8 +5,10 @@ using System.Collections.Generic;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.UI.Logging;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
 using Godot;
+using Moq;
 using Shouldly;
 
 public class TestLogConfigPanel : TestClass
@@ -21,25 +23,31 @@ public class TestLogConfigPanel : TestClass
   public void Setup()
   {
     _panel = new LogConfigPanel();
+    (_panel as IAutoInit).IsTesting = true;
 
-    var maxFileCountInput = new SpinBox();
-    _panel.AddChild(maxFileCountInput);
-    _panel.MaxFileCountInput = maxFileCountInput;
+    var maxFileCountInput = new Mock<ISpinBox>();
+    maxFileCountInput.SetupProperty(m => m.MinValue, 1);
+    maxFileCountInput.SetupProperty(m => m.MaxValue, 1000);
+    maxFileCountInput.SetupProperty(m => m.Value, 30);
 
-    var minLevelOption = new OptionButton();
-    _panel.AddChild(minLevelOption);
-    _panel.MinLevelOption = minLevelOption;
+    var minLevelOption = new Mock<IOptionButton>();
+    var applyConfigBtn = new Mock<IButton>();
+    applyConfigBtn.SetupProperty(m => m.Text);
+    var statusLabel = new Mock<IRichTextLabel>();
 
-    var applyConfigBtn = new Button();
-    _panel.AddChild(applyConfigBtn);
-    _panel.ApplyConfigBtn = applyConfigBtn;
-
-    var statusLabel = new RichTextLabel();
-    _panel.AddChild(statusLabel);
-    _panel.StatusLabel = statusLabel;
+    _panel.FakeNodeTree(
+      new()
+      {
+        ["%MaxFileCountInput"] = maxFileCountInput.Object,
+        ["%MinLevelOption"] = minLevelOption.Object,
+        ["%ApplyConfigBtn"] = applyConfigBtn.Object,
+        ["%StatusLabel"] = statusLabel.Object,
+      }
+    );
 
     var logCfg = new LogConfig { LogDirectory = System.IO.Path.GetTempPath() };
     _panel.FakeDependency<ILogService>(new LogService(logCfg, includeGodotConsole: false));
+    _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
   }
 
@@ -94,7 +102,10 @@ public class TestLogConfigPanel : TestClass
   [Test]
   public void MinLevelOption_HasThreeOptions()
   {
-    _panel.MinLevelOption.ItemCount.ShouldBe(3);
+    _panel.MinLevelOption.Verify(
+      m => m.AddItem(It.IsAny<string>(), It.IsAny<int>()),
+      Times.Exactly(3)
+    );
   }
 
   [Test]
