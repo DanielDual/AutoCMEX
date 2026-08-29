@@ -12,6 +12,7 @@ using AutoCMEX.Models;
 using AutoCMEX.UI.Logging;
 using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Godot;
 
@@ -35,56 +36,56 @@ public partial class MainWindow
   #region AutoConnect Nodes
 
   [Node("%LeftPanel")]
-  public VBoxContainer LeftPanel { get; set; } = default!;
+  public IVBoxContainer LeftPanel { get; set; } = default!;
 
   [Node("%RightPanel")]
-  public Control RightPanel { get; set; } = default!;
+  public IControl RightPanel { get; set; } = default!;
 
   [Node("%MergeBtn")]
-  public Button MergeBtn { get; set; } = default!;
+  public IButton MergeBtn { get; set; } = default!;
 
   [Node("%GuessingBtn")]
-  public Button GuessingBtn { get; set; } = default!;
+  public IButton GuessingBtn { get; set; } = default!;
 
   [Node("%InfoBtn")]
-  public Button InfoBtn { get; set; } = default!;
+  public IButton InfoBtn { get; set; } = default!;
 
   [Node("%SettingsBtn")]
-  public Button SettingsBtn { get; set; } = default!;
+  public IButton SettingsBtn { get; set; } = default!;
 
   [Node("%HelpBtn")]
-  public Button HelpBtn { get; set; } = default!;
+  public IButton HelpBtn { get; set; } = default!;
 
   [Node("%LogBtn")]
-  public Button LogBtn { get; set; } = default!;
+  public IButton LogBtn { get; set; } = default!;
 
   [Node("%WebSocketBtn")]
-  public Button WebSocketBtn { get; set; } = default!;
+  public IButton WebSocketBtn { get; set; } = default!;
 
   #endregion
 
   #region Panel Nodes (instanced in scene)
 
   [Node("%MergePanel")]
-  public Control MergePanelNode { get; set; } = default!;
+  public IControl MergePanelNode { get; set; } = default!;
 
   [Node("%GuessingPanel")]
-  public Control GuessingPanelNode { get; set; } = default!;
+  public IControl GuessingPanelNode { get; set; } = default!;
 
   [Node("%InfoPanel")]
-  public Control InfoPanelNode { get; set; } = default!;
+  public IControl InfoPanelNode { get; set; } = default!;
 
   [Node("%SettingsPanel")]
-  public Control SettingsPanelNode { get; set; } = default!;
+  public IControl SettingsPanelNode { get; set; } = default!;
 
   [Node("%HelpPanel")]
-  public Control HelpPanelNode { get; set; } = default!;
+  public IControl HelpPanelNode { get; set; } = default!;
 
   [Node("%LogPanel")]
-  public LogPanel LogPanelNode { get; set; } = default!;
+  public INode LogPanelNode { get; set; } = default!;
 
   [Node("%WebSocketPanel")]
-  public WebSocketPanel WebSocketPanelNode { get; set; } = default!;
+  public INode WebSocketPanelNode { get; set; } = default!;
 
   #endregion
 
@@ -114,10 +115,10 @@ public partial class MainWindow
 
   #endregion
 
-  private readonly Dictionary<string, Control> _panels = new();
-  private readonly Dictionary<string, Button> _navButtons = new();
+  private readonly Dictionary<string, INode> _panels = new();
+  private readonly Dictionary<string, IButton> _navButtons = new();
 
-  private Control? _currentPanel;
+  private IControl? _currentPanel;
   private const string DefaultPanel = "guessing";
 
   public override void _Notification(int what) => this.Notify(what);
@@ -212,8 +213,11 @@ public partial class MainWindow
     var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService);
     _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
-    // 更新面板绑定
-    WebSocketPanelNode.UpdateServer(_webSocketServer, _dataManager.Settings.WebSocketMode.Value);
+    // 更新面板绑定：通过接口解耦，避免具体类型检查
+    if (WebSocketPanelNode is INodeAdapter adapter && adapter.TargetObj is IWebSocketPanel panel)
+    {
+      panel.UpdateServer(_webSocketServer, _dataManager.Settings.WebSocketMode.Value);
+    }
 
     await _webSocketServer.StartAsync();
     wsLog.Print("MainWindow: WebSocket restarted.");
@@ -232,8 +236,11 @@ public partial class MainWindow
       _currentPanel.Visible = false;
 
     // 显示目标面板
-    panel.Visible = true;
-    _currentPanel = panel;
+    if (panel is IControl control)
+    {
+      control.Visible = true;
+      _currentPanel = control;
+    }
 
     // 更新按钮状态
     foreach (var (k, btn) in _navButtons)

@@ -4,14 +4,10 @@
 [ext_resource type="PackedScene" uid="uid://b0o67jk40412y" path="res://src/ui/guessing/GuessingPanel.tscn" id="2_guessing"]
 [ext_resource type="PackedScene" uid="uid://gihori8we6rx" path="res://src/ui/settings/SettingsPanel.tscn" id="3_settings"]
 [ext_resource type="PackedScene" uid="uid://b4urpmt0s8fl6" path="res://src/ui/logging/LogPanel.tscn" id="4_log"]
-[ext_resource type="Script" uid="uid://c41htm0llrugj" path="res://src/ui/guessing/GuessingPanel.cs" id="4_qts5r"]
 [ext_resource type="PackedScene" uid="uid://wsdpnl001" path="res://src/ui/websocket/WebSocketPanel.tscn" id="5_ws"]
 [ext_resource type="PackedScene" uid="uid://xa0vkqnpj1n0" path="res://src/ui/merge/MergePanel.tscn" id="6_merge"]
-[ext_resource type="Script" uid="uid://cmxsol0aje66q" path="res://src/ui/settings/SettingsPanel.cs" id="7_8a7bm"]
 [ext_resource type="PackedScene" uid="uid://cmb8ndpqvxtot" path="res://src/ui/info/InfoPanel.tscn" id="7_info"]
 [ext_resource type="PackedScene" uid="uid://lpqr6wef3tj8" path="res://src/ui/help/HelpPanel.tscn" id="8_help"]
-[ext_resource type="Script" uid="uid://dqi1jkjb7r7xb" path="res://src/ui/logging/LogPanel.cs" id="10_sdns3"]
-[ext_resource type="Script" uid="uid://jk08wt8jy0bg" path="res://src/ui/websocket/WebSocketPanel.cs" id="12_7oob7"]
 
 [node name="Control2" type="Control" unique_id=764712909]
 layout_mode = 3
