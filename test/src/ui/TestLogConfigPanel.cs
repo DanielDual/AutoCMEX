@@ -14,6 +14,7 @@ using Shouldly;
 public class TestLogConfigPanel : TestClass
 {
   private LogConfigPanel _panel = default!;
+  private Mock<IOptionButton> _minLevelOption = default!;
   private readonly List<Node> _toCleanup = new();
 
   public TestLogConfigPanel(Node testScene)
@@ -30,7 +31,7 @@ public class TestLogConfigPanel : TestClass
     maxFileCountInput.SetupProperty(m => m.MaxValue, 1000);
     maxFileCountInput.SetupProperty(m => m.Value, 30);
 
-    var minLevelOption = new Mock<IOptionButton>();
+    _minLevelOption = new Mock<IOptionButton>();
     var applyConfigBtn = new Mock<IButton>();
     applyConfigBtn.SetupProperty(m => m.Text);
     var statusLabel = new Mock<IRichTextLabel>();
@@ -39,7 +40,7 @@ public class TestLogConfigPanel : TestClass
       new()
       {
         ["%MaxFileCountInput"] = maxFileCountInput.Object,
-        ["%MinLevelOption"] = minLevelOption.Object,
+        ["%MinLevelOption"] = _minLevelOption.Object,
         ["%ApplyConfigBtn"] = applyConfigBtn.Object,
         ["%StatusLabel"] = statusLabel.Object,
       }
@@ -102,10 +103,7 @@ public class TestLogConfigPanel : TestClass
   [Test]
   public void MinLevelOption_HasThreeOptions()
   {
-    _panel.MinLevelOption.Verify(
-      m => m.AddItem(It.IsAny<string>(), It.IsAny<int>()),
-      Times.Exactly(3)
-    );
+    _minLevelOption.Verify(m => m.AddItem(It.IsAny<string>(), It.IsAny<int>()), Times.Exactly(3));
   }
 
   [Test]
