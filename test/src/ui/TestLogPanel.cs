@@ -24,12 +24,13 @@ public class TestLogPanel : TestClass
   {
     _panel = new LogPanel();
     (_panel as IAutoInit).IsTesting = true;
+    _toCleanup.Add(_panel);
 
     var logView = new Mock<IRichTextLabel>();
     _levelFilter = new Mock<IOptionButton>();
     var moduleFilter = new Mock<IOptionButton>();
     var pauseBtn = new Mock<IButton>();
-    pauseBtn.SetupProperty(m => m.ToggleMode, true);
+    pauseBtn.SetupProperty(m => m.ToggleMode);
     var clearBtn = new Mock<IButton>();
     var logDirLabel = new Mock<ILabel>();
 

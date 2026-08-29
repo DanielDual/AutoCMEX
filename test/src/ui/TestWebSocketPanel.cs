@@ -26,6 +26,7 @@ public class TestWebSocketPanel : TestClass
   {
     _panel = new WebSocketPanel();
     (_panel as IAutoInit).IsTesting = true;
+    _toCleanup.Add(_panel);
 
     var statusLabel = new Mock<ILabel>();
     _modeLabel = new Mock<ILabel>();

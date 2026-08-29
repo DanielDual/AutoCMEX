@@ -41,6 +41,7 @@ public class MainWindowTest : TestClass
   {
     _mainWindow = new MainWindow();
     (_mainWindow as IAutoInit).IsTesting = true;
+    _toCleanup.Add(_mainWindow);
 
     var leftPanel = new Mock<IVBoxContainer>();
     var rightPanel = new Mock<IControl>();

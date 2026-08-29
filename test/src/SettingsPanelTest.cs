@@ -18,6 +18,7 @@ public class SettingsPanelTest : TestClass
 {
   private SettingsPanel _panel = default!;
   private DataManager _dm = default!;
+  private Mock<IItemList> _categoryList = default!;
   private readonly List<Node> _toCleanup = new();
 
   public SettingsPanelTest(Node testScene)
@@ -34,10 +35,11 @@ public class SettingsPanelTest : TestClass
 
     _panel = new SettingsPanel();
     (_panel as IAutoInit).IsTesting = true;
+    _toCleanup.Add(_panel);
 
     var searchBar = new Mock<ILineEdit>();
-    searchBar.SetupProperty(m => m.PlaceholderText, "搜索配置项...");
-    var categoryList = new Mock<IItemList>();
+    searchBar.SetupProperty(m => m.PlaceholderText);
+    _categoryList = new Mock<IItemList>();
     var configArea = new Mock<IControl>();
     var aiModelConfigPanel = new Mock<IControl>();
     var chatConfigPanel = new Mock<IControl>();
@@ -46,7 +48,7 @@ public class SettingsPanelTest : TestClass
       new()
       {
         ["%SearchBar"] = searchBar.Object,
-        ["%CategoryList"] = categoryList.Object,
+        ["%CategoryList"] = _categoryList.Object,
         ["%ConfigArea"] = configArea.Object,
         ["%AiModelConfigPanel"] = aiModelConfigPanel.Object,
         ["%ChatConfigPanel"] = chatConfigPanel.Object,
@@ -94,8 +96,11 @@ public class SettingsPanelTest : TestClass
   }
 
   [Test]
-  public void SettingsPanel_SearchBar_HasPlaceholder()
+  public void SettingsPanel_CategoryList_HasSevenCategories()
   {
-    _panel.SearchBar.PlaceholderText.ShouldContain("搜索");
+    _categoryList.Verify(
+      m => m.AddItem(It.IsAny<string>(), It.IsAny<Texture2D>(), It.IsAny<bool>()),
+      Times.Exactly(7)
+    );
   }
 }

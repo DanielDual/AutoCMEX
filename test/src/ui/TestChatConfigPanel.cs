@@ -31,10 +31,11 @@ public class TestChatConfigPanel : TestClass
 
     _panel = new ChatConfigPanel();
     (_panel as IAutoInit).IsTesting = true;
+    _toCleanup.Add(_panel);
 
     var portInput = new Mock<ISpinBox>();
-    portInput.SetupProperty(m => m.MinValue, 1);
-    portInput.SetupProperty(m => m.MaxValue, 65535);
+    portInput.SetupProperty(m => m.MinValue);
+    portInput.SetupProperty(m => m.MaxValue);
     var modeSelect = new Mock<IOptionButton>();
     modeSelect.SetupProperty(m => m.ItemCount, 0);
     modeSelect

@@ -32,6 +32,7 @@ public class TestAiModelConfigPanel : TestClass
 
     _panel = new AiModelConfigPanel();
     (_panel as IAutoInit).IsTesting = true;
+    _toCleanup.Add(_panel);
 
     var activeModelSelect = new Mock<IOptionButton>();
     activeModelSelect.SetupProperty(m => m.ItemCount, 0);
@@ -40,8 +41,8 @@ public class TestAiModelConfigPanel : TestClass
       .Callback(() => activeModelSelect.Object.ItemCount++);
     activeModelSelect.Setup(m => m.GetItemText(0)).Returns("(未选择)");
     var timeoutInput = new Mock<ISpinBox>();
-    timeoutInput.SetupProperty(m => m.MinValue, 1);
-    timeoutInput.SetupProperty(m => m.MaxValue, 600);
+    timeoutInput.SetupProperty(m => m.MinValue);
+    timeoutInput.SetupProperty(m => m.MaxValue);
     timeoutInput.SetupProperty(m => m.Value);
     var modelList = new Mock<IVBoxContainer>();
     modelList

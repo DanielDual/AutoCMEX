@@ -34,6 +34,7 @@ public class GuessingPanelTest : TestClass
 
     _panel = new GuessingPanel();
     (_panel as IAutoInit).IsTesting = true;
+    _toCleanup.Add(_panel);
 
     var guessInput = new Mock<ITextEdit>();
     var fuzzifyBtn = new Mock<IButton>();

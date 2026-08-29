@@ -25,10 +25,11 @@ public class TestLogConfigPanel : TestClass
   {
     _panel = new LogConfigPanel();
     (_panel as IAutoInit).IsTesting = true;
+    _toCleanup.Add(_panel);
 
     var maxFileCountInput = new Mock<ISpinBox>();
-    maxFileCountInput.SetupProperty(m => m.MinValue, 1);
-    maxFileCountInput.SetupProperty(m => m.MaxValue, 1000);
+    maxFileCountInput.SetupProperty(m => m.MinValue);
+    maxFileCountInput.SetupProperty(m => m.MaxValue);
     maxFileCountInput.SetupProperty(m => m.Value, 30);
 
     _minLevelOption = new Mock<IOptionButton>();

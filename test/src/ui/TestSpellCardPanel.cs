@@ -34,6 +34,7 @@ public class TestSpellCardPanel : TestClass
 
     _panel = new SpellCardPanel();
     (_panel as IAutoInit).IsTesting = true;
+    _toCleanup.Add(_panel);
 
     var tree = new Tree();
     TestScene.AddChild(tree);
