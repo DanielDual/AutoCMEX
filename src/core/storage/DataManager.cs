@@ -35,23 +35,30 @@ public class DataManager : IDisposable
   public AutoList<CreatorAlias> Aliases => _aliases;
   public AppSettings Settings => _settings;
 
+  private AutoValue<string?>.Binding? _activeAiModelIdBinding;
+  private AutoValue<int>.Binding? _webSocketPortBinding;
+  private AutoValue<string>.Binding? _webSocketModeBinding;
+  private AutoValue<string>.Binding? _koishiWebSocketUrlBinding;
+
   /// <summary>
   /// UI 刷新由 AutoList/AutoValue 的 Bind().OnModify() / Bind().OnValue() 自动驱动
-  /// </summary>
-  /// 订阅 AutoValue 属性变更，自动通知 UI 组件
   /// </summary>
   private void BindSettingsChanges()
   {
     if (_settings.ActiveAiModelId != null)
-      _settings
+      _activeAiModelIdBinding = _settings
         .ActiveAiModelId.Bind()
         .OnValue(_ => _log.Print("DataManager: ActiveAiModelId changed"));
     if (_settings.WebSocketPort != null)
-      _settings.WebSocketPort.Bind().OnValue(_ => _log.Print("DataManager: WebSocketPort changed"));
+      _webSocketPortBinding = _settings
+        .WebSocketPort.Bind()
+        .OnValue(_ => _log.Print("DataManager: WebSocketPort changed"));
     if (_settings.WebSocketMode != null)
-      _settings.WebSocketMode.Bind().OnValue(_ => _log.Print("DataManager: WebSocketMode changed"));
+      _webSocketModeBinding = _settings
+        .WebSocketMode.Bind()
+        .OnValue(_ => _log.Print("DataManager: WebSocketMode changed"));
     if (_settings.KoishiWebSocketUrl != null)
-      _settings
+      _koishiWebSocketUrlBinding = _settings
         .KoishiWebSocketUrl.Bind()
         .OnValue(_ => _log.Print("DataManager: KoishiWebSocketUrl changed"));
   }
@@ -201,6 +208,10 @@ public class DataManager : IDisposable
     _saveCts?.Cancel();
     _saveCts?.Dispose();
     _saveCts = null;
+    _activeAiModelIdBinding?.Dispose();
+    _webSocketPortBinding?.Dispose();
+    _webSocketModeBinding?.Dispose();
+    _koishiWebSocketUrlBinding?.Dispose();
     _bosses.Dispose();
     _aliases.Dispose();
     GC.SuppressFinalize(this);
