@@ -67,7 +67,7 @@
 
 - **子节点脚本提取**：`SpellCardTreeHandler`/`AliasTreeHandler` 提取为独立场景 `SpellCardPanel.tscn`/`AliasPanel.tscn`，遵循"一个场景一个脚本"规则
 - **SettingsPanel 静态化**：动态 UI 构建迁移为静态 `.tscn`，创建 `AiModelConfigPanel`/`ChatConfigPanel` 独立子场景
-- **MainWindow 面板引用**：`LogPanel`/`WebSocketPanel` 节点属性改为 `INode` 接口类型，通过 `GodotNodeInterfaces` 适配器访问
+- **MainWindow 面板引用**：`LogPanel`/`WebSocketPanel` 节点属性改为 `IControl` 接口类型，通过 `GodotNodeInterfaces` 适配器访问
 
 ### 依赖注入统一
 
