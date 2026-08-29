@@ -83,10 +83,10 @@ public partial class MainWindow
   public IControl HelpPanelNode { get; set; } = default!;
 
   [Node("%LogPanel")]
-  public INode LogPanelNode { get; set; } = default!;
+  public IControl LogPanelNode { get; set; } = default!;
 
   [Node("%WebSocketPanel")]
-  public INode WebSocketPanelNode { get; set; } = default!;
+  public IControl WebSocketPanelNode { get; set; } = default!;
 
   #endregion
 
@@ -133,6 +133,7 @@ public partial class MainWindow
     _webSocketModeBinding?.Dispose();
     _webSocketPortBinding?.Dispose();
     _koishiWebSocketUrlBinding?.Dispose();
+    _dataManager?.Dispose();
   }
 
   public void OnReady()
