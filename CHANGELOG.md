@@ -55,3 +55,29 @@
 - 「从工程文件导入」按钮（计划任务 B7）
 - 消息筛选模式接入 WebSocket 处理器（计划任务 C13）
 - Koishi 一键安装 `res://` 路径修正（计划任务 E5）
+
+## v0.0.2 (开发中) — Chickensoft 生态统一重构
+
+### 数据同步统一
+
+- **数据模型迁移**：`Boss`/`CreatorAlias`/`SpellCard`/`AppSettings` 从 `ObservableCollection`/`INotifyPropertyChanged` 迁移到 `AutoList`/`AutoValue`，消除手动事件订阅
+- **DataManager 重构**：数据集合改用 `AutoList`，配置变更通过 `AutoValue.Bind()` 自动通知，移除手动 `PropertyChanged` 订阅
+
+### 场景重构
+
+- **子节点脚本提取**：`SpellCardTreeHandler`/`AliasTreeHandler` 提取为独立场景 `SpellCardPanel.tscn`/`AliasPanel.tscn`，遵循"一个场景一个脚本"规则
+- **SettingsPanel 静态化**：动态 UI 构建迁移为静态 `.tscn`，创建 `AiModelConfigPanel`/`ChatConfigPanel` 独立子场景
+- **MainWindow 面板引用**：`LogPanel`/`WebSocketPanel` 节点属性改为 `INode` 接口类型，通过 `GodotNodeInterfaces` 适配器访问
+
+### 依赖注入统一
+
+- **WebSocketPanel 接入 AutoInject**：使用 `[Node]` 属性替代 `GetNode<>` 手动查找，`[Dependency]` 获取 `IWebSocketServer`
+- **LogConfigPanel 接入 AutoInject**：使用 `[Node]` 属性替代 `GetNode<>` 手动查找，`[Dependency]` 获取 `ILogService`
+- **GuessingPanel 节点属性接口化**：`[Node]` 属性类型从具体类（`Button`/`TextEdit` 等）改为 GodotNodeInterfaces 接口类型
+
+### 测试体系重构
+
+- **单元测试模式统一**：所有 UI 测试改用 `FakeNodeTree` + `FakeDependency` + `_Notification(NotificationEnterTree/Ready)` 模式，避免实例化完整场景
+- **Moq 替代 LightMoq**：测试统一使用 Moq 伪造节点树，与 GameDemo 参考实现一致
+- **补充缺失测试**：新增 `TestSpellCardPanel`/`TestAliasPanel`/`TestWebSocketPanel`/`TestLogPanel`/`TestLogConfigPanel`/`TestAiModelConfigPanel`/`TestChatConfigPanel`
+- **测试 Driver 更新**：所有 Driver 使用 `[Node]` 属性路径（`%` 前缀），消除硬编码路径字符串
