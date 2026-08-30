@@ -9,6 +9,7 @@ using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.Log;
+using Chickensoft.Sync.Primitives;
 
 /// <summary>
 /// 统一编排手动与托管猜测处理流程
@@ -185,6 +186,9 @@ public class GuessProcessingService : IGuessProcessingService
   }
 
   /// <inheritdoc/>
+  public AutoList<DroppedGuess> DroppedGuesses => _droppedGuessRepository.DroppedGuesses;
+
+  /// <inheritdoc/>
   public IReadOnlyList<DroppedGuess> GetDroppedGuesses() => _droppedGuessRepository.GetAll();
 
   /// <inheritdoc/>
@@ -219,5 +223,12 @@ public class GuessProcessingService : IGuessProcessingService
   {
     _droppedGuessRepository.Remove(droppedId);
     _log.Print($"GuessProcessingService: removed dropped guess {droppedId}.");
+  }
+
+  /// <inheritdoc/>
+  public void ClearDroppedGuesses()
+  {
+    _droppedGuessRepository.Clear();
+    _log.Print("GuessProcessingService: cleared all dropped guesses.");
   }
 }

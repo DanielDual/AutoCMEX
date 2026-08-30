@@ -3,12 +3,18 @@ namespace AutoCMEX.Core.Guessing;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using AutoCMEX.Models;
+using Chickensoft.Sync.Primitives;
 
 /// <summary>
 /// 统一猜测处理服务接口
 /// </summary>
 public interface IGuessProcessingService
 {
+  /// <summary>
+  /// 丢包列表（Sync 管理，变更自动通知）
+  /// </summary>
+  AutoList<DroppedGuess> DroppedGuesses { get; }
+
   /// <summary>
   /// 获取当前共享的 Boss 选择
   /// </summary>
@@ -34,4 +40,9 @@ public interface IGuessProcessingService
   /// 移除指定丢包记录
   /// </summary>
   void RemoveDroppedGuess(string droppedId);
+
+  /// <summary>
+  /// 清除所有丢包记录
+  /// </summary>
+  void ClearDroppedGuesses();
 }

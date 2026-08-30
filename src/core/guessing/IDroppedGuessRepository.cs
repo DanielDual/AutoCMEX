@@ -1,12 +1,18 @@
 namespace AutoCMEX.Core.Guessing;
 
 using System.Collections.Generic;
+using Chickensoft.Sync.Primitives;
 
 /// <summary>
 /// 丢包猜测仓储接口：管理丢包记录的增删查
 /// </summary>
 public interface IDroppedGuessRepository
 {
+  /// <summary>
+  /// 丢包记录集合（Sync 管理，变更自动通知）
+  /// </summary>
+  AutoList<DroppedGuess> DroppedGuesses { get; }
+
   /// <summary>
   /// 添加一条丢包记录
   /// </summary>

@@ -14,6 +14,7 @@ using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Chickensoft.Log;
+using Chickensoft.Sync.Primitives;
 using Godot;
 
 /// <summary>
@@ -66,9 +67,30 @@ public partial class GuessingPanel : Control
 
   private DataManager? _dm;
   private IGuessProcessingService? _guessProcessingService;
+  private AutoValue<string?>.Binding? _activeAiModelIdBinding;
+  private AutoList<AiModelConfig>.Binding? _aiModelsBinding;
+  private AutoList<DroppedGuess>.Binding? _droppedGuessesBinding;
+  private bool _isRetrying;
   private ILog _log = AppLogs.GetOrCreate().GetLogger(nameof(GuessingPanel));
 
+  /// <summary>
+  /// 测试用：获取 OnClearDropped 委托
+  /// </summary>
+  public Action GetOnClearDropped() => OnClearDropped;
+
+  /// <summary>
+  /// 测试用：获取 OnRetryAllDropped 委托
+  /// </summary>
+  public Action GetOnRetryAllDropped() => OnRetryAllDropped;
+
   public override void _Notification(int what) => this.Notify(what);
+
+  public override void _ExitTree()
+  {
+    _activeAiModelIdBinding?.Dispose();
+    _aiModelsBinding?.Dispose();
+    _droppedGuessesBinding?.Dispose();
+  }
 
   public void OnReady()
   {
@@ -88,10 +110,21 @@ public partial class GuessingPanel : Control
     if (_dm != null)
     {
       // 数据加载统一由 MainWindow/DataManager 负责，面板不重复 LoadAll
+      // UI 刷新由 Sync 绑定驱动，无需手动调用
+      _activeAiModelIdBinding = _dm
+        .Settings.ActiveAiModelId.Bind()
+        .OnValue(_ => UpdateFuzzifyButtonState());
+      _aiModelsBinding = _dm.Settings.AiModels.Bind().OnModify(() => UpdateFuzzifyButtonState());
       UpdateFuzzifyButtonState();
     }
 
-    RefreshDroppedUI();
+    if (_guessProcessingService != null)
+    {
+      _droppedGuessesBinding = _guessProcessingService
+        .DroppedGuesses.Bind()
+        .OnModify(() => CallDeferred(nameof(RefreshDroppedUI)));
+      RefreshDroppedUI();
+    }
   }
 
   private void UpdateFuzzifyButtonState()
@@ -107,7 +140,7 @@ public partial class GuessingPanel : Control
       var activeId = _dm.Settings.ActiveAiModelId.Value;
       if (!string.IsNullOrEmpty(activeId))
       {
-        var activeModel = _dm.Settings.AiModels.FirstOrDefault(m => m.Id == activeId);
+        var activeModel = _dm.Settings.AiModels.FirstOrDefault(m => m.Id.Value == activeId);
         hasAi = activeModel != null && AiServiceFactory.IsModelValid(activeModel);
       }
     }
@@ -138,7 +171,6 @@ public partial class GuessingPanel : Control
     );
 
     var result = await _guessProcessingService!.ProcessAsync(text);
-    RefreshDroppedUI();
     if (!result.IsGuess)
     {
       _log.Warn($"OnProcessGuess: processing returned failure: {result.FailureReason}");
@@ -189,7 +221,7 @@ public partial class GuessingPanel : Control
     }
 
     _log.Print(
-      $"OnFuzzify: start, model={mc.ModelId}, format={mc.ApiFormat}, input_len={text.Length}"
+      $"OnFuzzify: start, model={mc.ModelId.Value}, format={mc.ApiFormat.Value}, input_len={text.Length}"
     );
     FuzzifyBtn.Disabled = true;
     FuzzifyBtn.Text = "模糊化中...";
@@ -217,13 +249,12 @@ public partial class GuessingPanel : Control
     {
       FuzzifyBtn.Disabled = false;
       FuzzifyBtn.Text = "模糊化";
-      RefreshDroppedUI();
     }
   }
 
   // ==================== 丢包重试 ====================
 
-  private void RefreshDroppedUI()
+  public void RefreshDroppedUI()
   {
     // Node references may not be resolved yet if called from _Notification
     // before AutoInject has run.
@@ -248,7 +279,7 @@ public partial class GuessingPanel : Control
       DroppedList.AddItem($"[{d.Id}] {d.RawText}");
     }
 
-    RetryDroppedBtn.Disabled = false;
+    RetryDroppedBtn.Disabled = _isRetrying;
     ClearDroppedBtn.Disabled = false;
   }
 
@@ -263,6 +294,7 @@ public partial class GuessingPanel : Control
       return;
 
     _log.Print($"OnRetryAllDropped: retrying {dropped.Count} dropped guesses.");
+    _isRetrying = true;
     RetryDroppedBtn.Disabled = true;
     RetryDroppedBtn.Text = "重试中...";
 
@@ -279,11 +311,18 @@ public partial class GuessingPanel : Control
         Interlocked.Increment(ref failCount);
     });
 
-    await Task.WhenAll(tasks);
+    try
+    {
+      await Task.WhenAll(tasks);
+    }
+    finally
+    {
+      _isRetrying = false;
+      RetryDroppedBtn.Text = "重试全部丢包";
+      RefreshDroppedUI();
+    }
 
     _log.Print($"OnRetryAllDropped: done, success={successCount}, fail={failCount}");
-    RetryDroppedBtn.Text = "重试全部丢包";
-    RefreshDroppedUI();
   }
 
   private void OnClearDropped()
@@ -292,11 +331,8 @@ public partial class GuessingPanel : Control
     if (service == null)
       return;
 
-    var dropped = service.GetDroppedGuesses();
-    foreach (var d in dropped)
-      service.RemoveDroppedGuess(d.Id);
-
-    _log.Print($"OnClearDropped: cleared {dropped.Count} dropped guesses.");
-    RefreshDroppedUI();
+    var count = service.GetDroppedGuesses().Count;
+    service.ClearDroppedGuesses();
+    _log.Print($"OnClearDropped: cleared {count} dropped guesses.");
   }
 }
