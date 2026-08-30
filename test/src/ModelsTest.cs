@@ -88,11 +88,11 @@ public class ModelsTest : TestClass
   public void AiModelConfig_DefaultValues()
   {
     var config = new AiModelConfig();
-    config.Id.ShouldBe(string.Empty);
-    config.ApiFormat.ShouldBe("OpenAI");
-    config.EndpointUrl.ShouldBe(string.Empty);
-    config.ModelId.ShouldBe(string.Empty);
-    config.EncryptedApiKey.ShouldBe(string.Empty);
+    config.Id.Value.ShouldBe(string.Empty);
+    config.ApiFormat.Value.ShouldBe("OpenAI");
+    config.EndpointUrl.Value.ShouldBe(string.Empty);
+    config.ModelId.Value.ShouldBe(string.Empty);
+    config.EncryptedApiKey.Value.ShouldBe(string.Empty);
   }
 
   [Test]
@@ -100,14 +100,14 @@ public class ModelsTest : TestClass
   {
     var config = new AiModelConfig
     {
-      Id = "test-1",
-      ApiFormat = "Anthropic",
-      EndpointUrl = "https://api.anthropic.com",
-      ModelId = "claude-3",
+      Id = new AutoValue<string>("test-1"),
+      ApiFormat = new AutoValue<string>("Anthropic"),
+      EndpointUrl = new AutoValue<string>("https://api.anthropic.com"),
+      ModelId = new AutoValue<string>("claude-3"),
     };
 
-    config.ApiFormat.ShouldBe("Anthropic");
-    config.EndpointUrl.ShouldBe("https://api.anthropic.com");
+    config.ApiFormat.Value.ShouldBe("Anthropic");
+    config.EndpointUrl.Value.ShouldBe("https://api.anthropic.com");
   }
 
   [Test]
@@ -125,8 +125,8 @@ public class ModelsTest : TestClass
   public void AppSettings_CanAddAiModels()
   {
     var settings = new AppSettings();
-    settings.AiModels.Add(new AiModelConfig { Id = "model-1" });
-    settings.AiModels.Add(new AiModelConfig { Id = "model-2" });
+    settings.AiModels.Add(new AiModelConfig { Id = new AutoValue<string>("model-1") });
+    settings.AiModels.Add(new AiModelConfig { Id = new AutoValue<string>("model-2") });
 
     settings.AiModels.Count.ShouldBe(2);
   }
@@ -158,7 +158,7 @@ public class ModelsTest : TestClass
   public void AiModelConfig_DefaultApiFormat_IsOpenAI()
   {
     var config = new AiModelConfig();
-    config.ApiFormat.ShouldBe("OpenAI");
+    config.ApiFormat.Value.ShouldBe("OpenAI");
   }
 
   [Test]

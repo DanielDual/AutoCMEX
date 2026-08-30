@@ -27,19 +27,19 @@ public class AnthropicService : IAiService, IDisposable
     _config = config;
     _log = log;
     _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
-    _httpClient.DefaultRequestHeaders.Add("x-api-key", config.EncryptedApiKey);
+    _httpClient.DefaultRequestHeaders.Add("x-api-key", config.EncryptedApiKey.Value);
     _httpClient.DefaultRequestHeaders.Add("anthropic-version", "2023-06-01");
   }
 
   /// <inheritdoc/>
   public async Task<string> ChatAsync(string systemPrompt, string userMessage)
   {
-    var url = _config.EndpointUrl.TrimEnd('/') + "/v1/messages";
-    _log.Print($"Anthropic ChatAsync request: model={_config.ModelId}, url={url}");
+    var url = _config.EndpointUrl.Value.TrimEnd('/') + "/v1/messages";
+    _log.Print($"Anthropic ChatAsync request: model={_config.ModelId.Value}, url={url}");
 
     var requestBody = new
     {
-      model = _config.ModelId,
+      model = _config.ModelId.Value,
       max_tokens = 1024,
       system = systemPrompt,
       messages = new object[] { new { role = "user", content = userMessage } },

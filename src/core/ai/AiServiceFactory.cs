@@ -36,7 +36,9 @@ public class AiServiceFactory
     // 优先使用用户选中的模型
     if (!string.IsNullOrEmpty(settings.ActiveAiModelId.Value))
     {
-      var selected = settings.AiModels.FirstOrDefault(m => m.Id == settings.ActiveAiModelId.Value);
+      var selected = settings.AiModels.FirstOrDefault(m =>
+        m.Id.Value == settings.ActiveAiModelId.Value
+      );
       if (selected != null && IsModelValid(selected))
         return selected;
 
@@ -58,9 +60,9 @@ public class AiServiceFactory
   /// </summary>
   public static bool IsModelValid(AiModelConfig config)
   {
-    return !string.IsNullOrEmpty(config.EndpointUrl)
-      && !string.IsNullOrEmpty(config.ModelId)
-      && !string.IsNullOrEmpty(config.EncryptedApiKey);
+    return !string.IsNullOrEmpty(config.EndpointUrl.Value)
+      && !string.IsNullOrEmpty(config.ModelId.Value)
+      && !string.IsNullOrEmpty(config.EncryptedApiKey.Value);
   }
 
   /// <summary>
@@ -68,11 +70,11 @@ public class AiServiceFactory
   /// </summary>
   public static IAiService CreateService(AiModelConfig config)
   {
-    return config.ApiFormat switch
+    return config.ApiFormat.Value switch
     {
       "OpenAI" => new OpenAiService(config),
       "Anthropic" => new AnthropicService(config),
-      _ => throw new ArgumentException($"不支持的 API 格式: {config.ApiFormat}"),
+      _ => throw new ArgumentException($"不支持的 API 格式: {config.ApiFormat.Value}"),
     };
   }
 }

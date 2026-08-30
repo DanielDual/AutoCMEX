@@ -12,6 +12,7 @@ using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Chickensoft.Log;
+using Chickensoft.Sync.Primitives;
 using Godot;
 
 /// <summary>
@@ -75,16 +76,16 @@ public partial class AiModelConfigPanel : VBoxContainer
     for (int i = 0; i < _settings.AiModels.Count; i++)
     {
       var model = _settings.AiModels[i];
-      var label = string.IsNullOrEmpty(model.ModelId)
-        ? $"(未命名) ({model.ApiFormat})"
-        : $"{model.ModelId} ({model.ApiFormat})";
+      var label = string.IsNullOrEmpty(model.ModelId.Value)
+        ? $"(未命名) ({model.ApiFormat.Value})"
+        : $"{model.ModelId.Value} ({model.ApiFormat.Value})";
       ActiveModelSelect.AddItem(label);
       var itemIdx = i + 1;
 
       if (!AiServiceFactory.IsModelValid(model))
         ActiveModelSelect.SetItemDisabled(itemIdx, true);
 
-      if (model.Id == _settings.ActiveAiModelId.Value)
+      if (model.Id.Value == _settings.ActiveAiModelId.Value)
         selectedIdx = itemIdx;
     }
     ActiveModelSelect.Select(selectedIdx);
@@ -140,8 +141,8 @@ public partial class AiModelConfigPanel : VBoxContainer
   {
     var newModel = new AiModelConfig
     {
-      Id = Guid.NewGuid().ToString("N")[..8],
-      ApiFormat = "OpenAI",
+      Id = new AutoValue<string>(Guid.NewGuid().ToString("N")[..8]),
+      ApiFormat = new AutoValue<string>("OpenAI"),
     };
     _settings.AiModels.Add(newModel);
     _dm?.TriggerAutoSave();

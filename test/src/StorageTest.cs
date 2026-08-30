@@ -7,6 +7,7 @@ using System.Text;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.GoDotTest;
+using Chickensoft.Sync.Primitives;
 using Godot;
 using Shouldly;
 
@@ -229,7 +230,13 @@ public class StorageTest : TestClass
     var encryptor = new AesEncryptor(keyPath);
     var dm = new DataManager(_tempDir, encryptor);
 
-    dm.Settings.AiModels.Add(new AiModelConfig { Id = "test", EncryptedApiKey = "sk-secret-key" });
+    dm.Settings.AiModels.Add(
+      new AiModelConfig
+      {
+        Id = new AutoValue<string>("test"),
+        EncryptedApiKey = new AutoValue<string>("sk-secret-key"),
+      }
+    );
 
     dm.SaveAll();
 

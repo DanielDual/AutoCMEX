@@ -24,11 +24,11 @@ public class AiServiceTest : TestClass
   {
     var config = new AiModelConfig
     {
-      Id = "test",
-      ApiFormat = "OpenAI",
-      EndpointUrl = "https://api.openai.com",
-      ModelId = "gpt-4",
-      EncryptedApiKey = "sk-test",
+      Id = new AutoValue<string>("test"),
+      ApiFormat = new AutoValue<string>("OpenAI"),
+      EndpointUrl = new AutoValue<string>("https://api.openai.com"),
+      ModelId = new AutoValue<string>("gpt-4"),
+      EncryptedApiKey = new AutoValue<string>("sk-test"),
     };
 
     var service = new OpenAiService(config);
@@ -40,11 +40,11 @@ public class AiServiceTest : TestClass
   {
     var config = new AiModelConfig
     {
-      Id = "test",
-      ApiFormat = "Anthropic",
-      EndpointUrl = "https://api.anthropic.com",
-      ModelId = "claude-3",
-      EncryptedApiKey = "sk-test",
+      Id = new AutoValue<string>("test"),
+      ApiFormat = new AutoValue<string>("Anthropic"),
+      EndpointUrl = new AutoValue<string>("https://api.anthropic.com"),
+      ModelId = new AutoValue<string>("claude-3"),
+      EncryptedApiKey = new AutoValue<string>("sk-test"),
     };
 
     var service = new AnthropicService(config);
@@ -56,11 +56,11 @@ public class AiServiceTest : TestClass
   {
     var config = new AiModelConfig
     {
-      Id = "test",
-      ApiFormat = "OpenAI",
-      EndpointUrl = "https://api.openai.com",
-      ModelId = "gpt-4",
-      EncryptedApiKey = "sk-test",
+      Id = new AutoValue<string>("test"),
+      ApiFormat = new AutoValue<string>("OpenAI"),
+      EndpointUrl = new AutoValue<string>("https://api.openai.com"),
+      ModelId = new AutoValue<string>("gpt-4"),
+      EncryptedApiKey = new AutoValue<string>("sk-test"),
     };
 
     var tmpDir = Path.Combine(Path.GetTempPath(), $"AutoCMEX_Test_{System.Guid.NewGuid():N}");
@@ -98,10 +98,10 @@ public class AiServiceTest : TestClass
   {
     var config = new AiModelConfig
     {
-      Id = "test",
-      EndpointUrl = "https://api.openai.com",
-      ModelId = "gpt-4",
-      EncryptedApiKey = "sk-test",
+      Id = new AutoValue<string>("test"),
+      EndpointUrl = new AutoValue<string>("https://api.openai.com"),
+      ModelId = new AutoValue<string>("gpt-4"),
+      EncryptedApiKey = new AutoValue<string>("sk-test"),
     };
 
     IAiService service = new OpenAiService(config);
@@ -113,11 +113,11 @@ public class AiServiceTest : TestClass
   {
     var config = new AiModelConfig
     {
-      Id = "test",
-      ApiFormat = "Anthropic",
-      EndpointUrl = "https://api.anthropic.com",
-      ModelId = "claude-3",
-      EncryptedApiKey = "sk-test",
+      Id = new AutoValue<string>("test"),
+      ApiFormat = new AutoValue<string>("Anthropic"),
+      EndpointUrl = new AutoValue<string>("https://api.anthropic.com"),
+      ModelId = new AutoValue<string>("claude-3"),
+      EncryptedApiKey = new AutoValue<string>("sk-test"),
     };
 
     IAiService service = new AnthropicService(config);
@@ -136,11 +136,11 @@ public class AiServiceTest : TestClass
 
       var openAiConfig = new AiModelConfig
       {
-        Id = "openai-1",
-        ApiFormat = "OpenAI",
-        EndpointUrl = "https://api.openai.com",
-        ModelId = "gpt-4",
-        EncryptedApiKey = "sk-test",
+        Id = new AutoValue<string>("openai-1"),
+        ApiFormat = new AutoValue<string>("OpenAI"),
+        EndpointUrl = new AutoValue<string>("https://api.openai.com"),
+        ModelId = new AutoValue<string>("gpt-4"),
+        EncryptedApiKey = new AutoValue<string>("sk-test"),
       };
       dm.Settings.AiModels.Add(openAiConfig);
       dm.Settings.ActiveAiModelId.Value = "openai-1";
@@ -190,11 +190,11 @@ public class AiServiceTest : TestClass
 
       var incompleteConfig = new AiModelConfig
       {
-        Id = "bad-1",
-        ApiFormat = "OpenAI",
-        EndpointUrl = "",
-        ModelId = "",
-        EncryptedApiKey = "",
+        Id = new AutoValue<string>("bad-1"),
+        ApiFormat = new AutoValue<string>("OpenAI"),
+        EndpointUrl = new AutoValue<string>(""),
+        ModelId = new AutoValue<string>(""),
+        EncryptedApiKey = new AutoValue<string>(""),
       };
       dm.Settings.AiModels.Add(incompleteConfig);
       dm.Settings.ActiveAiModelId.Value = "bad-1";
@@ -214,25 +214,25 @@ public class AiServiceTest : TestClass
   {
     var valid = new AiModelConfig
     {
-      EndpointUrl = "https://api.example.com",
-      ModelId = "test-model",
-      EncryptedApiKey = "key123",
+      EndpointUrl = new AutoValue<string>("https://api.example.com"),
+      ModelId = new AutoValue<string>("test-model"),
+      EncryptedApiKey = new AutoValue<string>("key123"),
     };
     AiServiceFactory.IsModelValid(valid).ShouldBeTrue();
 
     var missingUrl = new AiModelConfig
     {
-      EndpointUrl = "",
-      ModelId = "test-model",
-      EncryptedApiKey = "key123",
+      EndpointUrl = new AutoValue<string>(""),
+      ModelId = new AutoValue<string>("test-model"),
+      EncryptedApiKey = new AutoValue<string>("key123"),
     };
     AiServiceFactory.IsModelValid(missingUrl).ShouldBeFalse();
 
     var missingKey = new AiModelConfig
     {
-      EndpointUrl = "https://api.example.com",
-      ModelId = "test-model",
-      EncryptedApiKey = "",
+      EndpointUrl = new AutoValue<string>("https://api.example.com"),
+      ModelId = new AutoValue<string>("test-model"),
+      EncryptedApiKey = new AutoValue<string>(""),
     };
     AiServiceFactory.IsModelValid(missingKey).ShouldBeFalse();
   }

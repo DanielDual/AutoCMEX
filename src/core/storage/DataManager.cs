@@ -123,9 +123,9 @@ public class DataManager : IDisposable
     // 解密 API 密钥
     foreach (var model in _settings.AiModels)
     {
-      if (!string.IsNullOrEmpty(model.EncryptedApiKey))
+      if (!string.IsNullOrEmpty(model.EncryptedApiKey.Value))
       {
-        model.EncryptedApiKey = _encryptor.Decrypt(model.EncryptedApiKey);
+        model.EncryptedApiKey.Value = _encryptor.Decrypt(model.EncryptedApiKey.Value);
       }
     }
   }
@@ -231,9 +231,9 @@ public class DataManager : IDisposable
     // 保存前加密 API 密钥
     foreach (var model in clone.AiModels)
     {
-      if (!string.IsNullOrEmpty(model.EncryptedApiKey))
+      if (!string.IsNullOrEmpty(model.EncryptedApiKey.Value))
       {
-        model.EncryptedApiKey = _encryptor.Encrypt(model.EncryptedApiKey);
+        model.EncryptedApiKey.Value = _encryptor.Encrypt(model.EncryptedApiKey.Value);
       }
     }
 

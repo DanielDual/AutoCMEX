@@ -27,18 +27,21 @@ public class OpenAiService : IAiService, IDisposable
     _config = config;
     _log = log;
     _httpClient = new HttpClient { Timeout = TimeSpan.FromSeconds(timeoutSeconds) };
-    _httpClient.DefaultRequestHeaders.Add("Authorization", $"Bearer {config.EncryptedApiKey}");
+    _httpClient.DefaultRequestHeaders.Add(
+      "Authorization",
+      $"Bearer {config.EncryptedApiKey.Value}"
+    );
   }
 
   /// <inheritdoc/>
   public async Task<string> ChatAsync(string systemPrompt, string userMessage)
   {
-    var url = _config.EndpointUrl.TrimEnd('/') + "/chat/completions";
-    _log.Print($"OpenAI ChatAsync request: model={_config.ModelId}, url={url}");
+    var url = _config.EndpointUrl.Value.TrimEnd('/') + "/chat/completions";
+    _log.Print($"OpenAI ChatAsync request: model={_config.ModelId.Value}, url={url}");
 
     var requestBody = new
     {
-      model = _config.ModelId,
+      model = _config.ModelId.Value,
       messages = new object[]
       {
         new { role = "system", content = systemPrompt },

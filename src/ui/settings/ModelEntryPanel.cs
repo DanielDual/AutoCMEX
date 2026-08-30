@@ -60,24 +60,24 @@ public partial class ModelEntryPanel : VBoxContainer
     _model = model;
     _dm = dm;
 
-    FormatOption.Select(model.ApiFormat == "Anthropic" ? 1 : 0);
-    UrlInput.Text = model.EndpointUrl;
-    ModelIdInput.Text = model.ModelId;
-    KeyInput.Text = model.EncryptedApiKey;
+    FormatOption.Select(model.ApiFormat.Value == "Anthropic" ? 1 : 0);
+    UrlInput.Text = model.EndpointUrl.Value;
+    ModelIdInput.Text = model.ModelId.Value;
+    KeyInput.Text = model.EncryptedApiKey.Value;
 
     UrlInput.TextChanged += (text) =>
     {
-      _model.EndpointUrl = text;
+      _model.EndpointUrl.Value = text;
       _dm?.TriggerAutoSave();
     };
     ModelIdInput.TextChanged += (text) =>
     {
-      _model.ModelId = text;
+      _model.ModelId.Value = text;
       _dm?.TriggerAutoSave();
     };
     KeyInput.TextChanged += (text) =>
     {
-      _model.EncryptedApiKey = text;
+      _model.EncryptedApiKey.Value = text;
       _dm?.TriggerAutoSave();
     };
   }
@@ -109,7 +109,7 @@ public partial class ModelEntryPanel : VBoxContainer
 
   private void OnFormatChanged(long index)
   {
-    _model.ApiFormat = index == 1 ? "Anthropic" : "OpenAI";
+    _model.ApiFormat.Value = index == 1 ? "Anthropic" : "OpenAI";
     _dm?.TriggerAutoSave();
   }
 

@@ -143,10 +143,10 @@ public class GuessProcessingServiceTest : TestClass
     public override AiModelConfig GetActiveModelConfig() =>
       new()
       {
-        Id = "fake-model",
-        EndpointUrl = "https://example.com",
-        ModelId = "fake-model",
-        EncryptedApiKey = "fake-key",
+        Id = new AutoValue<string>("fake-model"),
+        EndpointUrl = new AutoValue<string>("https://example.com"),
+        ModelId = new AutoValue<string>("fake-model"),
+        EncryptedApiKey = new AutoValue<string>("fake-key"),
       };
   }
 
