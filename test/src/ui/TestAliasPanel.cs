@@ -36,6 +36,7 @@ public class TestAliasPanel : TestClass
     _toCleanup.Add(_panel);
 
     var tree = new Tree();
+    tree.Columns = 2;
     TestScene.AddChild(tree);
     _toCleanup.Add(tree);
     _aliasTree = new Mock<ITree>();

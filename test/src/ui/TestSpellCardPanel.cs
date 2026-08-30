@@ -37,6 +37,7 @@ public class TestSpellCardPanel : TestClass
     _toCleanup.Add(_panel);
 
     var tree = new Tree();
+    tree.Columns = 3;
     TestScene.AddChild(tree);
     _toCleanup.Add(tree);
     _spellCardTree = new Mock<ITree>();
