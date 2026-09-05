@@ -17,7 +17,7 @@ using Godot;
 /// 设置板块脚本 — 使用静态场景实例，不再动态构建 UI
 /// </summary>
 [Meta(typeof(IAutoNode))]
-public partial class SettingsPanel : Control
+public partial class SettingsPanel : Control, ISettingsPanel
 {
   #region AutoConnect Nodes
 
@@ -31,10 +31,10 @@ public partial class SettingsPanel : Control
   public IControl ConfigArea { get; set; } = default!;
 
   [Node("%AiModelConfigPanel")]
-  public IControl AiModelConfigPanel { get; set; } = default!;
+  public IAiModelConfigPanel AiModelConfigPanel { get; set; } = default!;
 
   [Node("%ChatConfigPanel")]
-  public IControl ChatConfigPanel { get; set; } = default!;
+  public IChatConfigPanel ChatConfigPanel { get; set; } = default!;
 
   #endregion
 
@@ -70,9 +70,11 @@ public partial class SettingsPanel : Control
     CategoryList.ItemSelected += OnCategorySelected;
     SearchBar.TextChanged += OnSearchChanged;
 
-    // 默认隐藏所有配置面板
-    AiModelConfigPanel.Visible = false;
-    ChatConfigPanel.Visible = false;
+    // 默认隐藏所有配置面板（配置子面板脚本类均为 Control 子类）
+    if (AiModelConfigPanel is Control aiModelPanel)
+      aiModelPanel.Visible = false;
+    if (ChatConfigPanel is Control chatPanel)
+      chatPanel.Visible = false;
   }
 
   public void OnResolved()
@@ -102,17 +104,21 @@ public partial class SettingsPanel : Control
   private void RefreshConfigArea()
   {
     // 隐藏所有面板
-    AiModelConfigPanel.Visible = false;
-    ChatConfigPanel.Visible = false;
+    if (AiModelConfigPanel is Control aiModelPanel)
+      aiModelPanel.Visible = false;
+    if (ChatConfigPanel is Control chatPanel)
+      chatPanel.Visible = false;
 
     // 显示当前类别对应的面板
     switch (_currentCategory)
     {
       case 0:
-        AiModelConfigPanel.Visible = true;
+        if (AiModelConfigPanel is Control aiModelPanelVisible)
+          aiModelPanelVisible.Visible = true;
         break;
       case 1:
-        ChatConfigPanel.Visible = true;
+        if (ChatConfigPanel is Control chatPanelVisible)
+          chatPanelVisible.Visible = true;
         break;
       default:
         // 其他类别暂无独立场景，保持隐藏

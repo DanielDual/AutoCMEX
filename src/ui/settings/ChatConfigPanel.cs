@@ -16,7 +16,7 @@ using Godot;
 /// 群聊配置面板 — 独立场景，管理 WebSocket 和消息筛选配置
 /// </summary>
 [Meta(typeof(IAutoNode))]
-public partial class ChatConfigPanel : VBoxContainer
+public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
 {
   [Node("%PortInput")]
   public ISpinBox PortInput { get; set; } = default!;

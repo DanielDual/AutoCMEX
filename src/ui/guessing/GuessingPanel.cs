@@ -21,7 +21,7 @@ using Godot;
 /// 猜测板块脚本 - 协调符卡表、别名表、猜测处理和丢包子节点
 /// </summary>
 [Meta(typeof(IAutoNode))]
-public partial class GuessingPanel : Control
+public partial class GuessingPanel : Control, IGuessingPanel
 {
   #region AutoConnect Nodes
 

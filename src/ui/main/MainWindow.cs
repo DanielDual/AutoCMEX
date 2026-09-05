@@ -9,7 +9,9 @@ using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Core.WebSocket;
 using AutoCMEX.Models;
+using AutoCMEX.UI.Guessing;
 using AutoCMEX.UI.Logging;
+using AutoCMEX.UI.Settings;
 using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
@@ -68,25 +70,25 @@ public partial class MainWindow
   #region Panel Nodes (instanced in scene)
 
   [Node("%MergePanel")]
-  public IControl MergePanelNode { get; set; } = default!;
+  public Control MergePanelNode { get; set; } = default!;
 
   [Node("%GuessingPanel")]
-  public IControl GuessingPanelNode { get; set; } = default!;
+  public IGuessingPanel GuessingPanelNode { get; set; } = default!;
 
   [Node("%InfoPanel")]
-  public IControl InfoPanelNode { get; set; } = default!;
+  public Control InfoPanelNode { get; set; } = default!;
 
   [Node("%SettingsPanel")]
-  public IControl SettingsPanelNode { get; set; } = default!;
+  public ISettingsPanel SettingsPanelNode { get; set; } = default!;
 
   [Node("%HelpPanel")]
-  public IControl HelpPanelNode { get; set; } = default!;
+  public Control HelpPanelNode { get; set; } = default!;
 
   [Node("%LogPanel")]
-  public IControl LogPanelNode { get; set; } = default!;
+  public ILogPanel LogPanelNode { get; set; } = default!;
 
   [Node("%WebSocketPanel")]
-  public IControl WebSocketPanelNode { get; set; } = default!;
+  public IWebSocketPanel WebSocketPanelNode { get; set; } = default!;
 
   #endregion
 
@@ -116,14 +118,14 @@ public partial class MainWindow
 
   #endregion
 
-  private readonly Dictionary<string, INode> _panels = new();
+  private readonly Dictionary<string, Control> _panels = new();
   private readonly Dictionary<string, IButton> _navButtons = new();
 
   private AutoValue<string>.Binding? _webSocketModeBinding;
   private AutoValue<int>.Binding? _webSocketPortBinding;
   private AutoValue<string>.Binding? _koishiWebSocketUrlBinding;
 
-  private IControl? _currentPanel;
+  private Control? _currentPanel;
   private const string DefaultPanel = "guessing";
 
   public override void _Notification(int what) => this.Notify(what);
@@ -206,14 +208,14 @@ public partial class MainWindow
     LogBtn.Pressed += () => SwitchPanel("logging");
     WebSocketBtn.Pressed += () => SwitchPanel("websocket");
 
-    // 注册场景中的面板
-    _panels["merge"] = MergePanelNode;
-    _panels["guessing"] = GuessingPanelNode;
-    _panels["info"] = InfoPanelNode;
-    _panels["settings"] = SettingsPanelNode;
-    _panels["help"] = HelpPanelNode;
-    _panels["logging"] = LogPanelNode;
-    _panels["websocket"] = WebSocketPanelNode;
+    // 注册场景中的面板（统一转成 Godot Control，供板块切换时控制 Visible）
+    _panels["merge"] = ToControl(MergePanelNode);
+    _panels["guessing"] = ToControl(GuessingPanelNode);
+    _panels["info"] = ToControl(InfoPanelNode);
+    _panels["settings"] = ToControl(SettingsPanelNode);
+    _panels["help"] = ToControl(HelpPanelNode);
+    _panels["logging"] = ToControl(LogPanelNode);
+    _panels["websocket"] = ToControl(WebSocketPanelNode);
 
     SwitchPanel(DefaultPanel);
 
@@ -238,7 +240,7 @@ public partial class MainWindow
     _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
     // 更新面板绑定：通过接口解耦，避免具体类型检查
-    if (WebSocketPanelNode is INodeAdapter adapter && adapter.TargetObj is IWebSocketPanel panel)
+    if (WebSocketPanelNode is IWebSocketPanel panel)
     {
       panel.UpdateServer(_webSocketServer, _dataManager.Settings.WebSocketMode.Value);
     }
@@ -260,11 +262,8 @@ public partial class MainWindow
       _currentPanel.Visible = false;
 
     // 显示目标面板
-    if (panel is IControl control)
-    {
-      control.Visible = true;
-      _currentPanel = control;
-    }
+    panel.Visible = true;
+    _currentPanel = panel;
 
     // 更新按钮状态
     foreach (var (k, btn) in _navButtons)
@@ -272,4 +271,17 @@ public partial class MainWindow
       btn.Disabled = k == key;
     }
   }
+
+  /// <summary>
+  /// 将 <c>[Node]</c> 属性解析出的面板对象统一转为 Godot <see cref="Control"/>，
+  /// 以便通过 <see cref="Control.Visible"/> 切换板块显示。
+  /// 脚本面板实例本身是 <c>Control</c> 子类；原生面板经适配器包装，取其 <see cref="INodeAdapter.TargetObj"/>。
+  /// </summary>
+  private static Control? ToControl(object panel) =>
+    panel switch
+    {
+      Control c => c,
+      INodeAdapter a => a.TargetObj as Control,
+      _ => null,
+    };
 }

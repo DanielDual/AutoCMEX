@@ -18,7 +18,7 @@ using Godot;
 /// <para>日志配置由独立的 LogConfigPanel 子场景处理。</para>
 /// </remarks>
 [Meta(typeof(IAutoNode))]
-public partial class LogPanel : Control
+public partial class LogPanel : Control, ILogPanel
 {
   #region AutoConnect Nodes
 

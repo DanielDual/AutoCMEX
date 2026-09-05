@@ -19,7 +19,7 @@ using Godot;
 /// AI 模型配置面板 — 独立场景，管理 AI 模型的选择、编辑和测试
 /// </summary>
 [Meta(typeof(IAutoNode))]
-public partial class AiModelConfigPanel : VBoxContainer
+public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
 {
   [Node("%ActiveModelSelect")]
   public IOptionButton ActiveModelSelect { get; set; } = default!;
@@ -106,6 +106,10 @@ public partial class AiModelConfigPanel : VBoxContainer
     {
       var entry = GD.Load<PackedScene>("res://src/ui/settings/ModelEntryPanel.tscn")
         .Instantiate<ModelEntryPanel>();
+
+      // 先加入节点树，触发 AutoConnect 连接其 [Node] 子节点，再执行 Setup，
+      // 避免在 Setup 访问 FormatOption 等节点时它们尚未解析（此前抛 NullReferenceException）。
+      ModelList.AddChild(entry);
       entry.Setup(model, _dm);
       entry.SetTestCallback(() => TestModelConnection(model));
       entry.SetDeleteCallback(() =>
@@ -114,7 +118,6 @@ public partial class AiModelConfigPanel : VBoxContainer
         _dm?.TriggerAutoSave();
         Refresh();
       });
-      ModelList.AddChild(entry);
     }
   }
 
