@@ -12,6 +12,7 @@ public sealed class SpellCardPanelDriver : IDisposable
 {
   public SpellCardPanel Panel { get; }
   public Mock<ITree> SpellCardTree { get; }
+  public Mock<IOptionButton> BossSelect { get; }
   public Mock<IButton> ImportCardBtn { get; }
   public Mock<IButton> ExportCardBtn { get; }
   public Mock<IButton> AddBossBtn { get; }
@@ -27,6 +28,7 @@ public sealed class SpellCardPanelDriver : IDisposable
     (Panel as IAutoInit).IsTesting = true;
 
     SpellCardTree = new Mock<ITree>();
+    BossSelect = new Mock<IOptionButton>();
     ImportCardBtn = new Mock<IButton>();
     ExportCardBtn = new Mock<IButton>();
     AddBossBtn = new Mock<IButton>();
@@ -40,6 +42,7 @@ public sealed class SpellCardPanelDriver : IDisposable
       new()
       {
         ["%SpellCardTree"] = SpellCardTree.Object,
+        ["%BossSelect"] = BossSelect.Object,
         ["%ImportCardBtn"] = ImportCardBtn.Object,
         ["%ExportCardBtn"] = ExportCardBtn.Object,
         ["%AddBossBtn"] = AddBossBtn.Object,
