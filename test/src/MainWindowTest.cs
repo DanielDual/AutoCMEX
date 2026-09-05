@@ -1,7 +1,11 @@
 namespace AutoCMEX;
 
 using System.Collections.Generic;
+using AutoCMEX.UI.Guessing;
+using AutoCMEX.UI.Logging;
 using AutoCMEX.UI.Main;
+using AutoCMEX.UI.Settings;
+using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
@@ -17,13 +21,14 @@ public class MainWindowTest : TestClass
   private MainWindow _mainWindow = default!;
   private readonly List<Node> _toCleanup = new();
 
-  private Mock<IControl> _mergePanel = default!;
-  private Mock<IControl> _guessingPanel = default!;
-  private Mock<IControl> _infoPanel = default!;
-  private Mock<IControl> _settingsPanel = default!;
-  private Mock<IControl> _helpPanel = default!;
-  private Mock<IControl> _logPanel = default!;
-  private Mock<IControl> _webSocketPanel = default!;
+  // 脚本面板：使用真实面板实例（实现各自接口）。无脚本面板：使用原生 Control。
+  private Control _mergePanel = default!;
+  private GuessingPanel _guessingPanel = default!;
+  private Control _infoPanel = default!;
+  private SettingsPanel _settingsPanel = default!;
+  private Control _helpPanel = default!;
+  private LogPanel _logPanel = default!;
+  private WebSocketPanel _webSocketPanel = default!;
 
   private Mock<IButton> _mergeBtn = default!;
   private Mock<IButton> _guessingBtn = default!;
@@ -54,30 +59,31 @@ public class MainWindowTest : TestClass
     _logBtn = new Mock<IButton>();
     _webSocketBtn = new Mock<IButton>();
 
-    _mergePanel = new Mock<IControl>();
-    _guessingPanel = new Mock<IControl>();
-    _infoPanel = new Mock<IControl>();
-    _settingsPanel = new Mock<IControl>();
-    _helpPanel = new Mock<IControl>();
-    _logPanel = new Mock<IControl>();
-    _webSocketPanel = new Mock<IControl>();
+    // 脚本面板：真实实例直接赋给 [Node] 属性（已赋值属性会被 AutoConnect 跳过）。
+    // 原生（无脚本）面板：属性类型为 IControl，经 Adapt 得到 IControl 适配器，TargetObj 指向真实 Control。
+    _mergePanel = new Control();
+    _guessingPanel = new GuessingPanel();
+    _infoPanel = new Control();
+    _settingsPanel = new SettingsPanel();
+    _helpPanel = new Control();
+    _logPanel = new LogPanel();
+    _webSocketPanel = new WebSocketPanel();
 
-    // 面板 Visible 属性需要 SetupProperty 才能验证切换行为
-    foreach (
-      var panel in new[]
-      {
-        _mergePanel,
-        _guessingPanel,
-        _infoPanel,
-        _settingsPanel,
-        _helpPanel,
-        _logPanel,
-        _webSocketPanel,
-      }
-    )
-    {
-      panel.SetupProperty(m => m.Visible, false);
-    }
+    _mainWindow.MergePanelNode = _mergePanel;
+    _mainWindow.GuessingPanelNode = _guessingPanel;
+    _mainWindow.InfoPanelNode = _infoPanel;
+    _mainWindow.SettingsPanelNode = _settingsPanel;
+    _mainWindow.HelpPanelNode = _helpPanel;
+    _mainWindow.LogPanelNode = _logPanel;
+    _mainWindow.WebSocketPanelNode = _webSocketPanel;
+
+    // 模拟 .tscn 初始状态：默认面板 guessing 可见，其余面板隐藏
+    _mergePanel.Visible = false;
+    _infoPanel.Visible = false;
+    _settingsPanel.Visible = false;
+    _helpPanel.Visible = false;
+    _logPanel.Visible = false;
+    _webSocketPanel.Visible = false;
 
     _mainWindow.FakeNodeTree(
       new()
@@ -91,13 +97,6 @@ public class MainWindowTest : TestClass
         ["%HelpBtn"] = _helpBtn.Object,
         ["%LogBtn"] = _logBtn.Object,
         ["%WebSocketBtn"] = _webSocketBtn.Object,
-        ["%MergePanel"] = _mergePanel.Object,
-        ["%GuessingPanel"] = _guessingPanel.Object,
-        ["%InfoPanel"] = _infoPanel.Object,
-        ["%SettingsPanel"] = _settingsPanel.Object,
-        ["%HelpPanel"] = _helpPanel.Object,
-        ["%LogPanel"] = _logPanel.Object,
-        ["%WebSocketPanel"] = _webSocketPanel.Object,
       }
     );
 
@@ -145,28 +144,41 @@ public class MainWindowTest : TestClass
   public void SwitchPanel_ShowsTargetPanel()
   {
     // 初始状态：默认面板 guessing 可见，其余隐藏
-    _guessingPanel.Object.Visible.ShouldBeTrue();
-    _mergePanel.Object.Visible.ShouldBeFalse();
-    _logPanel.Object.Visible.ShouldBeFalse();
-    _webSocketPanel.Object.Visible.ShouldBeFalse();
+    _guessingPanel.Visible.ShouldBeTrue();
+    _mergePanel.Visible.ShouldBeFalse();
+    _logPanel.Visible.ShouldBeFalse();
+    _webSocketPanel.Visible.ShouldBeFalse();
 
     // 切换到 merge 面板
     _mergeBtn.Raise(b => b.Pressed += null);
 
     // 目标面板可见，原面板隐藏
-    _mergePanel.Object.Visible.ShouldBeTrue();
-    _guessingPanel.Object.Visible.ShouldBeFalse();
+    _mergePanel.Visible.ShouldBeTrue();
+    _guessingPanel.Visible.ShouldBeFalse();
 
-    // 切换到 logging 面板（INode 适配器在运行时实现 IControl）
+    // 切换到 logging 面板
     _logBtn.Raise(b => b.Pressed += null);
 
-    _logPanel.Object.Visible.ShouldBeTrue();
-    _mergePanel.Object.Visible.ShouldBeFalse();
+    _logPanel.Visible.ShouldBeTrue();
+    _mergePanel.Visible.ShouldBeFalse();
 
     // 切换到 websocket 面板
     _webSocketBtn.Raise(b => b.Pressed += null);
 
-    _webSocketPanel.Object.Visible.ShouldBeTrue();
-    _logPanel.Object.Visible.ShouldBeFalse();
+    _webSocketPanel.Visible.ShouldBeTrue();
+    _logPanel.Visible.ShouldBeFalse();
+  }
+
+  [Test]
+  public void MainWindow_PanelNodes_ExposeInterfaces()
+  {
+    // 脚本面板以对应接口类型暴露；无脚本面板以 Control 类型暴露
+    _mainWindow.GuessingPanelNode.ShouldBeAssignableTo<IGuessingPanel>();
+    _mainWindow.SettingsPanelNode.ShouldBeAssignableTo<ISettingsPanel>();
+    _mainWindow.LogPanelNode.ShouldBeAssignableTo<ILogPanel>();
+    _mainWindow.WebSocketPanelNode.ShouldBeAssignableTo<IWebSocketPanel>();
+    _mainWindow.MergePanelNode.ShouldBeAssignableTo<Control>();
+    _mainWindow.InfoPanelNode.ShouldBeAssignableTo<Control>();
+    _mainWindow.HelpPanelNode.ShouldBeAssignableTo<Control>();
   }
 }

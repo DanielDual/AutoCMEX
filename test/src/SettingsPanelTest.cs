@@ -41,8 +41,6 @@ public class SettingsPanelTest : TestClass
     searchBar.SetupProperty(m => m.PlaceholderText);
     _categoryList = new Mock<IItemList>();
     var configArea = new Mock<IControl>();
-    var aiModelConfigPanel = new Mock<IControl>();
-    var chatConfigPanel = new Mock<IControl>();
 
     _panel.FakeNodeTree(
       new()
@@ -50,10 +48,12 @@ public class SettingsPanelTest : TestClass
         ["%SearchBar"] = searchBar.Object,
         ["%CategoryList"] = _categoryList.Object,
         ["%ConfigArea"] = configArea.Object,
-        ["%AiModelConfigPanel"] = aiModelConfigPanel.Object,
-        ["%ChatConfigPanel"] = chatConfigPanel.Object,
       }
     );
+
+    // 配置子面板使用真实实例直接赋给 [Node] 属性（已赋值属性会被 AutoConnect 跳过）。
+    _panel.AiModelConfigPanel = new AiModelConfigPanel();
+    _panel.ChatConfigPanel = new ChatConfigPanel();
 
     _panel.FakeDependency<DataManager>(_dm);
     _panel._Notification((int)Node.NotificationEnterTree);
@@ -102,5 +102,19 @@ public class SettingsPanelTest : TestClass
       m => m.AddItem(It.IsAny<string>(), It.IsAny<Texture2D>(), It.IsAny<bool>()),
       Times.Exactly(7)
     );
+  }
+
+  [Test]
+  public void SettingsPanel_AiModelConfigPanel_IsInterface()
+  {
+    _panel.AiModelConfigPanel.ShouldNotBeNull();
+    _panel.AiModelConfigPanel.ShouldBeAssignableTo<IAiModelConfigPanel>();
+  }
+
+  [Test]
+  public void SettingsPanel_ChatConfigPanel_IsInterface()
+  {
+    _panel.ChatConfigPanel.ShouldNotBeNull();
+    _panel.ChatConfigPanel.ShouldBeAssignableTo<IChatConfigPanel>();
   }
 }
