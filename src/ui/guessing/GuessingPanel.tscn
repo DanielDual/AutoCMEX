@@ -18,10 +18,6 @@ offset_bottom = 259.0
 split_offsets = PackedInt32Array(40)
 split_offset = 40
 
-[node name="BossSelect" type="OptionButton" parent="MainContainer" unique_id=1449519279]
-unique_name_in_owner = true
-layout_mode = 2
-
 [node name="ContentArea" type="HBoxContainer" parent="MainContainer" unique_id=234324132]
 layout_mode = 2
 size_flags_vertical = 3
@@ -30,12 +26,12 @@ size_flags_vertical = 3
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="SpellCardPanel" parent="MainContainer/ContentArea/LeftSplit" unique_id=1291741918 instance=ExtResource("2_spellcard")]
+[node name="SpellCardPanel" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=1291741918 instance=ExtResource("2_spellcard")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
-[node name="AliasPanel" parent="MainContainer/ContentArea/LeftSplit" unique_id=1330251026 instance=ExtResource("3_alias")]
+[node name="AliasPanel" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=1330251026 instance=ExtResource("3_alias")]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
