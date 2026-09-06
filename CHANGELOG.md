@@ -35,6 +35,8 @@
 - **运行时 KeyNotFoundException（面板接口适配缺失）**：`GuessingPanel`/`AiModelConfigPanel` 等自定义脚本面板被父级 `[Node]` 引用时，AutoInject 的非泛型 `AdaptNode` 无法按自定义运行时类型获取节点接口适配器而抛 `KeyNotFoundException`（连带 `SettingsPanel.OnReady`、`ModelEntryPanel.Setup` 的 `NullReferenceException`）。修复：新增 `IGuessingPanel`/`ISettingsPanel`/`ILogPanel`/`IAiModelConfigPanel`/`IChatConfigPanel` 接口并由对应面板实现，`MainWindow`/`SettingsPanel` 的 `[Node]` 属性类型改为对应接口（无脚本面板改用 Godot `Control`）；`AiModelConfigPanel` 修正 `ModelEntryPanel` 先加入节点树再 `Setup` 的时序 bug
 - **符卡面板导入后显示空白**：重构将 `SpellCardPanel` 提为独立子场景时丢失了 Boss 选择器——`RefreshBossSelect()` 空实现、`_currentBoss` 从未被 UI 赋值，原 `BossSelect` 下拉残留在父场景 `GuessingPanel.tscn` 却无脚本引用。导致即便成功导入"符卡—创作者表"，`_currentBoss` 仍为 `null` 使树恒为空。修复：将 `BossSelect` 下拉移入 `SpellCardPanel` 自身场景；面板改为**纯 Sync 绑定驱动**——当前 Boss 以 `AppSettings.SelectedBossIndex`（`AutoValue<int>`）为单一数据源（与猜测流程共享），`Bosses`/`SelectedBossIndex`/当前 Boss `SpellCards` 三条 `Bind()` 自动推送 UI，事件处理器只写数据模型；导入后自动把选中下标规范到首个 Boss，树不再空白。补充回归测试覆盖"导入后自动选中首个 Boss、树非空白"、“越界下标回落”、“空表清空”
 
+- **猜测面板丢包按钮被挤出窗口**（`GuessingPanel` 布局）：`MainContainer` 为 `VSplitContainer` 却只有一个 pane 且配 `split_offset=40`，又带越界 `offset_right/bottom`，将整块内容钳在顶部并把底部内容推出窗口底缘，`DroppedButtons` 被 `DroppedList` 挤出窗口。修复：`MainContainer` 改 `VBoxContainer` 并全展开、归零越界 offset；`ContentArea` 改 `HSplitContainer` 支持拖动调整左右栏宽度；`DroppedButtons` 加 `custom_minimum_size` 保底防挤出
+
 ### 架构优化
 
 - **丢包仓储提取**：`GuessProcessingService` 的丢包管理抽取为 `IDroppedGuessRepository` / `DroppedGuessRepository`
