@@ -5,21 +5,41 @@
 [node name="VBoxContainer" type="VBoxContainer" unique_id=302423949]
 script = ExtResource("1_7lii7")
 
-[node name="ActiveModelSelect" type="OptionButton" parent="." unique_id=1296581209]
-unique_name_in_owner = true
+[node name="ActiveModelRow" type="HBoxContainer" parent="." unique_id=231000101]
 layout_mode = 2
 
-[node name="TimeoutInput" type="SpinBox" parent="." unique_id=2079732694]
+[node name="ActiveModelLabel" type="Label" parent="ActiveModelRow" unique_id=231000102]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "激活模型:"
+
+[node name="ActiveModelSelect" type="OptionButton" parent="ActiveModelRow" unique_id=1296581209]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="TimeoutRow" type="HBoxContainer" parent="." unique_id=231000103]
+layout_mode = 2
+
+[node name="TimeoutLabel" type="Label" parent="TimeoutRow" unique_id=231000104]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "请求超时(秒):"
+
+[node name="TimeoutInput" type="SpinBox" parent="TimeoutRow" unique_id=2079732694]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="ModelScroll" type="ScrollContainer" parent="." unique_id=2016862795]
 layout_mode = 2
+size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="ModelList" type="VBoxContainer" parent="ModelScroll" unique_id=1103685983]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="AddModelBtn" type="Button" parent="." unique_id=1514831309]
 unique_name_in_owner = true

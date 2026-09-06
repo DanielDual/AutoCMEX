@@ -3,6 +3,7 @@
 [ext_resource type="Script" uid="uid://cpauw1whl7ec6" path="res://src/ui/settings/ModelEntryPanel.cs" id="1_0xnsy"]
 
 [node name="ModelEntryPanel" type="VBoxContainer" unique_id=1540126069]
+size_flags_horizontal = 3
 script = ExtResource("1_0xnsy")
 
 [node name="FormatRow" type="HBoxContainer" parent="." unique_id=987778376]
