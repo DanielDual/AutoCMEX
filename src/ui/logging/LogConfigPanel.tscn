@@ -7,16 +7,34 @@ layout_mode = 3
 anchors_preset = 0
 script = ExtResource("1_uqvur")
 
-[node name="MaxFileCountInput" type="SpinBox" parent="." unique_id=989565566]
+[node name="MaxCountRow" type="HBoxContainer" parent="." unique_id=231000001]
+layout_mode = 2
+
+[node name="MaxCountLabel" type="Label" parent="MaxCountRow" unique_id=231000002]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "最大日志文件数:"
+
+[node name="MaxFileCountInput" type="SpinBox" parent="MaxCountRow" unique_id=989565566]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 min_value = 1.0
 max_value = 1000.0
 value = 30.0
 
-[node name="MinLevelOption" type="OptionButton" parent="." unique_id=308196909]
+[node name="MinLevelRow" type="HBoxContainer" parent="." unique_id=231000003]
+layout_mode = 2
+
+[node name="MinLevelLabel" type="Label" parent="MinLevelRow" unique_id=231000004]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "最低日志级别:"
+
+[node name="MinLevelOption" type="OptionButton" parent="MinLevelRow" unique_id=308196909]
 unique_name_in_owner = true
 layout_mode = 2
+size_flags_horizontal = 3
 
 [node name="ApplyConfigBtn" type="Button" parent="." unique_id=1697423649]
 unique_name_in_owner = true
