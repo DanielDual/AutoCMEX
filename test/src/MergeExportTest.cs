@@ -3,10 +3,13 @@ namespace AutoCMEX;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using AutoCMEX.Core.Merge;
 using AutoCMEX.Core.Storage;
+using AutoCMEX.Models;
 using Chickensoft.GoDotTest;
+using Chickensoft.Sync.Primitives;
 using Godot;
 using Shouldly;
 
@@ -127,5 +130,106 @@ public class MergeExportTest : TestClass
     args[4].ShouldBe("cmex22");
     args[5].ShouldBe("-p");
     args[6].ShouldBe("LuaSTGPlusLib.dll");
+  }
+
+  // ==================== MergeEngine 导出选项落地 ====================
+
+  private const string EngineTemplate =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert spellcards here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert resources here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert objects here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n";
+
+  private const string EnginePackage =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"符「卡」\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[]}\n";
+
+  private string WriteEngineData(string relative, string content)
+  {
+    var path = Path.Combine(_tempDir, relative);
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+    File.WriteAllText(path, content);
+    return path;
+  }
+
+  private string CreateEngineZip()
+  {
+    var lstgesPath = WriteEngineData("pkg/root.lstges", EnginePackage);
+    var zipPath = Path.Combine(_tempDir, "CMEX23_A.zip");
+    using (var fs = File.Create(zipPath))
+    using (var zip = new ZipArchive(fs, ZipArchiveMode.Create))
+      zip.CreateEntryFromFile(lstgesPath, "root.lstges");
+    return zipPath;
+  }
+
+  private DataManager BuildEngineDataManager(bool includeLstges)
+  {
+    var templatePath = WriteEngineData("tmpl/root.lstgproj", EngineTemplate);
+    var zipPath = CreateEngineZip();
+
+    var dm = new DataManager(Path.Combine(_tempDir, "userdata"), new AesEncryptor("test-key"));
+    dm.LoadAll();
+
+    var import = MergeImporter.ImportZip(zipPath);
+    import.IsSuccess.ShouldBeTrue();
+    dm.CreatorPackages.Add(import.Package!);
+    foreach (var card in import.Cards)
+      dm.MergeConfig.Mapping.Add(card);
+
+    dm.MergeConfig.TemplatePath.Value = templatePath;
+    dm.MergeConfig.OutputDir.Value = Path.Combine(_tempDir, "out");
+    dm.MergeConfig.IncludeLstges.Value = includeLstges;
+    dm.MergeConfig.OutputName.Value = "mod";
+    return dm;
+  }
+
+  [Test]
+  public void MergeEngine_IncludeLstgesTrue_DeliversProjectFile()
+  {
+    var dm = BuildEngineDataManager(includeLstges: true);
+    var engine = new MergeEngine(dm, dm.MergeConfig.TemplatePath.Value, true, false);
+    var result = engine.BuildAndMerge();
+
+    result.Error.ShouldBeNull();
+    result.IsSuccess.ShouldBeTrue();
+    engine.MergedProjectPath.ShouldNotBeNullOrEmpty();
+    File.Exists(engine.MergedProjectPath).ShouldBeTrue();
+
+    var delivered = Path.Combine(dm.MergeConfig.OutputDir.Value, "mod.lstgproj");
+    File.Exists(delivered).ShouldBeTrue();
+  }
+
+  [Test]
+  public void MergeEngine_IncludeLstgesFalse_SkipsDeliverButKeepsWorkArtifact()
+  {
+    var dm = BuildEngineDataManager(includeLstges: false);
+    var engine = new MergeEngine(dm, dm.MergeConfig.TemplatePath.Value, false, false);
+    var result = engine.BuildAndMerge();
+
+    result.IsSuccess.ShouldBeTrue();
+    engine.MergedProjectPath.ShouldNotBeNullOrEmpty();
+    File.Exists(engine.MergedProjectPath).ShouldBeTrue();
+
+    var delivered = Path.Combine(dm.MergeConfig.OutputDir.Value, "mod.lstgproj");
+    File.Exists(delivered).ShouldBeFalse();
+  }
+
+  [Test]
+  public void MergeEngine_ExportMapping_WritesCsv_ReadableByImporter()
+  {
+    var dm = BuildEngineDataManager(includeLstges: true);
+    var engine = new MergeEngine(dm, dm.MergeConfig.TemplatePath.Value, true, false);
+    var content = engine.ExportMapping(dm.MergeConfig.OutputDir.Value);
+
+    content.ShouldNotBeEmpty();
+    content.ShouldContain("Boss,符卡名,创作者");
+
+    var csv = Path.Combine(dm.MergeConfig.OutputDir.Value, "spellcard_mapping.csv");
+    File.Exists(csv).ShouldBeTrue();
+
+    var result = new CsvImporter().ImportSpellCardTable(csv);
+    result.IsSuccess.ShouldBeTrue();
   }
 }

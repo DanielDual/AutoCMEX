@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using AutoCMEX.UI.Guessing;
 using AutoCMEX.UI.Logging;
 using AutoCMEX.UI.Main;
+using AutoCMEX.UI.Merge;
 using AutoCMEX.UI.Settings;
 using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
@@ -22,7 +23,7 @@ public class MainWindowTest : TestClass
   private readonly List<Node> _toCleanup = new();
 
   // 脚本面板：使用真实面板实例（实现各自接口）。无脚本面板：使用原生 Control。
-  private Control _mergePanel = default!;
+  private MergePanel _mergePanel = default!;
   private GuessingPanel _guessingPanel = default!;
   private Control _infoPanel = default!;
   private SettingsPanel _settingsPanel = default!;
@@ -61,7 +62,7 @@ public class MainWindowTest : TestClass
 
     // 脚本面板：真实实例直接赋给 [Node] 属性（已赋值属性会被 AutoConnect 跳过）。
     // 原生（无脚本）面板：属性类型为 IControl，经 Adapt 得到 IControl 适配器，TargetObj 指向真实 Control。
-    _mergePanel = new Control();
+    _mergePanel = new MergePanel();
     _guessingPanel = new GuessingPanel();
     _infoPanel = new Control();
     _settingsPanel = new SettingsPanel();
