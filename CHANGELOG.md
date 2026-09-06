@@ -83,3 +83,10 @@
 - **Moq 替代 LightMoq**：测试统一使用 Moq 伪造节点树，与 GameDemo 参考实现一致
 - **补充缺失测试**：新增 `TestSpellCardPanel`/`TestAliasPanel`/`TestWebSocketPanel`/`TestLogPanel`/`TestLogConfigPanel`/`TestAiModelConfigPanel`/`TestChatConfigPanel`
 - **测试 Driver 更新**：所有 Driver 使用 `[Node]` 属性路径（`%` 前缀），消除硬编码路径字符串
+
+### 修复
+
+- **AI 模型列表空白排查与稳健化（设置页）**：设置页「AI 模型」分类下已配置模型列表区域空白（下拉框可正确列出模型）。通过新增真实场景复现测试（`TestModelEntryPanelRuntime`）实证：动态实例化 `ModelEntryPanel` 并 `AddChild` 后 AutoInject 能正常解析其 `[Node]`，整面板真实刷新后 `ModelList` 能渲染条目——装配/刷新链路本身正常，故空白并非来源于此。实际补强两处：
+  1. **激活模型选择缺失**：`AiModelConfigPanel` 此前未连接 `ActiveModelSelect.ItemSelected`，导致用户选择模型时 `ActiveAiModelId` 从不更新（现存数据 `activeAiModelId` 为无效 id）。现已补上选择处理器，写入数据模型。
+  2. **列表迁移到 AutoList 绑定驱动**：`OnResolved` 建立 `_settings.AiModels.Bind().OnModify(...)`，模型增删时列表由绑定自动重建，事件处理器只写数据模型、移除手动 `Refresh()`（符合「禁止手动刷新实现 UI 同步」核心原则）。
+- **布局根因（列表可见）**：用户真机确认 `ModelList` 确有每个模型对应的配置节点但不可见——根因是嵌入面板（`AiModelConfigPanel`/`ChatConfigPanel`）作为 `ConfigArea`（`Control`，非容器、不布局子节点）的实例子节点，未铺满父容器导致根节点高度按内容最小化 ≈0，`ModelScroll`（`ScrollContainer`，Expand）分不到高度，从而列表节点存在但不可见。修复：在 `SettingsPanel.tscn` 中给两个嵌入实例节点手动设置 FullRect anchors（`anchors_preset=15`、`anchor_right/bottom=1.0`、`grow_horizontal/vertical=2`，参考 `MainContainer` 的 anchor 写法）；因 gopeak 无法写入 `Control` 的 anchors 属性，经用户许可手动编辑 `.tscn`。验证：`dotnet build` 0 错误，GoDotTest 220 通过 / 0 失败（含真实场景渲染与 AutoList 绑定重建回归测试）。
