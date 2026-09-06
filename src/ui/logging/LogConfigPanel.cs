@@ -12,7 +12,7 @@ using Godot;
 /// 从 <see cref="LogPanel"/> 中分离，遵循单一职责原则。
 /// </summary>
 [Meta(typeof(IAutoNode))]
-public partial class LogConfigPanel : Control
+public partial class LogConfigPanel : VBoxContainer
 {
   [Node("%MaxFileCountInput")]
   public ISpinBox MaxFileCountInput { get; set; } = default!;
