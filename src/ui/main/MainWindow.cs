@@ -11,6 +11,7 @@ using AutoCMEX.Core.WebSocket;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Guessing;
 using AutoCMEX.UI.Logging;
+using AutoCMEX.UI.Merge;
 using AutoCMEX.UI.Settings;
 using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
@@ -70,7 +71,7 @@ public partial class MainWindow
   #region Panel Nodes (instanced in scene)
 
   [Node("%MergePanel")]
-  public Control MergePanelNode { get; set; } = default!;
+  public IMergePanel MergePanelNode { get; set; } = default!;
 
   [Node("%GuessingPanel")]
   public IGuessingPanel GuessingPanelNode { get; set; } = default!;

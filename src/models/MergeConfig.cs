@@ -26,6 +26,12 @@ public class MergeConfig
   /// <summary>导出是否对 Lua 脚本混淆（默认不混淆）。</summary>
   public AutoValue<bool> ObfuscateLua { get; set; } = new(false);
 
+  /// <summary>冲突处理是否自动改名资源（默认 false，保留原名）。</summary>
+  public AutoValue<bool> AutoRenameConflicts { get; set; } = new(false);
+
+  /// <summary>导出完整项目包时使用的输出名（不含 .zip 后缀）。</summary>
+  public AutoValue<string> OutputName { get; set; } = new("mod");
+
   /// <summary>
   /// 编辑中的「符卡—创作者对应表」（顺序即注入顺序；符卡/非符分开标注）。
   /// </summary>

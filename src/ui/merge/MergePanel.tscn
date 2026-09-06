@@ -1,11 +1,164 @@
 [gd_scene format=3 uid="uid://xa0vkqnpj1n0"]
 
+[ext_resource type="Script" uid="uid://2wmiys2krodb" path="res://src/ui/merge/MergePanel.cs" id="1_merge"]
+
 [node name="Control" type="Control" unique_id=1975754278]
+script = ExtResource("1_merge")
 layout_mode = 3
 anchors_preset = 0
 
-[node name="PlaceholderLabel" type="Label" parent="." unique_id=1432992580]
+[node name="RootSplit" type="HSplitContainer" parent="." unique_id=658828831]
 layout_mode = 0
-text = "整合板块 - 暂不开发"
-horizontal_alignment = 1
-vertical_alignment = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="LeftSplit" type="VSplitContainer" parent="RootSplit" unique_id=904546795]
+custom_minimum_size = Vector2(360, 0)
+layout_mode = 2
+
+[node name="CreatorInfoPane" type="VBoxContainer" parent="RootSplit/LeftSplit" unique_id=433324743]
+custom_minimum_size = Vector2(0, 220)
+layout_mode = 2
+
+[node name="CreatorTitle" type="Label" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=1401613672]
+unique_name_in_owner = true
+layout_mode = 2
+text = "创作者包信息"
+
+[node name="PackageList" type="ItemList" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=1301232438]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="SpellCardList" type="ItemList" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=1650499383]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ResourceList" type="ItemList" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=1319230931]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ObjectList" type="ItemList" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=2072980220]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ImportPackageBtn" type="Button" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=1503667529]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导入创作者包"
+
+[node name="RemovePackageBtn" type="Button" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=181486342]
+unique_name_in_owner = true
+layout_mode = 2
+text = "删除所选包"
+
+[node name="TemplateConfigPane" type="VBoxContainer" parent="RootSplit/LeftSplit" unique_id=1741070288]
+custom_minimum_size = Vector2(0, 220)
+layout_mode = 2
+
+[node name="TemplatePathEdit" type="LineEdit" parent="RootSplit/LeftSplit/TemplateConfigPane" unique_id=466958722]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "工程模板 .lstgproj 路径"
+
+[node name="SharpPathEdit" type="LineEdit" parent="RootSplit/LeftSplit/TemplateConfigPane" unique_id=1532370006]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "LuaSTG Editor Sharp Cli.exe 路径"
+
+[node name="PluginDllEdit" type="LineEdit" parent="RootSplit/LeftSplit/TemplateConfigPane" unique_id=318528803]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "LuaSTGPlusLib.dll 路径"
+
+[node name="InjectionStatusLabel" type="Label" parent="RootSplit/LeftSplit/TemplateConfigPane" unique_id=612560574]
+unique_name_in_owner = true
+layout_mode = 2
+text = "注入点：待导入模板"
+
+[node name="ImportTemplateBtn" type="Button" parent="RootSplit/LeftSplit/TemplateConfigPane" unique_id=1347163224]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导入并检测注入点"
+
+[node name="RightSplit" type="VSplitContainer" parent="RootSplit" unique_id=936113405]
+custom_minimum_size = Vector2(600, 0)
+layout_mode = 2
+
+[node name="MappingPane" type="VBoxContainer" parent="RootSplit/RightSplit" unique_id=1404534403]
+custom_minimum_size = Vector2(0, 220)
+layout_mode = 2
+
+[node name="MappingTitle" type="Label" parent="RootSplit/RightSplit/MappingPane" unique_id=708412415]
+unique_name_in_owner = true
+layout_mode = 2
+text = "对应表（符卡→创作者）"
+
+[node name="MappingList" type="ItemList" parent="RootSplit/RightSplit/MappingPane" unique_id=2029702312]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="MoveUpBtn" type="Button" parent="RootSplit/RightSplit/MappingPane" unique_id=1723937103]
+unique_name_in_owner = true
+layout_mode = 2
+text = "上移"
+
+[node name="MoveDownBtn" type="Button" parent="RootSplit/RightSplit/MappingPane" unique_id=1159909593]
+unique_name_in_owner = true
+layout_mode = 2
+text = "下移"
+
+[node name="ShuffleBtn" type="Button" parent="RootSplit/RightSplit/MappingPane" unique_id=569061557]
+unique_name_in_owner = true
+layout_mode = 2
+text = "随机打乱"
+
+[node name="GroupOption" type="CheckBox" parent="RootSplit/RightSplit/MappingPane" unique_id=623088630]
+unique_name_in_owner = true
+layout_mode = 2
+text = "按创作者分组"
+
+[node name="ExportPane" type="VBoxContainer" parent="RootSplit/RightSplit" unique_id=218646413]
+custom_minimum_size = Vector2(0, 220)
+layout_mode = 2
+
+[node name="IncludeLstgesToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane" unique_id=1172509]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导出包含 .lstges 工程文件"
+
+[node name="ObfuscateLuaToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane" unique_id=621693574]
+unique_name_in_owner = true
+layout_mode = 2
+text = "混淆 Lua 脚本"
+
+[node name="OutputDirEdit" type="LineEdit" parent="RootSplit/RightSplit/ExportPane" unique_id=2128794710]
+unique_name_in_owner = true
+layout_mode = 2
+placeholder_text = "输出目录"
+
+[node name="AutoRenameConflictsToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane" unique_id=1634520156]
+unique_name_in_owner = true
+layout_mode = 2
+text = "冲突自动改名"
+
+[node name="ConflictList" type="ItemList" parent="RootSplit/RightSplit/ExportPane" unique_id=144785272]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="ExportFullPackageBtn" type="Button" parent="RootSplit/RightSplit/ExportPane" unique_id=323153311]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导出完整包"
+
+[node name="ExportMappingBtn" type="Button" parent="RootSplit/RightSplit/ExportPane" unique_id=1390996508]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导出对应表"
