@@ -38,8 +38,17 @@ public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
 
   private DataManager? _dm;
   private AppSettings _settings = new();
+  private AutoList<AiModelConfig>.Binding? _aiModelsBinding;
 
-  public override void _Notification(int what) => this.Notify(what);
+  public override void _Notification(int what)
+  {
+    this.Notify(what);
+    if (what == (int)NotificationExitTree)
+    {
+      _aiModelsBinding?.Dispose();
+      _aiModelsBinding = null;
+    }
+  }
 
   public void OnReady()
   {
@@ -47,6 +56,7 @@ public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
     TimeoutInput.MaxValue = 600;
     TimeoutInput.ValueChanged += OnTimeoutChanged;
     AddModelBtn.Pressed += OnAddModel;
+    ActiveModelSelect.ItemSelected += OnActiveModelSelected;
   }
 
   public void OnResolved()
@@ -55,8 +65,29 @@ public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
     if (_dm != null)
     {
       _settings = _dm.Settings;
+
+      // UI 由 AutoList 绑定驱动：模型列表增删时自动重建刷新，
+      // 事件处理器只写数据模型，不手动推 UI（符合重构核心原则）。
+      _aiModelsBinding = _settings.AiModels.Bind().OnModify(() => CallDeferred(nameof(Refresh)));
       Refresh();
     }
+  }
+
+  /// <summary>
+  /// 用户在下拉中选择模型：写入数据模型（激活模型 ID），由数据消费方读取。
+  /// </summary>
+  private void OnActiveModelSelected(long index)
+  {
+    // 下拉第 0 项为占位「(未选择)」，模型从下标 1 开始
+    var modelIndex = (int)index - 1;
+    if (_settings.AiModels.Count == 0 || modelIndex < 0 || modelIndex >= _settings.AiModels.Count)
+    {
+      _settings.ActiveAiModelId.Value = null;
+      _dm?.TriggerAutoSave();
+      return;
+    }
+    _settings.ActiveAiModelId.Value = _settings.AiModels[modelIndex].Id.Value;
+    _dm?.TriggerAutoSave();
   }
 
   public void Refresh()
@@ -114,9 +145,9 @@ public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
       entry.SetTestCallback(() => TestModelConnection(model));
       entry.SetDeleteCallback(() =>
       {
+        // 只改数据模型；列表 UI 由 AutoList 绑定自动重建
         _settings.AiModels.Remove(model);
         _dm?.TriggerAutoSave();
-        Refresh();
       });
     }
   }
@@ -147,8 +178,8 @@ public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
       Id = new AutoValue<string>(Guid.NewGuid().ToString("N")[..8]),
       ApiFormat = new AutoValue<string>("OpenAI"),
     };
+    // 只改数据模型；列表 UI 由 AutoList 绑定自动重建
     _settings.AiModels.Add(newModel);
     _dm?.TriggerAutoSave();
-    Refresh();
   }
 }
