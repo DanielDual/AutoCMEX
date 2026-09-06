@@ -4,9 +4,7 @@
 
 ### 新增
 
-- **猜测板块**：符卡—创作者对应表导入/编辑、别名表导入/编辑、猜测文本处理管道
-- **AI 服务**：OpenAI 兼容格式与 Anthropic 原生格式 API 集成，支持多模型配置
-- **AI 模糊化**：将非严格格式猜测文本转为严格格式，别名自动转换为主名
+- **整合板块（阶段1）：LuaSTG 工程整合引擎**——解析 `.lstgproj/.lstges`（每行 `{level},{JSON}`）为节点树；按约定 `General.Comment` 注释（`Insert spellcards/resource/objects here`）检测符卡/资源/Object 注入点；抽取 `BossSpellCard` 整棵子树并按 SCName 区分符卡/非符；检测资源节点（`LoadImage/LoadBGM/AddFile` 等）与对象定义（`ObjectDefine/TaskDefine/BulletDefine` 等）；合并器把多创作者包按「符卡→Creator」映射顺序重编号注入模板 Boss，对象/顶层资源折叠到各自注入点并重写路径至纯文件名，收集命名冲突（保留原名 + 可选自动改名建议 `SuggestedName`），深度克隆隔离源包、多注入点每步前重扫避免索引错位；`SharpCliInvoker` 外调 `LuaSTGEditorSharp.Core.Cli.exe`（`-d -n -p`）编译打包 mod zip；对应表导出生成三列（Boss/符卡名/创作者）UTF-8 CSV 供猜测模块 `CsvImporter` 读回
 - **设置板块**：AI 模型配置（CRUD + 测试连接）、群聊配置（WebSocket 端口、消息筛选模式、Koishi 一键安装）
 - **数据存储**：JSON 文件持久化，AES 加密敏感信息，CSV/Excel 导入
 - **WebSocket 服务**：服务端/客户端双模式，支持 Koishi 群聊机器人消息转发
