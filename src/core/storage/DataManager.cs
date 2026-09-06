@@ -24,6 +24,8 @@ public class DataManager : IDisposable
   private AutoList<Boss> _bosses = new();
   private AutoList<CreatorAlias> _aliases = new();
   private AppSettings _settings = new();
+  private AutoList<CreatorPackage> _creatorPackages = new();
+  private MergeConfig _mergeConfig = new();
 
   private CancellationTokenSource? _saveCts;
   private readonly object _saveLock = new();
@@ -34,6 +36,8 @@ public class DataManager : IDisposable
   public AutoList<Boss> Bosses => _bosses;
   public AutoList<CreatorAlias> Aliases => _aliases;
   public AppSettings Settings => _settings;
+  public AutoList<CreatorPackage> CreatorPackages => _creatorPackages;
+  public MergeConfig MergeConfig => _mergeConfig;
 
   private AutoValue<string?>.Binding? _activeAiModelIdBinding;
   private AutoValue<int>.Binding? _webSocketPortBinding;
@@ -87,6 +91,8 @@ public class DataManager : IDisposable
         new AutoListConverter<CreatorAlias>(),
         new AutoListConverter<AiModelConfig>(),
         new AutoListConverter<string>(),
+        new AutoListConverter<CreatorPackage>(),
+        new AutoListConverter<SpellCardMappingEntry>(),
         new AutoValueJsonConverterFactory(),
       },
     };
@@ -115,9 +121,15 @@ public class DataManager : IDisposable
     _settings = LoadJson<AppSettings>("app_settings.json") ?? new();
     // Subscribe to AutoValue changes to notify UI components
     BindSettingsChanges();
+
+    var loadedCreatorPackages = LoadJson<List<CreatorPackage>>("creator_packages.json") ?? new();
+    _creatorPackages = new AutoList<CreatorPackage>(loadedCreatorPackages);
+
+    _mergeConfig = LoadJson<MergeConfig>("merge_config.json") ?? new();
+
     _log.Print(
       $"DataManager.LoadAll: bosses={_bosses.Count}, aliases={_aliases.Count}, "
-        + $"aiModels={_settings.AiModels.Count}"
+        + $"aiModels={_settings.AiModels.Count}, creatorPackages={_creatorPackages.Count}"
     );
 
     // 解密 API 密钥
@@ -195,6 +207,8 @@ public class DataManager : IDisposable
       SaveJson("spellcard_table.json", new List<Boss>(_bosses));
       SaveJson("alias_table.json", new List<CreatorAlias>(_aliases));
       SaveJson("app_settings.json", settingsToSave);
+      SaveJson("creator_packages.json", new List<CreatorPackage>(_creatorPackages));
+      SaveJson("merge_config.json", _mergeConfig);
       _log.Print("DataManager: SaveAll succeeded.");
     }
     catch (Exception ex)
@@ -220,6 +234,8 @@ public class DataManager : IDisposable
     _koishiWebSocketUrlBinding?.Dispose();
     _bosses.Dispose();
     _aliases.Dispose();
+    _creatorPackages.Dispose();
+    _mergeConfig.Mapping.Dispose();
     GC.SuppressFinalize(this);
   }
 
