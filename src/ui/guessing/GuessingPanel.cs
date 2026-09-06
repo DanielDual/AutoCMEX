@@ -319,7 +319,9 @@ public partial class GuessingPanel : Control, IGuessingPanel
     {
       _isRetrying = false;
       RetryDroppedBtn.Text = "重试全部丢包";
-      RefreshDroppedUI();
+      // 丢包列表 UI 由 DroppedGuesses 绑定驱动自动刷新（指示 24：事件只写数据模型），
+      // 此处仅恢复按钮的忙碌禁用状态，不手动推送整个列表。
+      RetryDroppedBtn.Disabled = _isRetrying;
     }
 
     _log.Print($"OnRetryAllDropped: done, success={successCount}, fail={failCount}");
