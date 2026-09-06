@@ -22,6 +22,7 @@
 - **服务抽象层**：提取 IImporter 接口 + ImporterFactory 工厂模式、创建 StringEscapeHelper 工具类、创建 PluginInstaller 服务
 - **UI 层职责分离**：提取 LogConfigPanel、WebSocketPanel 改用 Godot Timer、MainWindow 剥离 WebSocket 初始化到 WebSocketInitializer
 - **架构统一**：GuessProcessingService 合并 ProcessManualAsync/ProcessManagedAsync 为 ProcessAsync、DataManager 使用 ObservableCollection 实现自动 UI 更新、GuessPipeline/AiFuzzifier 改用 IReadOnlyList 接口
+- **丢包重试不再手动刷新 UI**：`GuessingPanel.OnRetryAllDropped()` 事件处理器移除 `finally` 中的手动 `RefreshDroppedUI()`，改为仅恢复按钮忙碌禁用状态，丢包列表 UI 由 `DroppedGuesses`（`AutoList`）绑定 `OnModify` 自动驱动——遵循「事件只写数据模型、UI 由同步绑定传播」的重构核心原则
 
 ### 修复
 
