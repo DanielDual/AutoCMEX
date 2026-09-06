@@ -42,8 +42,18 @@ size_flags_horizontal = 3
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
 
 [node name="ChatConfigPanel" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea" unique_id=2068780662 instance=ExtResource("3_chat")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
