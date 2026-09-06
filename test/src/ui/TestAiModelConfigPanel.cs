@@ -113,4 +113,30 @@ public class TestAiModelConfigPanel : TestClass
   {
     _panel.TimeoutInput.Value.ShouldBe(_dm.Settings.AiTimeoutSeconds.Value);
   }
+
+  [Test]
+  public void ActiveModelSelect_SelectingItem_UpdatesActiveAiModelId()
+  {
+    var model = new AiModelConfig
+    {
+      Id = new Chickensoft.Sync.Primitives.AutoValue<string>("mid-1"),
+      ModelId = new Chickensoft.Sync.Primitives.AutoValue<string>("m1"),
+    };
+    // 通过同一 DataManager 引用追加模型；面板 _settings 与 dm.Settings 同引用
+    _dm.Settings.AiModels.Add(model);
+
+    // 触发下拉选择：占位索引 0，模型从索引 1 开始
+    _activeModelSelect.Raise(m => m.ItemSelected += null, 1L);
+
+    _dm.Settings.ActiveAiModelId.Value.ShouldBe("mid-1");
+  }
+
+  [Test]
+  public void ActiveModelSelect_SelectingPlaceholder_ClearsActiveAiModelId()
+  {
+    // 选中占位「(未选择)」索引 0 → modelIndex = -1 → 清空激活模型
+    _activeModelSelect.Raise(m => m.ItemSelected += null, 0L);
+
+    _dm.Settings.ActiveAiModelId.Value.ShouldBeNull();
+  }
 }
