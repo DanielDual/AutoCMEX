@@ -3,9 +3,9 @@
 [ext_resource type="Script" uid="uid://2wmiys2krodb" path="res://src/ui/merge/MergePanel.cs" id="1_merge"]
 
 [node name="Control" type="Control" unique_id=1975754278]
-script = ExtResource("1_merge")
 layout_mode = 3
 anchors_preset = 0
+script = ExtResource("1_merge")
 
 [node name="RootSplit" type="HSplitContainer" parent="." unique_id=658828831]
 layout_mode = 0
@@ -32,15 +32,27 @@ unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
+[node name="SpellCardTitle" type="Label" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=1785090234]
+layout_mode = 2
+text = "符卡清单（该包内抽出的符卡/非符）"
+
 [node name="SpellCardList" type="ItemList" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=1650499383]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 
+[node name="ResourceTitle" type="Label" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=149445006]
+layout_mode = 2
+text = "资源清单（贴图/音频等引用）"
+
 [node name="ResourceList" type="ItemList" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=1319230931]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+
+[node name="ObjectTitle" type="Label" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=963481093]
+layout_mode = 2
+text = "对象清单（敌机/道具等定义）"
 
 [node name="ObjectList" type="ItemList" parent="RootSplit/LeftSplit/CreatorInfoPane" unique_id=2072980220]
 unique_name_in_owner = true
@@ -60,6 +72,10 @@ text = "删除所选包"
 [node name="TemplateConfigPane" type="VBoxContainer" parent="RootSplit/LeftSplit" unique_id=1741070288]
 custom_minimum_size = Vector2(0, 220)
 layout_mode = 2
+
+[node name="TemplateTitle" type="Label" parent="RootSplit/LeftSplit/TemplateConfigPane" unique_id=1687150850]
+layout_mode = 2
+text = "工程模板配置"
 
 [node name="TemplatePathEdit" type="LineEdit" parent="RootSplit/LeftSplit/TemplateConfigPane" unique_id=466958722]
 unique_name_in_owner = true
@@ -127,6 +143,10 @@ text = "按创作者分组"
 [node name="ExportPane" type="VBoxContainer" parent="RootSplit/RightSplit" unique_id=218646413]
 custom_minimum_size = Vector2(0, 220)
 layout_mode = 2
+
+[node name="ExportTitle" type="Label" parent="RootSplit/RightSplit/ExportPane" unique_id=209503570]
+layout_mode = 2
+text = "导出功能"
 
 [node name="IncludeLstgesToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane" unique_id=1172509]
 unique_name_in_owner = true

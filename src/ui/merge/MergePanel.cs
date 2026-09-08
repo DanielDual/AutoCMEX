@@ -123,7 +123,7 @@ public partial class MergePanel : Control, IMergePanel
 
   private AutoList<CreatorPackage>.Binding? _creatorPackagesBinding;
   private AutoList<SpellCardMappingEntry>.Binding? _mappingBinding;
-  private int _selectedPackage = -1;
+  private AutoValue<int>.Binding? _selectedPackageIndexBinding;
   private int _selectedMapping = -1;
 
   public override void _Notification(int what) => this.Notify(what);
@@ -132,13 +132,14 @@ public partial class MergePanel : Control, IMergePanel
   {
     _creatorPackagesBinding?.Dispose();
     _mappingBinding?.Dispose();
+    _selectedPackageIndexBinding?.Dispose();
   }
 
   public void OnReady()
   {
     ImportPackageBtn.Pressed += OnImportPackage;
     RemovePackageBtn.Pressed += OnRemovePackage;
-    PackageList.ItemSelected += _ => RefreshPackageDetail();
+    PackageList.ItemSelected += _ => OnPackageSelected();
     ImportTemplateBtn.Pressed += OnImportTemplate;
     MappingList.ItemSelected += _ =>
       _selectedMapping = MappingList.GetSelectedItems().FirstOrDefault();
@@ -161,6 +162,11 @@ public partial class MergePanel : Control, IMergePanel
     _mappingBinding = _dm
       .MergeConfig.Mapping.Bind()
       .OnModify(() => CallDeferred(nameof(RefreshMappingList)));
+
+    // 选包变化（含初始值）驱动三栏清单刷新（指示 24：事件只写模型，UI 由绑定传播）。
+    _selectedPackageIndexBinding = _dm
+      .MergeConfig.SelectedPackageIndex.Bind()
+      .OnValue(_ => CallDeferred(nameof(RefreshPackageDetail)));
 
     // 导出选项：事件只写数据模型 + 触发保存（指示 24）
     IncludeLstgesToggle.Toggled += _ => PersistConfig();
@@ -217,12 +223,42 @@ public partial class MergePanel : Control, IMergePanel
     }
   }
 
+  /// <summary>
+  /// 由选中包索引绑定驱动：刷新三栏（符卡/资源/对象）清单。
+  /// 数据源为选中包的缓存清单（导入时抽取），非符标注为「（非符）」。
+  /// </summary>
   private void RefreshPackageDetail()
   {
+    SpellCardList.Clear();
+    ResourceList.Clear();
+    ObjectList.Clear();
+
+    if (_dm == null)
+      return;
+
+    var index = _dm.MergeConfig.SelectedPackageIndex.Value;
+    var packages = _dm.CreatorPackages.Where(p => !p.IsDeleted.Value).ToList();
+    if (index < 0 || index >= packages.Count)
+      return;
+
+    var pkg = packages[index];
+    foreach (var card in pkg.SpellCards)
+      SpellCardList.AddItem(card);
+    foreach (var r in pkg.Resources)
+      ResourceList.AddItem(r);
+    foreach (var o in pkg.Objects)
+      ObjectList.AddItem(o);
+  }
+
+  /// <summary>选中包：事件只写模型（索引写 SelectedPackageIndex），三栏由绑定驱动刷新。</summary>
+  private void OnPackageSelected()
+  {
+    if (_dm == null)
+      return;
     var selected = PackageList.GetSelectedItems();
     if (selected.Length == 0)
       return;
-    _selectedPackage = selected[0];
+    _dm.MergeConfig.SelectedPackageIndex.Value = selected[0];
   }
 
   private void OnImportPackage()
@@ -255,12 +291,23 @@ public partial class MergePanel : Control, IMergePanel
 
   private void OnRemovePackage()
   {
-    if (_dm == null || _selectedPackage < 0)
+    if (_dm == null)
       return;
+    var index = _dm.MergeConfig.SelectedPackageIndex.Value;
     var packages = _dm.CreatorPackages.Where(p => !p.IsDeleted.Value).ToList();
-    if (_selectedPackage >= packages.Count)
+    if (index < 0 || index >= packages.Count)
       return;
-    packages[_selectedPackage].IsDeleted.Value = true;
+    packages[index].IsDeleted.Value = true;
+    // 同步移除该包在对应表中的映射条目，避免「删包后再导出」时映射引用已删包而失败（P1-1）。
+    // 模型变更触发 _mappingBinding 自动刷新对应表（指示 24，事件只写模型）。
+    var removed = _dm
+      .MergeConfig.Mapping.Where(m => m.PackageName == packages[index].PackageName)
+      .ToList();
+    foreach (var m in removed)
+      _dm.MergeConfig.Mapping.Remove(m);
+    // 置回未选中：绑定驱动三栏清空（指示 24，事件只写模型）。
+    _dm.MergeConfig.SelectedPackageIndex.Value = -1;
+    // IsDeleted 是包内 AutoValue，AutoList 绑定不触发外层刷新，故此处手动刷新包列表（P2-1 保留）。
     _dm.TriggerAutoSave();
     RefreshPackageList();
   }

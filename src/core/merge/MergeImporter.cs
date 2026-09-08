@@ -69,12 +69,20 @@ public static class MergeImporter
         )
         .ToList();
 
+      // 同步抽取包内「符卡/资源/对象」清单，供四栏联动 UI 展示（避免再次解压解析）。
+      var spellNames = cards.Select(c => c.IsNonSpell.Value ? "（非符）" : c.Name).ToList();
+      var resourcePaths = ResourceDetector.Detect(doc).Select(r => $"{r.Type}: {r.Path}").ToList();
+      var objectNames = ObjectDetector.Detect(doc).Select(o => $"{o.Type}: {o.Name}").ToList();
+
       var pkg = new CreatorPackage
       {
         PackageName = packageName,
         CreatorName = new(packageName),
         SourcePath = new(zipPath),
         IsDeleted = new(false),
+        SpellCards = spellNames,
+        Resources = resourcePaths,
+        Objects = objectNames,
       };
 
       return new CreatorImportResult { Package = pkg, Cards = cards };

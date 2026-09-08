@@ -49,6 +49,36 @@ public class MergeModelsTest : TestClass
   }
 
   [Test]
+  public void DataManager_SaveLoad_CreatorPackageInventoryCacheRoundTrip()
+  {
+    var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(_tempDir));
+    var dm = new DataManager(_tempDir, encryptor);
+
+    dm.CreatorPackages.Add(
+      new CreatorPackage
+      {
+        PackageName = "SamplePkg_A",
+        CreatorName = new("Alice"),
+        SourcePath = new("C:/packages/SamplePkg_A.zip"),
+        IsDeleted = new(false),
+        SpellCards = new() { "（非符）", "结界「真名的境界」" },
+        Resources = new() { "LoadImage: res/boss.png", "LoadBGM: bgm.ogg" },
+        Objects = new() { "BossDefine: pkg_enm1", "ObjectDefine: bullet_a" },
+      }
+    );
+
+    dm.SaveAll();
+
+    var dm2 = new DataManager(_tempDir, encryptor);
+    dm2.LoadAll();
+
+    var pkg = dm2.CreatorPackages.ShouldHaveSingleItem();
+    pkg.SpellCards.ShouldBe(new[] { "（非符）", "结界「真名的境界」" });
+    pkg.Resources.ShouldBe(new[] { "LoadImage: res/boss.png", "LoadBGM: bgm.ogg" });
+    pkg.Objects.ShouldBe(new[] { "BossDefine: pkg_enm1", "ObjectDefine: bullet_a" });
+  }
+
+  [Test]
   public void DataManager_SaveLoad_CreatorPackagesAndMergeConfigRoundTrip()
   {
     var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(_tempDir));

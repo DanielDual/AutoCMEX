@@ -32,6 +32,9 @@ public class MergeConfig
   /// <summary>导出完整项目包时使用的输出名（不含 .zip 后缀）。</summary>
   public AutoValue<string> OutputName { get; set; } = new("mod");
 
+  /// <summary>当前选中的创作者包索引（-1 表示未选中）。事件只写此模型，三栏清单由绑定驱动。</summary>
+  public AutoValue<int> SelectedPackageIndex { get; set; } = new(-1);
+
   /// <summary>
   /// 编辑中的「符卡—创作者对应表」（顺序即注入顺序；符卡/非符分开标注）。
   /// </summary>
