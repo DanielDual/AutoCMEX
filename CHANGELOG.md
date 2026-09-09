@@ -38,6 +38,7 @@
 - **符卡面板导入后显示空白**：重构将 `SpellCardPanel` 提为独立子场景时丢失了 Boss 选择器——`RefreshBossSelect()` 空实现、`_currentBoss` 从未被 UI 赋值，原 `BossSelect` 下拉残留在父场景 `GuessingPanel.tscn` 却无脚本引用。导致即便成功导入"符卡—创作者表"，`_currentBoss` 仍为 `null` 使树恒为空。修复：将 `BossSelect` 下拉移入 `SpellCardPanel` 自身场景；面板改为**纯 Sync 绑定驱动**——当前 Boss 以 `AppSettings.SelectedBossIndex`（`AutoValue<int>`）为单一数据源（与猜测流程共享），`Bosses`/`SelectedBossIndex`/当前 Boss `SpellCards` 三条 `Bind()` 自动推送 UI，事件处理器只写数据模型；导入后自动把选中下标规范到首个 Boss，树不再空白。补充回归测试覆盖"导入后自动选中首个 Boss、树非空白"、“越界下标回落”、“空表清空”
 
 - **猜测面板丢包按钮被挤出窗口**（`GuessingPanel` 布局）：`MainContainer` 为 `VSplitContainer` 却只有一个 pane 且配 `split_offset=40`，又带越界 `offset_right/bottom`，将整块内容钳在顶部并把底部内容推出窗口底缘，`DroppedButtons` 被 `DroppedList` 挤出窗口。修复：`MainContainer` 改 `VBoxContainer` 并全展开、归零越界 offset；`ContentArea` 改 `HSplitContainer` 支持拖动调整左右栏宽度；`DroppedButtons` 加 `custom_minimum_size` 保底防挤出
+- **整合板块配置不持久化**（`MergePanel`）：工程模板配置三项（模板路径/Sharp 路径/插件 dll）与输出目录**关掉重开 AutoCMEX 后丢失**。根因在 UI 层而非序列化层（`merge_config.json` 链路健康）：`SharpPathEdit`/`PluginDllEdit` 仅有 `[Node]` 声明无任何 `TextChanged` 写回；`TemplatePathEdit` 只在点导入按钮时写模型；`OutputDirEdit` 只在开关或导出时写；且 `LoadConfigToControls()` 只回填 3 个开关与 `OutputDirEdit`、未回填 3 个路径编辑框。修复（遵循指示 24「事件只写模型」）：新增 `SyncConfigToModel()`，为 4 个 `LineEdit` 统一接 `TextChanged` 写回模型并 `TriggerAutoSave`；`LoadConfigToControls()` 补齐回填全部 4 个编辑框
 
 ### 架构优化
 
