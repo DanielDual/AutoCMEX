@@ -248,4 +248,68 @@ public class TestMergePanelRuntime : TestClass
 
     panel.MappingList.ItemCount.ShouldBe(3);
   }
+
+  [Test]
+  public async Task ConfigPathEdits_WriteBackToModel_OnTextChanged()
+  {
+    _dm = CreateDataManager();
+    var panel = InstantiatePanel();
+
+    // 等待 OnResolved 完成（事件绑定在 Ready 通知建立），确保 TextChanged 处理器已挂上。
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    // 事件只写模型（指示24）：真实 LineEdit 输入触发 TextChanged → 路径配置写回模型 + 触发保存。
+    // 场景内这些编辑框均设 unique_name_in_owner；此处递归按名取真实 LineEdit 节点（与 [Node] 解析到同一节点）。
+    // 用 EmitSignal(TextChanged) 显式触发处理器以模拟用户输入，保证测试确定性（与程序化赋值是否触发放一起无关）。
+    var templateEdit =
+      panel.FindChild("TemplatePathEdit", owned: false, recursive: true) as Godot.LineEdit;
+    templateEdit.ShouldNotBeNull();
+    templateEdit.Text = "C:/tmp/template/main.lstgproj";
+    templateEdit.EmitSignal(Godot.LineEdit.SignalName.TextChanged, "C:/tmp/template/main.lstgproj");
+    var sharpEdit =
+      panel.FindChild("SharpPathEdit", owned: false, recursive: true) as Godot.LineEdit;
+    sharpEdit.ShouldNotBeNull();
+    sharpEdit.Text = "C:/Program Files/LuaSTG";
+    sharpEdit.EmitSignal(Godot.LineEdit.SignalName.TextChanged, "C:/Program Files/LuaSTG");
+    var pluginEdit =
+      panel.FindChild("PluginDllEdit", owned: false, recursive: true) as Godot.LineEdit;
+    pluginEdit.ShouldNotBeNull();
+    pluginEdit.Text = "LuaSTGPlusLib.dll";
+    pluginEdit.EmitSignal(Godot.LineEdit.SignalName.TextChanged, "LuaSTGPlusLib.dll");
+    var outputEdit =
+      panel.FindChild("OutputDirEdit", owned: false, recursive: true) as Godot.LineEdit;
+    outputEdit.ShouldNotBeNull();
+    outputEdit.Text = "C:/out/mod";
+    outputEdit.EmitSignal(Godot.LineEdit.SignalName.TextChanged, "C:/out/mod");
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    _dm.MergeConfig.TemplatePath.Value.ShouldBe("C:/tmp/template/main.lstgproj");
+    _dm.MergeConfig.SharpEditorPath.Value.ShouldBe("C:/Program Files/LuaSTG");
+    _dm.MergeConfig.PluginDll.Value.ShouldBe("LuaSTGPlusLib.dll");
+    _dm.MergeConfig.OutputDir.Value.ShouldBe("C:/out/mod");
+  }
+
+  [Test]
+  public async Task LoadConfig_Backfills_AllPathEdits()
+  {
+    _dm = CreateDataManager();
+
+    // 预置持久化配置：重启后应回显到 4 个路径/目录编辑框（LoadConfigToControls）。
+    _dm.MergeConfig.TemplatePath.Value = "C:/tmp/template/main.lstgproj";
+    _dm.MergeConfig.SharpEditorPath.Value = "C:/Program Files/LuaSTG";
+    _dm.MergeConfig.PluginDll.Value = "LuaSTGPlusLib.dll";
+    _dm.MergeConfig.OutputDir.Value = "C:/out/mod";
+
+    var panel = InstantiatePanel();
+
+    // 等待 OnResolved 完成（回填在 Ready 通知建立），避免偶发时序读到空串。
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    panel.TemplatePathEdit.Text.ShouldBe("C:/tmp/template/main.lstgproj");
+    panel.SharpPathEdit.Text.ShouldBe("C:/Program Files/LuaSTG");
+    panel.PluginDllEdit.Text.ShouldBe("LuaSTGPlusLib.dll");
+    panel.OutputDirEdit.Text.ShouldBe("C:/out/mod");
+  }
 }
