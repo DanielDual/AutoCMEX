@@ -738,4 +738,72 @@ public class MergerTest : TestClass
     error.ShouldBeNull();
     reparsed.ShouldNotBeNull();
   }
+
+  [Test]
+  public void HierarchyFindFirstInvalid_ValidSequence_ReturnsMinusOne()
+  {
+    // 父链完整、每行回落不超过现有父链深度的序列 → 无越界行。
+    var text =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n";
+    var doc = LstgesParser.ParseDocument(text, out _)!;
+
+    LstgesHierarchy.FindFirstInvalidLevel(doc.Nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void HierarchyFindFirstInvalid_OverflowFallback_ReturnsIndex()
+  {
+    // 产物 NRE 的触发模式：深层节点(6)被直接挂在 root 之下（父链仅 2 层），随后立刻回落 level3，
+    // 上溯步数(4) 超过父链深度(1) → Sharp 会把 prev 越过 root 变 null，AddChild 抛 NRE。
+    var text =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "6,{\"$type\":\".Object.Del, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "3,{\"$type\":\".Object.ObjectDefine, \",\"Attributes\":[],\"AttributeCount\":0}\n";
+    var doc = LstgesParser.ParseDocument(text, out _)!;
+
+    LstgesHierarchy.FindFirstInvalidLevel(doc.Nodes).ShouldBe(2);
+  }
+
+  [Test]
+  public void Hierarchy_ReturnToOverflowAfterJump_IsDetectedAndNormalized()
+  {
+    // 审查反例：深层节点(4)经「跳层到达」后再浅层回落(2)，父链回溯越界——Sharp 会 NRE。
+    // 修正前 Find 漏报 → 修正后应检测到，且 Normalize 后无越界、幂等。
+    var text =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "4,{\"$type\":\".Object.ObjectInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "3,{\"$type\":\".Object.ObjectInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "2,{\"$type\":\".Object.Del, \",\"Attributes\":[],\"AttributeCount\":0}\n";
+    var doc = LstgesParser.ParseDocument(text, out _)!;
+
+    LstgesHierarchy.FindFirstInvalidLevel(doc.Nodes).ShouldBe(4);
+    LstgesHierarchy.NormalizeParentChain(doc.Nodes).ShouldBeTrue();
+    LstgesHierarchy.FindFirstInvalidLevel(doc.Nodes).ShouldBe(-1);
+    LstgesHierarchy.NormalizeParentChain(doc.Nodes).ShouldBeFalse(); // 幂等
+  }
+
+  [Test]
+  public void Merge_RichPackage_ProducesParentChainValidAndRoundTrips()
+  {
+    // 富包（顶层资源+对象+符卡）合并：父链对齐保证无越界行（Sharp 可安全重建），且往返可解析。
+    var template = LstgesParser.ParseDocument(FullTemplateA, out _)!;
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(RichPackageText(), out _)!);
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+    LstgesHierarchy.FindFirstInvalidLevel(result.Merged!.Nodes).ShouldBe(-1);
+
+    var reparsed = LstgesParser.ParseDocument(result.Merged.Serialize(), out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+  }
 }
