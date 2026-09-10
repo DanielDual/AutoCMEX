@@ -96,10 +96,19 @@ public class MergeEngine
     var options = new MergeOptions
     {
       AutoRenameResources = _dm.MergeConfig.AutoRenameConflicts.Value,
+      ExcludedArchiveSpaces = _dm.MergeConfig.ExcludedArchiveSpaces,
     };
     var result = new Merger().Merge(template, packageDocs, entries, options);
     if (result.IsSuccess)
+    {
       PersistMergedProject(result.Merged!);
+
+      // 物理资源必须随合并 .lstgproj 落在同一目录（Sharp 依相对基准找文件打包）。
+      // 工作目录（Sharp 输入）始终复制；若同时交付到输出目录，也一并复制。
+      CopyResources(result.Merged!, Path.GetDirectoryName(_workProjectPath) ?? string.Empty);
+      if (_dm.MergeConfig.OutputDir.Value.Length > 0)
+        CopyResources(result.Merged!, _dm.MergeConfig.OutputDir.Value);
+    }
 
     _log.Print(
       $"MergeEngine: merged {entries.Count} entries into template, conflicts={result.Conflicts.Count}."
@@ -167,6 +176,102 @@ public class MergeEngine
       .ToList();
     var outPath = Path.Combine(outputDir, "spellcard_mapping.csv");
     return new SpellCardMappingExporter().Export(ResolveCommonBossName(_dm), rows, outPath);
+  }
+
+  /// <summary>
+  /// 把合并工程实际引用的物理资源按相对路径基准复制到目标目录（工作目录/输出目录），
+  /// 使 Sharp 打包时能找到资源文件。源：各源包解压目录（优先）+ 模板工程目录。
+  /// 命中排除集的资源不在合并工程中，故不涉及复制。返回未找到的相对路径列表。
+  /// </summary>
+  private List<string> CopyResources(LstgesDocument merged, string targetDir)
+  {
+    var missing = new List<string>();
+    if (string.IsNullOrEmpty(targetDir) || merged == null)
+      return missing;
+
+    // 收集合并工程实际引用的相对路径（资源节点首个属性，可含 | 分隔的多路径）
+    var referenced = new HashSet<string>();
+    foreach (var node in merged.Nodes)
+    {
+      if (node.Type == null || !ResourceDetector.ResourceTypes.Contains(node.Type))
+        continue;
+      var path0 = node.GetAttrAt(0);
+      if (string.IsNullOrWhiteSpace(path0))
+        continue;
+      foreach (var part in path0.Split('|', StringSplitOptions.RemoveEmptyEntries))
+      {
+        var rel = NormalizeRelative(part.Trim());
+        if (rel.Length > 0)
+          referenced.Add(rel);
+      }
+    }
+    if (referenced.Count == 0)
+      return missing;
+
+    // 源目录：各非删除包解压目录（优先，保证导入资源取创作者实际文件）+ 模板工程目录（模板自身资源）
+    var sources = new List<string>();
+    var archives = new List<PackageWork>();
+    try
+    {
+      foreach (var pkg in _dm.CreatorPackages)
+      {
+        if (pkg.IsDeleted.Value)
+          continue;
+        var work = ExtractPackageToTemp(pkg.SourcePath.Value);
+        if (work.TempDir != null)
+        {
+          sources.Add(work.TempDir);
+          archives.Add(work);
+        }
+        else
+        {
+          work.Dispose();
+        }
+      }
+      var templateDir = Path.GetDirectoryName(_templatePath);
+      if (!string.IsNullOrEmpty(templateDir))
+        sources.Add(templateDir);
+
+      foreach (var rel in referenced)
+      {
+        var copied = false;
+        foreach (var src in sources)
+        {
+          var candidate = Path.Combine(src, rel);
+          if (!File.Exists(candidate))
+            continue;
+          var dest = Path.Combine(targetDir, rel);
+          var destDir = Path.GetDirectoryName(dest);
+          if (!string.IsNullOrEmpty(destDir))
+            Directory.CreateDirectory(destDir);
+          File.Copy(candidate, dest, overwrite: true);
+          copied = true;
+          break;
+        }
+        if (!copied)
+          missing.Add(rel);
+      }
+    }
+    finally
+    {
+      foreach (var a in archives)
+        a.Dispose();
+    }
+
+    if (missing.Count > 0)
+      _log.Warn($"MergeEngine: missing resource files while copying: {string.Join(", ", missing)}");
+    else
+      _log.Print($"MergeEngine: copied {referenced.Count} referenced resources to {targetDir}.");
+    return missing;
+  }
+
+  /// <summary>把资源相对路径归一为「相对工程根、无 ./ 或前导 /」形式。</summary>
+  private static string NormalizeRelative(string value)
+  {
+    var s = value.Trim().Replace('\\', '/');
+    while (s.StartsWith("./") || s.StartsWith("/"))
+      s = s.Substring(s.StartsWith("/") ? 1 : 2);
+    return s;
   }
 
   private static LstgesDocument? ReloadPackageDoc(string sourcePath, out string? error)
