@@ -238,6 +238,19 @@ public class Merger
     // ---- 8. 对象名冲突 ----
     CollectObjectNameConflicts(packages, objectSubtrees, conflicts);
 
+    // ---- 9. 父链对齐（父链合法性修正） ----
+    // 逐行模拟 LuaSTGEditorSharp 的 CreateNodeFromFileAsync 重建。注入段的层级由 offset 平移产生，
+    // 可能在某行「回落上溯步数超过现有父链深度」，Sharp 会把 prev 越过 root 变 null，AddChild 抛 NRE。
+    // 这里就地修正：把越界节点层级抬到父链可容纳的合法值，保证产物可被 Sharp 与编辑器安全打开。
+    // 若发生了修正则记入 warning（说明合并段层级有微调，父链已对齐）。
+    if (LstgesHierarchy.NormalizeParentChain(doc.Nodes))
+    {
+      const string msg =
+        "合并产物父链已自动对齐（部分注入段层级被微调以确保 LuaSTGEditorSharp 可安全打开）";
+      _log.Warn($"Merger: {msg}.");
+      warnings.Add(msg);
+    }
+
     _log.Print(
       $"Merger: merged {spellSubtrees.Count} spellcards, {objectSubtrees.Count} object defs, "
         + $"{topResources.Count} top-level resources, {conflicts.Count} conflicts."
