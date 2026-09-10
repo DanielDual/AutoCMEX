@@ -23,6 +23,12 @@ public sealed class MergeOptions
 {
   /// <summary>是否自动为冲突资源重命名（默认 false，保留原名，用户可自改）。</summary>
   public bool AutoRenameResources { get; set; }
+
+  /// <summary>
+  /// 额外排除的归档空间清单（用户配置兜底）。源包资源的最内层归属归档空间命中
+  /// 「模板已有归档空间 ∪ 本清单」时，该资源不检测、不导入、不搬迁。
+  /// </summary>
+  public IReadOnlyCollection<string>? ExcludedArchiveSpaces { get; set; }
 }
 
 /// <summary>合并结果。</summary>
@@ -56,6 +62,48 @@ public class Merger
 {
   private static readonly string BossDefineType = ".Boss.BossDefine, ";
 
+  private const string ArchiveSpaceIndicatorType =
+    ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp";
+
+  /// <summary>归档空间名规整（统一斜杠、去掉末尾 `/`），用于命中比较。</summary>
+  private static string NormalizeArchive(string value)
+  {
+    var s = value.Trim().Replace('\\', '/').TrimEnd('/');
+    return s;
+  }
+
+  /// <summary>枚举文档中全部归档空间名（attrInput，规整后）。</summary>
+  private static HashSet<string> CollectArchiveSpaces(LstgesDocument doc)
+  {
+    var set = new HashSet<string>();
+    foreach (var node in doc.Nodes)
+    {
+      if (node.Type != ArchiveSpaceIndicatorType)
+        continue;
+      var name = node.GetAttr("Name");
+      if (!string.IsNullOrEmpty(name))
+        set.Add(NormalizeArchive(name));
+    }
+    return set;
+  }
+
+  /// <summary>
+  /// 返回给定节点（索引）在源文档中的最内层归属归档空间节点；无则为 null。
+  /// 向上扫描祖先，取最近的 ArchiveSpaceIndicator。
+  /// </summary>
+  private static LstgesNode? InnermostArchiveSpace(IReadOnlyList<LstgesNode> nodes, int index)
+  {
+    int level = nodes[index].Level;
+    for (int i = index - 1; i >= 0; i--)
+    {
+      if (nodes[i].Level >= level)
+        continue;
+      if (nodes[i].Type == ArchiveSpaceIndicatorType)
+        return nodes[i];
+    }
+    return null;
+  }
+
   private readonly ILog _log;
 
   public Merger() => _log = AppLogs.GetOrCreate().GetLogger(nameof(Merger));
@@ -74,6 +122,18 @@ public class Merger
     var doc = template.Clone();
     var conflicts = new List<MergeConflict>();
     var warnings = new List<string>();
+
+    // 排除集合 = 模板已有归档空间 ∪ 用户配置清单（兜底）。命中者不检测/不导入/不搬迁。
+    var excludedSpaces = CollectArchiveSpaces(template);
+    if (opt.ExcludedArchiveSpaces != null)
+    {
+      foreach (var s in opt.ExcludedArchiveSpaces)
+      {
+        var norm = NormalizeArchive(s);
+        if (norm.Length > 0)
+          excludedSpaces.Add(norm);
+      }
+    }
 
     var injection = new InjectionPointDetector().Detect(doc);
     var spellMarker = injection.Find(InjectionPointKind.SpellCards);
@@ -122,8 +182,13 @@ public class Merger
     // ---- 2. 对象定义收集（用于注入对象注入点，不依赖模板索引） ----
     var objectSubtrees = CollectObjectSubtrees(packages);
 
-    // ---- 3. 顶层资源节点收集（未被任何注入子树覆盖的资源加载节点） ----
-    var topResources = CollectTopLevelResources(packages, spellSubtrees, objectSubtrees);
+    // ---- 3. 顶层资源节点收集（未被任何注入子树覆盖、且未命中排除集的资源加载节点） ----
+    var topResources = CollectTopLevelResources(
+      packages,
+      spellSubtrees,
+      objectSubtrees,
+      excludedSpaces
+    );
 
     // ---- 4. 资源路径解析（冲突检测 + 可选自动改名） ----
     var renameMap = ResolveResourceRenames(
@@ -226,12 +291,14 @@ public class Merger
   }
 
   /// <summary>
-  /// 收集未被任何已注入子树覆盖的顶层资源加载节点。
+  /// 收集未被任何已注入子树覆盖、且未命中排除集的顶层资源加载节点。
+  /// 未命中排除集的资源，把其最内层归属归档空间节点作为该资源的「相对路径基准」随段注入。
   /// </summary>
   private static List<SubtreeRef> CollectTopLevelResources(
     IReadOnlyList<CreatorPackageDoc> packages,
     IReadOnlyList<SubtreeRef> spellSubtrees,
-    IReadOnlyList<SubtreeRef> objectSubtrees
+    IReadOnlyList<SubtreeRef> objectSubtrees,
+    IReadOnlySet<string> excludedSpaces
   )
   {
     var result = new List<SubtreeRef>();
@@ -260,13 +327,29 @@ public class Merger
         if (IsCovered(i, covered[p]))
           continue;
 
+        // 排除过滤：最内层归属归档空间命中排除集 → 该资源不检测/不导入（模板已有，创作者不改动）。
+        var archive = InnermostArchiveSpace(nodes, i);
+        if (archive != null)
+        {
+          var archiveName = archive.GetAttr("Name");
+          var norm = archiveName == null ? string.Empty : NormalizeArchive(archiveName);
+          if (excludedSpaces.Contains(norm))
+            continue;
+        }
+
+        // 归档空间基准节点与资源节点一并注入（归档空间保持原层级，由 BuildInjectedSegments 重编号）。
+        var nodesToInject =
+          archive == null ? new List<LstgesNode> { node } : new List<LstgesNode> { archive, node };
+
         result.Add(
           new SubtreeRef
           {
             Pkg = p,
-            RootLevel = node.Level,
+            // 子树根为归档空间节点（若携带）。offset 以它为基准，使归档空间落在注入点同级、
+            // 资源落在其下（保持源包内的相对层级），避免归档空间被抬到注入点之上造成基准错乱。
+            RootLevel = archive == null ? node.Level : archive.Level,
             StartIndex = i,
-            Nodes = new List<LstgesNode> { node },
+            Nodes = nodesToInject,
           }
         );
       }
@@ -466,9 +549,23 @@ public class Merger
         .Select(p => p.Trim())
         .Where(p => p.Length > 0)
         .Select(p =>
-          renameMap.TryGetValue((pkg, p), out var replaced) ? replaced : Path.GetFileName(p)
+          renameMap.TryGetValue((pkg, p), out var replaced)
+            ? ReplaceResourceFileName(p, replaced)
+            : p
         )
     );
+  }
+
+  /// <summary>
+  /// 替换资源路径中的文件名（保留其目录层次，即「源目录中的位置」不丢失）。
+  /// 目录层次由资源节点保留；物理复制与 Sharp 按此相对路径定位源/落点。
+  /// </summary>
+  private static string ReplaceResourceFileName(string original, string newFileName)
+  {
+    int sep = original.LastIndexOfAny(new[] { '/', '\\' });
+    if (sep < 0)
+      return newFileName;
+    return original.Substring(0, sep + 1) + newFileName;
   }
 
   private static void InjectSegments(LstgesDocument doc, int insertAt, List<LstgesNode> segments)

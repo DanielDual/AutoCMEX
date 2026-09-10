@@ -36,6 +36,12 @@ public class MergeConfig
   public AutoValue<int> SelectedPackageIndex { get; set; } = new(-1);
 
   /// <summary>
+  /// 排除归档空间的额外清单（自动推导「模板已有 ArchiveSpace」之外的兜底）。
+  /// 源包资源命中此清单（或其最内层归属空间在模板已有集合中）时，不检测、不导入、不复制。
+  /// </summary>
+  public AutoList<string> ExcludedArchiveSpaces { get; set; } = new();
+
+  /// <summary>
   /// 编辑中的「符卡—创作者对应表」（顺序即注入顺序；符卡/非符分开标注）。
   /// </summary>
   public AutoList<SpellCardMappingEntry> Mapping { get; set; } = new();
