@@ -232,4 +232,119 @@ public class MergeExportTest : TestClass
     var result = new CsvImporter().ImportSpellCardTable(csv);
     result.IsSuccess.ShouldBeTrue();
   }
+
+  // ==================== MergeEngine 物理资源复制 ====================
+
+  private const string EngineTemplateWithResources =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert spellcards here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert resources here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert objects here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"tmpl_img.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n";
+
+  private const string EnginePackageWithResource =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"符「卡」\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[]}\n"
+    + "1,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"pkg_img.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n";
+
+  private const string EnginePackageExcludedArchive =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared/\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "3,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"sh.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"pkg_img.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"符「卡」\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[]}\n";
+
+  private string CreateEngineZipWithResource(string zipName, string lstgesText)
+  {
+    var lstgesPath = WriteEngineData("pkgw/root.lstges", lstgesText);
+    var imgPath = WriteEngineData("pkgw/pkg_img.png", "PNG-fake");
+    var shPath = WriteEngineData("pkgw/sh.png", "PNG-shared");
+    var zipPath = Path.Combine(_tempDir, zipName);
+    using (var fs = File.Create(zipPath))
+    using (var zip = new ZipArchive(fs, ZipArchiveMode.Create))
+    {
+      zip.CreateEntryFromFile(lstgesPath, "root.lstges");
+      zip.CreateEntryFromFile(imgPath, "pkg_img.png");
+      zip.CreateEntryFromFile(shPath, "sh.png");
+    }
+    return zipPath;
+  }
+
+  private DataManager BuildEngineDataManagerResources(bool includeLstges)
+  {
+    var templatePath = WriteEngineData("tmplr/root.lstgproj", EngineTemplateWithResources);
+    WriteEngineData("tmplr/tmpl_img.png", "PNG-template");
+    var zipPath = CreateEngineZipWithResource("CMEX23_R.zip", EnginePackageWithResource);
+
+    var dm = new DataManager(Path.Combine(_tempDir, "userdata_r"), new AesEncryptor("test-key"));
+    dm.LoadAll();
+
+    var import = MergeImporter.ImportZip(zipPath);
+    import.IsSuccess.ShouldBeTrue();
+    dm.CreatorPackages.Add(import.Package!);
+    foreach (var card in import.Cards)
+      dm.MergeConfig.Mapping.Add(card);
+
+    dm.MergeConfig.TemplatePath.Value = templatePath;
+    dm.MergeConfig.OutputDir.Value = Path.Combine(_tempDir, "out_r");
+    dm.MergeConfig.IncludeLstges.Value = includeLstges;
+    dm.MergeConfig.OutputName.Value = "mod";
+    return dm;
+  }
+
+  [Test]
+  public void MergeEngine_CopiesReferencedResources_ToWorkAndOutputDirs()
+  {
+    var dm = BuildEngineDataManagerResources(includeLstges: true);
+    var engine = new MergeEngine(dm, dm.MergeConfig.TemplatePath.Value, true, false);
+    var result = engine.BuildAndMerge();
+
+    result.IsSuccess.ShouldBeTrue();
+    result.Error.ShouldBeNull();
+
+    // 物理资源必须随合并 .lstgproj 落在同一目录（Sharp 按相对基准找文件打包）
+    var workDir = Path.GetDirectoryName(engine.MergedProjectPath)!;
+    File.Exists(Path.Combine(workDir, "tmpl_img.png")).ShouldBeTrue(); // 模板自身资源随迁
+    File.Exists(Path.Combine(workDir, "pkg_img.png")).ShouldBeTrue(); // 包资源随迁
+
+    // 输出目录（includeLstges=true）也随迁
+    var outDir = dm.MergeConfig.OutputDir.Value;
+    File.Exists(Path.Combine(outDir, "tmpl_img.png")).ShouldBeTrue();
+    File.Exists(Path.Combine(outDir, "pkg_img.png")).ShouldBeTrue();
+  }
+
+  [Test]
+  public void MergeEngine_ExcludedArchiveResource_NotCopied()
+  {
+    var templatePath = WriteEngineData("tmplx/root.lstgproj", EngineTemplateWithResources);
+    var zipPath = CreateEngineZipWithResource("CMEX23_X.zip", EnginePackageExcludedArchive);
+
+    var dm = new DataManager(Path.Combine(_tempDir, "userdata_x"), new AesEncryptor("test-key"));
+    dm.LoadAll();
+    var import = MergeImporter.ImportZip(zipPath);
+    dm.CreatorPackages.Add(import.Package!);
+    foreach (var card in import.Cards)
+      dm.MergeConfig.Mapping.Add(card);
+
+    dm.MergeConfig.TemplatePath.Value = templatePath;
+    dm.MergeConfig.OutputDir.Value = Path.Combine(_tempDir, "out_x");
+    dm.MergeConfig.IncludeLstges.Value = true;
+    dm.MergeConfig.OutputName.Value = "mod";
+    // 配置清单排除 shared/ 归档空间（命中则资源不检测/不导入/不复制）
+    dm.MergeConfig.ExcludedArchiveSpaces.Add("shared/");
+
+    var engine = new MergeEngine(dm, dm.MergeConfig.TemplatePath.Value, true, false);
+    var result = engine.BuildAndMerge();
+    result.IsSuccess.ShouldBeTrue();
+
+    // 命中排除集的资源不注入 → 合并工程无该 LoadImage → 物理文件不复制
+    var workDir = Path.GetDirectoryName(engine.MergedProjectPath)!;
+    File.Exists(Path.Combine(workDir, "sh.png")).ShouldBeFalse();
+    // 但包自身资源（未排除）仍随迁
+    File.Exists(Path.Combine(workDir, "pkg_img.png")).ShouldBeTrue();
+  }
 }

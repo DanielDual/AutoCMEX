@@ -148,7 +148,7 @@ public class MergerTest : TestClass
   }
 
   [Test]
-  public void Merge_ResourcePath_RewrittenToBareName()
+  public void Merge_ResourcePath_PreservedInSourceDir()
   {
     var template = LstgesParser.ParseDocument(TemplateText, out _)!;
     var pkgA = new CreatorPackageDoc(
@@ -164,7 +164,8 @@ public class MergerTest : TestClass
     result.IsSuccess.ShouldBeTrue();
 
     var image = result.Merged!.Nodes.First(n => n.Type == ".Graphics.LoadImage, ");
-    image.GetAttrAt(0).ShouldBe("boss.png"); // 已折为纯文件名
+    // 资源保留「源目录中的相对位置」（boss.png 在符卡子树里，路径为 res/boss.png），不折成裸名
+    image.GetAttrAt(0).ShouldBe("res/boss.png");
     result.Conflicts.ShouldBeEmpty();
   }
 
@@ -219,9 +220,9 @@ public class MergerTest : TestClass
     result.IsSuccess.ShouldBeTrue();
 
     var images = result.Merged!.Nodes.Where(n => n.Type == ".Graphics.LoadImage, ").ToList();
-    // 自动改名后，两个 boss.png 分别带前缀 A_/B_
-    images.Select(n => n.GetAttrAt(0)).OrderBy(x => x).ShouldContain("A_boss.png");
-    images.Select(n => n.GetAttrAt(0)).OrderBy(x => x).ShouldContain("B_boss.png");
+    // 自动改名后，两个 boss.png 分别带前缀 A_/B_；目录层次（res/）保持不变
+    images.Select(n => n.GetAttrAt(0)).OrderBy(x => x).ShouldContain("res/A_boss.png");
+    images.Select(n => n.GetAttrAt(0)).OrderBy(x => x).ShouldContain("res/B_boss.png");
   }
 
   [Test]
@@ -277,10 +278,10 @@ public class MergerTest : TestClass
     );
     result.IsSuccess.ShouldBeTrue();
 
-    // 顶层 LoadImage 应被注入到资源注入点（在该注释之后），且路径折为纯文件名
+    // 顶层 LoadImage 应被注入到资源注入点（在该注释之后），且保留源目录相对路径 images/bg.png
     var images = result.Merged!.Nodes.Where(n => n.Type == ".Graphics.LoadImage, ").ToList();
     images.Count.ShouldBeGreaterThan(0);
-    images.Any(n => n.GetAttrAt(0) == "bg.png").ShouldBeTrue();
+    images.Any(n => n.GetAttrAt(0) == "images/bg.png").ShouldBeTrue();
   }
 
   [Test]
@@ -526,8 +527,8 @@ public class MergerTest : TestClass
     nodes[taskIdx].Level.ShouldBe(2);
     nodes[imgIdx].Level.ShouldBe(2);
 
-    // 资源路径折为纯文件名
-    nodes[imgIdx].GetAttrAt(0).ShouldBe("top_bg.png");
+    // 资源路径保留「源目录中的相对路径」（不折为裸名）
+    nodes[imgIdx].GetAttrAt(0).ShouldBe("images/top_bg.png");
 
     // 往返解析保持合法且结构不变
     var serialized = result.Merged.Serialize();
@@ -622,5 +623,119 @@ public class MergerTest : TestClass
     result.IsSuccess.ShouldBeTrue();
 
     result.Merged!.Nodes.Any(n => n.Type == ".Boss.BossSpellCard, ").ShouldBeTrue();
+  }
+
+  /// <summary>
+  /// 一个「自带归档空间 + 资源注入点」的模板（模板拥有 resource/ 归档空间，资源注点在 level 2）。
+  /// </summary>
+  private const string TemplateWithArchiveSpace =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"resource/\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert resources here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert spellcards here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n";
+
+  /// <summary>
+  /// 一个含「顶层资源（归类到给定归档空间）+ 一张符卡」的创作者包。
+  /// </summary>
+  private static string PackageWithTopResource(string archiveName, string resourcePath) =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + archiveName
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "3,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\""
+    + resourcePath
+    + "\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + SpellCard("卡A", false);
+
+  [Test]
+  public void Merge_TopLevelResource_ExcludedWhenArchiveHitsTemplateSet()
+  {
+    // 包顶层资源落在模板已有的归档空间 resource/ 下（模板自带、创作者不改动）→ 不检测/不导入。
+    var template = LstgesParser.ParseDocument(TemplateWithArchiveSpace, out _)!;
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageWithTopResource("resource/", "boss/my.png"), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 该资源被排除：合并工程不应出现其 LoadImage，且模板的归档空间不动。
+    var images = result.Merged!.Nodes.Where(n => n.Type == ".Graphics.LoadImage, ").ToList();
+    images.Any(i => i.GetAttrAt(0) == "boss/my.png").ShouldBeFalse();
+  }
+
+  [Test]
+  public void Merge_TopLevelResource_ExcludedByConfigList()
+  {
+    // 归档空间不在模板，但命中配置排除清单 → 同样排除。
+    var template = LstgesParser.ParseDocument(TemplateWithArchiveSpace, out _)!;
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageWithTopResource("common/", "theme/bg.png"), out _)!
+    );
+
+    var opt = new MergeOptions { ExcludedArchiveSpaces = new[] { "common/" } };
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") },
+      opt
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var images = result.Merged!.Nodes.Where(n => n.Type == ".Graphics.LoadImage, ").ToList();
+    images.Any(i => i.GetAttrAt(0) == "theme/bg.png").ShouldBeFalse();
+    // 排除时归档空间也不搬迁
+    result
+      .Merged!.Nodes.Any(n =>
+        n.Type == ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp"
+        && n.GetAttr("Name") == "common/"
+      )
+      .ShouldBeFalse();
+  }
+
+  [Test]
+  public void Merge_TopLevelResource_CarriesArchiveSpaceVerbatim_WhenNotExcluded()
+  {
+    // 归档空间不是模板已有、也不在配置清单 → 资源连同其归档空间基准节点原封不动搬迁并注入。
+    var template = LstgesParser.ParseDocument(TemplateWithArchiveSpace, out _)!;
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageWithTopResource("custom/", "boss/my.png"), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 归档空间节点被原样注入（attrInput="custom/" 一字不差），且资源被注入（保留源目录相对路径 boss/my.png）。
+    var archiveNode = result.Merged!.Nodes.FirstOrDefault(n =>
+      n.Type == ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp"
+      && n.GetAttr("Name") == "custom/"
+    );
+    archiveNode.ShouldNotBeNull();
+    // 归档空间节点落在「资源注入点」同级（marker 于 level2），而非被抬到其上层（否则基准错乱）
+    archiveNode.Level.ShouldBe(2);
+    var images = result.Merged!.Nodes.Where(n => n.Type == ".Graphics.LoadImage, ").ToList();
+    var injectedImage = images.First(i => i.GetAttrAt(0) == "boss/my.png");
+    injectedImage.Level.ShouldBeGreaterThan(archiveNode.Level);
+
+    // 往返解析合法，结构保持
+    var reparsed = LstgesParser.ParseDocument(result.Merged!.Serialize(), out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
   }
 }
