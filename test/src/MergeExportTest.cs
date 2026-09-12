@@ -247,14 +247,15 @@ public class MergeExportTest : TestClass
     "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
     + "1,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"符「卡」\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
     + "2,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[]}\n"
-    + "1,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"pkg_img.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n";
+    + "1,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"pkg_img.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".General.Patch, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"pkg_script.lua\",\"EditWindow\":\"luaFile\"}],\"AttributeCount\":1}\n";
 
   private const string EnginePackageExcludedArchive =
     "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
     + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"pkg_img.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
     + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared/\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
     + "3,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"sh.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
-    + "1,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"pkg_img.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
     + "1,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"符「卡」\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
     + "2,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[]}\n";
 
@@ -263,6 +264,7 @@ public class MergeExportTest : TestClass
     var lstgesPath = WriteEngineData("pkgw/root.lstges", lstgesText);
     var imgPath = WriteEngineData("pkgw/pkg_img.png", "PNG-fake");
     var shPath = WriteEngineData("pkgw/sh.png", "PNG-shared");
+    var scPath = WriteEngineData("pkgw/pkg_script.lua", "lua-script");
     var zipPath = Path.Combine(_tempDir, zipName);
     using (var fs = File.Create(zipPath))
     using (var zip = new ZipArchive(fs, ZipArchiveMode.Create))
@@ -270,6 +272,7 @@ public class MergeExportTest : TestClass
       zip.CreateEntryFromFile(lstgesPath, "root.lstges");
       zip.CreateEntryFromFile(imgPath, "pkg_img.png");
       zip.CreateEntryFromFile(shPath, "sh.png");
+      zip.CreateEntryFromFile(scPath, "pkg_script.lua");
     }
     return zipPath;
   }
@@ -310,11 +313,13 @@ public class MergeExportTest : TestClass
     var workDir = Path.GetDirectoryName(engine.MergedProjectPath)!;
     File.Exists(Path.Combine(workDir, "tmpl_img.png")).ShouldBeTrue(); // 模板自身资源随迁
     File.Exists(Path.Combine(workDir, "pkg_img.png")).ShouldBeTrue(); // 包资源随迁
+    File.Exists(Path.Combine(workDir, "pkg_script.lua")).ShouldBeTrue(); // Patch 导入的脚本随迁
 
     // 输出目录（includeLstges=true）也随迁
     var outDir = dm.MergeConfig.OutputDir.Value;
     File.Exists(Path.Combine(outDir, "tmpl_img.png")).ShouldBeTrue();
     File.Exists(Path.Combine(outDir, "pkg_img.png")).ShouldBeTrue();
+    File.Exists(Path.Combine(outDir, "pkg_script.lua")).ShouldBeTrue();
   }
 
   [Test]
@@ -346,5 +351,91 @@ public class MergeExportTest : TestClass
     File.Exists(Path.Combine(workDir, "sh.png")).ShouldBeFalse();
     // 但包自身资源（未排除）仍随迁
     File.Exists(Path.Combine(workDir, "pkg_img.png")).ShouldBeTrue();
+  }
+
+  private const string EnginePackagePatchArchive =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"custom/\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "3,{\"$type\":\".General.Patch, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"pkg_script.lua\",\"EditWindow\":\"luaFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"符「卡」\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[]}\n";
+
+  [Test]
+  public void MergeEngine_CopiesPatchScript_WhenArchiveNotExcluded()
+  {
+    // 创作者包自定义归档（custom/ 未命中模板、不在配置清单）下的 Patch（脚本导入）节点：
+    // 脚本必须像图片等其它资源一样被物理复制到工作目录与输出目录（否则 Sharp 打包缺脚本，导出包无法运行）。
+    var templatePath = WriteEngineData("tmplp/root.lstgproj", EngineTemplateWithResources);
+    var zipPath = CreateEngineZipWithResource("CMEX23_P.zip", EnginePackagePatchArchive);
+
+    var dm = new DataManager(Path.Combine(_tempDir, "userdata_p"), new AesEncryptor("test-key"));
+    dm.LoadAll();
+    var import = MergeImporter.ImportZip(zipPath);
+    import.IsSuccess.ShouldBeTrue();
+    dm.CreatorPackages.Add(import.Package!);
+    foreach (var card in import.Cards)
+      dm.MergeConfig.Mapping.Add(card);
+
+    dm.MergeConfig.TemplatePath.Value = templatePath;
+    dm.MergeConfig.OutputDir.Value = Path.Combine(_tempDir, "out_p");
+    dm.MergeConfig.IncludeLstges.Value = true;
+    dm.MergeConfig.OutputName.Value = "mod";
+
+    var engine = new MergeEngine(dm, dm.MergeConfig.TemplatePath.Value, true, false);
+    var result = engine.BuildAndMerge();
+    result.IsSuccess.ShouldBeTrue();
+
+    var workDir = Path.GetDirectoryName(engine.MergedProjectPath)!;
+    File.Exists(Path.Combine(workDir, "pkg_script.lua")).ShouldBeTrue(); // Patch 脚本随迁到工作目录
+    var outDir = dm.MergeConfig.OutputDir.Value;
+    File.Exists(Path.Combine(outDir, "pkg_script.lua")).ShouldBeTrue(); // 输出目录同样随迁
+  }
+
+  [Test]
+  public void MergeEngine_CopiesPatchScript_IntoArchiveSubdir_WhenNotExcluded()
+  {
+    // 贴合真机场景：创作者包 Patch（脚本导入）引用 sample_exp/special.lua（脚本物理位于包 zip 的
+    // sample_exp/ 子目录），归档 sample_exp/ 未命中模板、不在配置清单。脚本必须像其它资源一样随迁到
+    // 工作/输出目录的 sample_exp/ 子目录（否则导出包缺脚本，运行时无法加载）。
+    var templatePath = WriteEngineData("tmplh/root.lstgproj", EngineTemplateWithResources);
+    const string pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"sample_exp/\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "3,{\"$type\":\".General.Patch, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"sample_exp/special.lua\",\"EditWindow\":\"luaFile\"}],\"AttributeCount\":1}\n"
+      + "1,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"符「卡」\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[]}\n";
+    var lstgesPath = WriteEngineData("pktemp/root.lstges", pkgText);
+    var scriptPath = WriteEngineData("pktemp/sample_exp/special.lua", "lua-script");
+    var zipPath = Path.Combine(_tempDir, "CMEX23_H.zip");
+    using (var fs = File.Create(zipPath))
+    using (var zip = new ZipArchive(fs, ZipArchiveMode.Create))
+    {
+      zip.CreateEntryFromFile(lstgesPath, "root.lstges");
+      zip.CreateEntryFromFile(scriptPath, "sample_exp/special.lua");
+    }
+
+    var dm = new DataManager(Path.Combine(_tempDir, "userdata_h"), new AesEncryptor("test-key"));
+    dm.LoadAll();
+    var import = MergeImporter.ImportZip(zipPath);
+    import.IsSuccess.ShouldBeTrue();
+    dm.CreatorPackages.Add(import.Package!);
+    foreach (var card in import.Cards)
+      dm.MergeConfig.Mapping.Add(card);
+
+    dm.MergeConfig.TemplatePath.Value = templatePath;
+    dm.MergeConfig.OutputDir.Value = Path.Combine(_tempDir, "out_h");
+    dm.MergeConfig.IncludeLstges.Value = true;
+    dm.MergeConfig.OutputName.Value = "mod";
+
+    var engine = new MergeEngine(dm, dm.MergeConfig.TemplatePath.Value, true, false);
+    var result = engine.BuildAndMerge();
+    result.IsSuccess.ShouldBeTrue();
+
+    var workDir = Path.GetDirectoryName(engine.MergedProjectPath)!;
+    File.Exists(Path.Combine(workDir, "sample_exp", "special.lua")).ShouldBeTrue(); // 子目录脚本随迁到工作目录
+    var outDir = dm.MergeConfig.OutputDir.Value;
+    File.Exists(Path.Combine(outDir, "sample_exp", "special.lua")).ShouldBeTrue(); // 输出目录 sample_exp/ 子目录出现
   }
 }

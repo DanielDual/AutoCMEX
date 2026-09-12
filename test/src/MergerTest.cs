@@ -740,6 +740,114 @@ public class MergerTest : TestClass
   }
 
   [Test]
+  public void Merge_PatchScript_TreatedAsTopLevelResource_InjectedWithArchive()
+  {
+    // Patch 的作用是「导入脚本」（attrInput=脚本相对路径），必须与图片/音频资源同等对待：
+    // 未排除时连同其归档空间原样搬迁并注入资源注入点，脚本相对路径保留（不打成纯文件名），
+    // Sharp 打包才能把脚本收进压缩包（否则导出包缺脚本，运行时无法加载）。
+    var template = LstgesParser.ParseDocument(TemplateWithArchiveSpace, out _)!;
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(
+        PackageWithPatch("custom/", "resource\\\\bg\\\\samp_bg.lua"),
+        out _
+      )!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // Patch 被注入，脚本相对路径一字不差保留。
+    var patch = result.Merged!.Nodes.FirstOrDefault(n =>
+      n.Type == ".General.Patch, LuaSTGEditorSharp"
+    );
+    patch.ShouldNotBeNull();
+    patch!.GetAttrAt(0).ShouldBe("resource\\bg\\samp_bg.lua");
+
+    // 归档空间落资源注入点同级(marker level2)，Patch 在其下（保持源包内相对层级）。
+    var archive = result.Merged!.Nodes.FirstOrDefault(n =>
+      n.Type == ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp"
+    );
+    archive.ShouldNotBeNull();
+    archive!.Level.ShouldBe(2);
+    patch.Level.ShouldBeGreaterThan(archive.Level);
+
+    // 往返解析合法
+    var reparsed = LstgesParser.ParseDocument(result.Merged.Serialize(), out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+  }
+
+  private static string PackageWithPatch(string archiveName, string scriptPath) =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + archiveName
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "3,{\"$type\":\".General.Patch, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\""
+    + scriptPath
+    + "\",\"EditWindow\":\"luaFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + SpellCard("卡A", false);
+
+  private static string PackageWithPatchSibling(string archiveName, string scriptPath) =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + archiveName
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Patch, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\""
+    + scriptPath
+    + "\",\"EditWindow\":\"luaFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + SpellCard("卡A", false);
+
+  [Test]
+  public void Merge_PatchSiblingOfArchive_StillInjectedWithArchive()
+  {
+    // 真机形态：脚本 Patch 与 sample_exp\ 归档「同级、且在归档之后」。ArchiveSpace 是流式作用域
+    // （其后所有节点无论层级都归属它，直到下一个 ArchiveSpace），故脚本必须连同归档注入、脚本相对路径保留；
+    // 绝不能因「层级配对」漏掉脚本（否则导出包缺脚本，运行时无法加载）。
+    var template = LstgesParser.ParseDocument(TemplateWithArchiveSpace, out _)!;
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(
+        PackageWithPatchSibling("sample_exp/", "sample_exp\\\\sample_scripts.lua"),
+        out _
+      )!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var patch = result.Merged!.Nodes.FirstOrDefault(n =>
+      n.Type == ".General.Patch, LuaSTGEditorSharp"
+    );
+    patch.ShouldNotBeNull();
+    patch!.GetAttrAt(0).ShouldBe("sample_exp\\sample_scripts.lua"); // 脚本路径保留
+    var archive = result.Merged!.Nodes.FirstOrDefault(n =>
+      n.Type == ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp"
+    );
+    archive.ShouldNotBeNull();
+    archive!.Level.ShouldBe(2); // 归档落资源注入点同级
+    // 流式：脚本在归档之后，注入时归档节点应排在脚本之前（脚本随归档一并注入）
+    var mergedNodes = result.Merged.Nodes.ToList();
+    mergedNodes.IndexOf(archive!).ShouldBeLessThan(mergedNodes.IndexOf(patch!));
+
+    var reparsed = LstgesParser.ParseDocument(result.Merged.Serialize(), out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+  }
+
+  [Test]
   public void HierarchyFindFirstInvalid_ValidSequence_ReturnsMinusOne()
   {
     // 父链完整、每行回落不超过现有父链深度的序列 → 无越界行。
