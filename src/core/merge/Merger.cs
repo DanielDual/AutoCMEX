@@ -88,16 +88,18 @@ public class Merger
   }
 
   /// <summary>
-  /// 返回给定节点（索引）在源文档中的最内层归属归档空间节点；无则为 null。
-  /// 向上扫描祖先，取最近的 ArchiveSpaceIndicator。
+  /// 返回给定节点（索引）在源文档中归属的归档空间节点；无则为 null。
+  /// ArchiveSpace 是「流式作用域」：从该节点起、其后所有节点（无论层级）归属它，直到下一个
+  /// ArchiveSpace。因此节点归属 = 其位置之前最近的一个 ArchiveSpace（不限层级），
+  /// 而非「更高层级的祖先」（真机脚本 Patch 往往与归档同级且在归档之后，层级匹配会漏掉）。
+  /// 注意前提：注入偏移以 archive.Level 为基准（RootLevel=archive.Level），故按流式归属的节点
+  /// 层级须 ≥ 其归档层级（真机脚本与归档同级即满足）；若更浅节点被流式吸纳后注入层级高于归档，
+  /// 会脱离该归档并触发父链对齐告警——采集时应保证目标节点不早于（不浅于）其归档层级。
   /// </summary>
   private static LstgesNode? InnermostArchiveSpace(IReadOnlyList<LstgesNode> nodes, int index)
   {
-    int level = nodes[index].Level;
     for (int i = index - 1; i >= 0; i--)
     {
-      if (nodes[i].Level >= level)
-        continue;
       if (nodes[i].Type == ArchiveSpaceIndicatorType)
         return nodes[i];
     }
