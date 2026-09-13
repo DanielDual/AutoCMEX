@@ -43,6 +43,7 @@
 - **整合板块导出包缺脚本（ArchiveSpace 流式配对缺陷）**：真机导出包缺 `sample_exp/` 脚本。实证定案：**不是复制链路漏脚本**（复制正常、无 missing），而是上游「资源/归档采集」缺陷——Sharp 源码 `ArchiveSpaceIndicator.AddCompileSettings()` 把 `CompileProcess.archiveSpace` 设为该值，证明 **ArchiveSpace 是流式作用域（其后所有节点无论层级归属它，直到下一个 ArchiveSpace）**；而旧 `Merger.InnermostArchiveSpace` 按「父子层级」向上扫 `level<node.Level` 的祖先归档，漏掉了「与归档同级且在归档之后」的脚本 Patch（`sample_exp\` 归档注入了、脚本未注入 → 合并文档无脚本引用 → 无从复制，输出无 `sample_exp/` 也不报 missing）。修复：`InnermostArchiveSpace` 改为**流式前驱配对**——向前扫「位置最近的一个 ArchiveSpace（不限层级）」，使同级脚本正确携带归档注入、脚本进合并、复制随迁到工作/输出目录。测试：新增「脚本与归档同级、在归档后」的注入回归测试；修正排除集成测试数据（未排除资源须在归档**之前**，归档之后的节点流式上归该归档而应被排除）。验证：dotnet build 0 错误、GoDotTest 287 通过/0 失败
 - **整合板块 Sharp 打开产物抛 NRE（注入段父链对齐）**：真机用 LuaSTGEditorSharp **编辑器打开**合并 `.lstgproj` 时，`DocumentData.CreateNodeFromFileAsync`（`:328 prev.AddChild`）抛 `NullReferenceException`。根因：Sharp 按行用 `levelgrad=当前层-前层` 重建父链，负跳时反复 `prev=prev.Parent` 回溯；**当回落步数超过现有父链深度时 prev 越过 root 变 null**，下一行 `AddChild` 即 NRE。「大负跳本身合法（`.lstgproj` 允许跳层）」，非法条件是「回溯步数超出父链深度」。修复（新增 `src/core/merge/LstgesHierarchy.cs`——plan 文件清单之外的追加、阶段1 引擎层 bugfix）：`FindFirstInvalidLevel` 逐行模拟 Sharp 重建、返回首个「父链回溯越界」行（含对「跳层后再浅回落」漏报的钉死）；`NormalizeParentChain` **就地父链对齐**，把越界节点层级抬到「现有父链可容纳的最浅合法层」使回溯停在 root 之下、不越界。`Merger` 注入完成后调用父链对齐，若发生修正则记录 warning「合并产物父链已自动对齐」，从根上保证交付产物可被 Sharp 与编辑器安全打开（不再产出 NRE 文件）。测试：新增合法序列→无越界、`0,6,3` 与 `0,1,4,3,2` 越界检测、`NormalizeParentChain` 修正+幂等、富包合并产物父链合法+往返可解析
 
+- **整合板块：独立定义/代码节点移植补全（原静默丢弃）**：`Merger` 原先只注入「符卡 + 对象定义 + 顶层资源」三类，创作者包中不落在任何被注入子树下的独立承载运行时代码节点——`EnemyDefine`（敌人类型）、`BentLaserDefine`（弯折激光）、`BossBGDefine`（Boss 背景定义，如 `test_scbg1`）、`RenderTarget`/`CreateRenderTarget`/`OnRender`/`Render4V`（渲染/渲染目标）、`Data.Function`（Lua 函数定义）、`Advanced.UnidentifiedNode`（自定义节点）——会被静默丢弃，导致产物运行缺类/缺函数/缺背景报错。修复：`ObjectDetector.ObjectTypes` 扩展为「可移植定义/代码节点」集合（纳入上述类型；明确**不含 `.Stage.*`**——关卡由模板统一提供；`BossDefine` 仍由模板共享排除）；`Merger` 把 `CollectObjectSubtrees` + `CollectTopLevelResources` **统一为单一 `CollectTransplantables`**，返回 `(Definitions, Resources)` 两类、共用同一覆盖规则（已被已注入符卡/定义子树覆盖的节点不重复采集，其嵌套定义/资源随所属被注入子树一起移植避免双份），按 `IsResource` 标签分到对象/资源两个注入点；资源类仍走物理随迁链路不回归。测试：新增独立定义注入、嵌套定义不重复注入、BossDefine 不重复注入断言。验证：dotnet build 0 错误、GoDotTest 290 通过 / 0 失败
 - **丢包仓储提取**：`GuessProcessingService` 的丢包管理抽取为 `IDroppedGuessRepository` / `DroppedGuessRepository`
 - **GuessingPanel 子节点脚本化**：符卡表/别名表/导入导出逻辑下放到 `SpellCardTreeHandler` / `AliasTreeHandler` 子节点脚本
 
@@ -52,6 +53,7 @@
 - **自定义 TestDriver**：创建 GuessingPanelDriver、SpellCardTreeHandlerDriver、AliasTreeHandlerDriver，封装复杂 UI 节点操作为高阶 API，解耦测试与节点路径
 - **测试质量提升**：将存在性行为测试改为行为测试，补充 INotifyPropertyChanged 测试和负面用例
 - **修复失败测试**：更新 GuessEngineTest 和 GuessProcessingServiceTest 断言以匹配当前 GuessResponseHandler 行为（emoji 格式）
+- **整合板块定义节点移植测试**：新增 `Merge_StandaloneDefinitions_InjectedIntoObjectMarker`（独立 `EnemyDefine`/`BentLaserDefine`/`BossBGDefine`/`RenderTarget`/`CreateRenderTarget`/`Data.Function`/`UnidentifiedNode` 注入对象注入点、层级重编号正确）、`Merge_BossDefineChildren_NotStandaloneInjectedWhenCovered`（BossDefine 由模板共享不重复注入）、`Merge_NestedDefinitionInsideInjectedSubtree_NotReInjected`（嵌套在被注入子树内的定义不重复注入，避免双份）
 - **修复 CloneSettingsForSave 加密逻辑**：保存前加密 API 密钥，避免敏感数据明文写入 JSON
 
 ### 待完成
