@@ -23,8 +23,11 @@ public sealed class ObjectInfo
 public static class ObjectDetector
 {
   /// <summary>
-  /// 被视为「可移植定义/代码节点」的类型集合：类定义（Object/Bullet/Laser/Enemy）、任务定义、
-  /// Boss 背景定义、渲染节点、函数定义与自定义节点等承载运行时代码的节点。
+  /// 被视为「可移植定义/代码节点」的类型集合：显式定义节点（Object/Bullet/Laser/Enemy/Task/BossBG 等类定义）、
+  /// 渲染节点、函数定义、自定义节点，以及<b>通用代码块 <c>.General.Code</c></b>（承载任意 Lua 代码，
+  /// 可含被依赖的全局函数/类定义——按「位置归属」近似移植：作者包顶层/自有文件夹下的通用代码块
+  /// 默认视为需要交付的全局代码，随定义集合注入对象注入点；若其归属归档命中排除集则由模板已有的归档
+  /// 持有、不搬）。
   /// 注意：① 不含 <c>.Stage.*</c>（关卡由模板统一提供，不移植）；② <c>.Boss.BossDefine</c> 由模板共享，
   /// 在 Merger 中被排除注入；③ 资源型节点（<see cref="ResourceDetector"/>）走文件导入注入点，不属于本集合。
   /// </summary>
@@ -44,6 +47,7 @@ public static class ObjectDetector
     ".Render.Render4V, ",
     ".Data.Function, ",
     ".Advanced.UnidentifiedNode, LuaSTGEditorSharp",
+    ".General.Code, LuaSTGEditorSharp",
   };
 
   private static readonly Dictionary<string, string> TypeShortNames = new()
@@ -62,6 +66,7 @@ public static class ObjectDetector
     [".Render.Render4V, "] = "Render4V",
     [".Data.Function, "] = "Function",
     [".Advanced.UnidentifiedNode, LuaSTGEditorSharp"] = "UnidentifiedNode",
+    [".General.Code, LuaSTGEditorSharp"] = "Code",
   };
 
   private static readonly string NameAttr = "Name";

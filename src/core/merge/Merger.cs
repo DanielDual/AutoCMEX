@@ -62,6 +62,9 @@ public class Merger
 {
   private static readonly string BossDefineType = ".Boss.BossDefine, ";
 
+  /// <summary>通用代码块节点类型（承载任意 Lua 代码，可含被依赖的全局函数/类定义）。</summary>
+  private const string GeneralCodeType = ".General.Code, LuaSTGEditorSharp";
+
   private const string ArchiveSpaceIndicatorType =
     ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp";
 
@@ -104,6 +107,37 @@ public class Merger
         return nodes[i];
     }
     return null;
+  }
+
+  /// <summary>
+  /// 判断 <paramref name="index"/> 节点是否「嵌套在某定义型节点子树内」。沿完整父链回溯到根，
+  /// 只要祖先链上任一节点为定义型（ObjectDetector.ObjectTypes，排除本代码块自身与模板共享的
+  /// BossDefine），即视为定义内部代码——必须随所属定义整棵移植，绝不能被当作顶层全局代码独立剥离。
+  /// 关键：不能只查「最近一层」祖先，否则嵌在多层的代码块（如 bent laser 的
+  ///  Repeat→TaskNode→BentLaserInit→BentLaserDefine 链）会因最近父是非定义的 Repeat 而被漏判。
+  /// </summary>
+  private static bool IsNestedInsideDefinition(IReadOnlyList<LstgesNode> nodes, int index)
+  {
+    int level = nodes[index].Level;
+    int floor = index; // 从当前节点向前扫，只回看层级 < 当前 level 的祖先
+    for (int i = index - 1; i >= 0; i--)
+    {
+      int ancestorLevel = nodes[i].Level;
+      if (ancestorLevel >= level)
+        continue; // 同层或更深，不是祖先（跳过兄弟/后代）
+      // 命中祖先（层级更浅）。检查是否定义型。
+      string? t = nodes[i].Type;
+      bool isDefinitionAncestor =
+        t != null
+        && t != GeneralCodeType
+        && t != BossDefineType
+        && ObjectDetector.ObjectTypes.Contains(t);
+      if (isDefinitionAncestor)
+        return true;
+      // 该祖先非定义型。为继续回溯「它的祖先」，把基准 level 压到这个祖先层级，往前再找更深一层的祖先。
+      level = ancestorLevel;
+    }
+    return false;
   }
 
   private readonly ILog _log;
@@ -268,6 +302,13 @@ public class Merger
     public int RootLevel;
     public int StartIndex;
     public List<LstgesNode> Nodes = new();
+
+    /// <summary>
+    /// 资源型节点注入时是否强制与「归属 ArchiveSpace」同级、紧随其后（不落入归档子树）。
+    /// ArchiveSpaceIndicator 是 [LeafNode]，编辑器不允许其拥有子树成员；资源归位同级才能保证
+    /// AddFile/Patch 等按流式 archiveSpace 命中正确归档。
+    /// </summary>
+    public bool ForceSiblingOfArchive;
   }
 
   /// <summary>统一采集结果：定义/代码类子树（注入对象注入点）与资源类子树（注入资源注入点）。</summary>
@@ -324,6 +365,24 @@ public class Merger
         {
           if (type == BossDefineType)
             continue; // BossDefine 由模板共享
+          if (type == GeneralCodeType)
+          {
+            // 代码块必须「真正位于顶层/自有文件夹」才作为全局代码剥离注入；若嵌套在某定义型节点
+            // 子树内（最近祖先是定义，如 `.Laser.BentLaserDefine` 的 init 代码块），则应由所属定义
+            // 整棵携带，绝不独立剥离——否则会被提级到对象注入点、脱离 `self`/局部作用域而并列报错。
+            if (IsNestedInsideDefinition(nodes, i))
+              continue;
+            // 代码块按「位置归属」近似：若其最内层归属归档命中排除集（模板已有该归档）→ 模板已持有，不搬。
+            var codeArchive = InnermostArchiveSpace(nodes, i);
+            if (codeArchive != null)
+            {
+              var codeArchiveName = codeArchive.GetAttr("Name");
+              var codeNorm =
+                codeArchiveName == null ? string.Empty : NormalizeArchive(codeArchiveName);
+              if (excludedSpaces.Contains(codeNorm))
+                continue;
+            }
+          }
           var subtree = packages[p].Doc.GetSubtree(i);
           covered[p].Add(Tuple.Create(i, subtree.Count)); // 供后续嵌套定义/资源跳过重复采集
           definitions.Add(
@@ -348,18 +407,22 @@ public class Merger
             continue;
         }
 
-        // 归档空间基准节点与资源节点一并注入（归档空间保持原层级，由 BuildInjectedSegments 重编号）。
+        // 归档空间（若携带）与资源节点一并注入，且二者强制落在注入点同级、紧随其后（非归档子树）。
+        // 原因：ArchiveSpaceIndicator 是 [LeafNode]，编辑器不允许其子树有任何节点；若资源落入归档子树，
+        // Source 流的归档值（CompileProcess.archiveSpace）会随文档序被隔断而错位，导致 AddFile/Patch 等
+        // 打错/漏打归档。故资源一律作为「其归属归档的同级后继」注入（ForceSiblingOfArchive 见 BuildInjectedSegments）。
         var nodesToInject =
           archive == null ? new List<LstgesNode> { node } : new List<LstgesNode> { archive, node };
         resources.Add(
           new SubtreeRef
           {
             Pkg = p,
-            // 子树根为归档空间节点（若携带），使归档空间落在注入点同级、资源落其下，
-            // 保持源包内相对层级，避免归档空间被抬到注入点之上造成基准错乱。
+            // 子树根为归档空间节点（若携带）；配合 ForceSiblingOfArchive 在 BuildInjectedSegments 中
+            // 让归档空间与资源节点都落在注入点同级，而不是资源落归档子树。
             RootLevel = archive == null ? node.Level : archive.Level,
             StartIndex = i,
             Nodes = nodesToInject,
+            ForceSiblingOfArchive = true,
           }
         );
       }
@@ -523,7 +586,10 @@ public class Merger
       int offset = targetLevel - s.RootLevel;
       foreach (var node in s.Nodes)
       {
-        var clone = new LstgesNode { Level = node.Level + offset, Line = node.Line?.DeepClone() };
+        // 资源同归档：归档空间与资源节点都落在注入点同级、按 Nodes 列表序紧随（非归档子树）——\
+        // 保证 ArchiveSpaceIndicator(LeafNode) 下没有任何子树成员。
+        int level = s.ForceSiblingOfArchive ? targetLevel : node.Level + offset;
+        var clone = new LstgesNode { Level = level, Line = node.Line?.DeepClone() };
         RewriteResourceNode(clone, s.Pkg, renameMap);
         segments.Add(clone);
       }
