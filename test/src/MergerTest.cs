@@ -731,7 +731,10 @@ public class MergerTest : TestClass
     archiveNode.Level.ShouldBe(2);
     var images = result.Merged!.Nodes.Where(n => n.Type == ".Graphics.LoadImage, ").ToList();
     var injectedImage = images.First(i => i.GetAttrAt(0) == "boss/my.png");
-    injectedImage.Level.ShouldBeGreaterThan(archiveNode.Level);
+    // 资源节点必须落在归档同级、紧随其后（非归档子树）——归档是 LeafNode，其下不允许任何节点。
+    injectedImage.Level.ShouldBe(archiveNode.Level);
+    var mergedNodes = result.Merged.Nodes.ToList();
+    mergedNodes.IndexOf(archiveNode!).ShouldBeLessThan(mergedNodes.IndexOf(injectedImage!));
 
     // 往返解析合法，结构保持
     var reparsed = LstgesParser.ParseDocument(result.Merged!.Serialize(), out var error);
@@ -768,13 +771,16 @@ public class MergerTest : TestClass
     patch.ShouldNotBeNull();
     patch!.GetAttrAt(0).ShouldBe("resource\\bg\\samp_bg.lua");
 
-    // 归档空间落资源注入点同级(marker level2)，Patch 在其下（保持源包内相对层级）。
+    // 归档空间落资源注入点同级(marker level2)，Patch 与其同级、紧随其后（非归档子树——
+    // 归档是 LeafNode，其下不允许任何节点）。
     var archive = result.Merged!.Nodes.FirstOrDefault(n =>
       n.Type == ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp"
     );
     archive.ShouldNotBeNull();
     archive!.Level.ShouldBe(2);
-    patch.Level.ShouldBeGreaterThan(archive.Level);
+    patch.Level.ShouldBe(archive.Level);
+    var mergedNodes = result.Merged.Nodes.ToList();
+    mergedNodes.IndexOf(archive!).ShouldBeLessThan(mergedNodes.IndexOf(patch!));
 
     // 往返解析合法
     var reparsed = LstgesParser.ParseDocument(result.Merged.Serialize(), out var error);
@@ -846,6 +852,66 @@ public class MergerTest : TestClass
     error.ShouldBeNull();
     reparsed.ShouldNotBeNull();
   }
+
+  [Test]
+  public void Merge_ResourceNodes_AllSiblingOfArchive_NotSubtree()
+  {
+    // 所有资源型节点（AddFile/Patch/LoadImage）都必须作为「归属归档」的同级后继注入，绝不落入归档子树。
+    // 归档是 [LeafNode]，编辑器不允许其子树有任何节点；资源落子树会隔断流式 archiveSpace，导致打包错档/漏档。
+    var template = LstgesParser.ParseDocument(TemplateWithArchiveSpace, out _)!;
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(
+        PackageWithResourceSibling("custom/", "boss/my.png", "resource\\\\samp\\\\samp.lua"),
+        out _
+      )!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var archive = result.Merged!.Nodes.First(n =>
+      n.Type == ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp"
+      && n.GetAttr("Name") == "custom/"
+    );
+    var image = result.Merged.Nodes.First(n => n.Type == ".Graphics.LoadImage, ");
+    var patch = result.Merged.Nodes.First(n => n.Type == ".General.Patch, LuaSTGEditorSharp");
+
+    // 全部与归档同级、紧随其后（非子树）
+    image.Level.ShouldBe(archive.Level);
+    patch.Level.ShouldBe(archive.Level);
+    var merged = result.Merged.Nodes.ToList();
+    merged.IndexOf(archive).ShouldBeLessThan(merged.IndexOf(image));
+    merged.IndexOf(archive).ShouldBeLessThan(merged.IndexOf(patch));
+
+    // 往返解析合法，结构保持
+    var reparsed = LstgesParser.ParseDocument(result.Merged.Serialize(), out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+  }
+
+  private static string PackageWithResourceSibling(
+    string archiveName,
+    string imagePath,
+    string scriptPath
+  ) =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + archiveName
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"$type\":\".DependencyAttrItem, \",\"attrCap\":\"Path\",\"attrInput\":\""
+    + imagePath
+    + "\",\"EditWindow\":\"imageFile\"},{\"attrCap\":\"Resource name\",\"attrInput\":\"samp_img\",\"EditWindow\":\"\"}],\"AttributeCount\":2}\n"
+    + "2,{\"$type\":\".General.Patch, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\""
+    + scriptPath
+    + "\",\"EditWindow\":\"luaFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + SpellCard("卡A", false);
 
   [Test]
   public void Merge_StandaloneDefinitions_InjectedIntoObjectMarker()
@@ -937,6 +1003,143 @@ public class MergerTest : TestClass
     // 嵌套 TaskDefine 只出现一次（随 ObjectDefine 子树带出），不作独立定义重复注入。
     var tasks = result.Merged!.Nodes.Where(n => n.Type == ".Task.TaskDefine, ").ToList();
     tasks.Count.ShouldBe(1);
+  }
+
+  [Test]
+  public void Merge_StandaloneGeneralCodeBlock_InjectedIntoObjectMarker()
+  {
+    // 方案 A：顶层/自有文件夹的通用代码块（.General.Code，承载任意 Lua 代码、可含被依赖的全局函数/类定义）
+    // 默认归入定义集合注入对象注入点，确保产物包含包交付的全局 helper/函数依赖。
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".General.Code, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Code\",\"attrInput\":\"global helper\\nfunction my_util(x) return x * 2 end\",\"editWindow\":\"code\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 独立顶层代码块已注入对象注入点（层级重编号到注入点=3）。
+    var codeBlocks = result
+      .Merged!.Nodes.Where(n => n.Type == ".General.Code, LuaSTGEditorSharp")
+      .ToList();
+    codeBlocks.Count.ShouldBe(1);
+    codeBlocks[0].Level.ShouldBe(3);
+  }
+
+  [Test]
+  public void Merge_CodeBlock_NestedInsideDefinition_NotStrippedToTopLevel()
+  {
+    // 真机报错根因：定义内部的嵌套代码块（如某 BentLaserDefine/ObjectDefine 的 init 代码，
+    // 引用 self/局部变量）被「位置归属近似」误判为顶层全局代码，独立剥离注入对象注入点、
+    // 与定义并列、脱离 self 作用域而报错。必须随所属定义整棵移植，绝不提级。
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Object.ObjectDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"samp_exp_obj\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".Object.ObjectInit, \",\"Attributes\":[{\"attrCap\":\"Parameter List\",\"attrInput\":\"\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      // init 内的嵌套代码块（引用 self、ds/dr 等局部）——必须在定义内、不得提升到顶层。
+      + "3,{\"$type\":\".General.Code, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Code\",\"attrInput\":\"self.x=ds*cos(dr)+kx\",\"EditWindow\":\"code\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 对象注入点（level3 顶层）不应出现该代码块（未被剥离提级）。
+    var codeBlocksAtTopLevel = result
+      .Merged!.Nodes.Where(n => n.Type == ".General.Code, LuaSTGEditorSharp" && n.Level == 3)
+      .ToList();
+    codeBlocksAtTopLevel.ShouldBeEmpty();
+
+    // 该代码块应保留在定义子树内（随 ObjectDefine 整棵移植，层级 > 定义/注入点）。
+    var objDefine = result.Merged.Nodes.First(n =>
+      n.Type == ".Object.ObjectDefine, " && n.GetAttr("Name") == "samp_exp_obj"
+    );
+    objDefine.ShouldNotBeNull();
+    var nestedCode = result.Merged.Nodes.First(n => n.Type == ".General.Code, LuaSTGEditorSharp");
+    nestedCode.Level.ShouldBeGreaterThan(objDefine.Level);
+  }
+
+  [Test]
+  public void Merge_CodeBlock_NestedInsideBannedDefinition_NotStrippedToTopLevel()
+  {
+    // 真机实际形态（akari 包）：`self.colli=flase`/`local kx,ky=self.x,self.y`/`self.x=ds*cos(dr)+kx`
+    // 位于 **IsBanned 的 BentLaserDefine/OjbectDefine** 内部。banned 定义在采集时被 `IsBanned → continue`
+    // 跳过且不进入 covered 区间，其内部**非 banned** 的代码块会逃逸成“顶层全局代码”被剥离注入对象注入点、
+    // 与定义并列脱离 self 作用域报错。必须沿完整父链回溯父级，判定其嵌套于定义内而不剥离。
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    // 容器定义为 IsBanned（含 init 及多层 Repeat→TaskNode 子级），内部嵌三段 self.* 代码块。
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Laser.BentLaserDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"samp_hole\",\"EditWindow\":\"\"},{\"attrCap\":\"Difficulty\",\"attrInput\":\"All\",\"EditWindow\":\"objDifficulty\"}],\"AttributeCount\":2,\"IsExpanded\":false,\"IsBanned\":true}\n"
+      + "2,{\"$type\":\".Laser.BentLaserInit, \",\"Attributes\":[{\"attrCap\":\"Parameter List\",\"attrInput\":\"r,mod\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "3,{\"$type\":\".General.Code, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Code\",\"attrInput\":\"self.colli=flase\",\"EditWindow\":\"code\"}],\"AttributeCount\":1}\n"
+      + "3,{\"$type\":\".General.Code, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Code\",\"attrInput\":\"local kx,ky=self.x,self.y\",\"EditWindow\":\"code\"}],\"AttributeCount\":1}\n"
+      + "3,{\"$type\":\".Task.TaskNode, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "4,{\"$type\":\".General.Repeat, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Times\",\"attrInput\":\"_infinite\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}\n"
+      + "5,{\"$type\":\".General.Code, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Code\",\"attrInput\":\"self.x=ds*cos(dr)+kx\",\"EditWindow\":\"code\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 对象注入点（level3 顶层）不应出现任何 self.* 代码块（banned 定义内部代码不被剥离提级）。
+    var topLevelCodes = result
+      .Merged!.Nodes.Where(n => n.Type == ".General.Code, LuaSTGEditorSharp" && n.Level == 3)
+      .ToList();
+    topLevelCodes.ShouldBeEmpty();
+    // 定义本身因 banned 未被独立移植，其内部代码块也不得在产物顶层出现副作用。
+    result
+      .Merged.Nodes.Any(n =>
+        n.Type == ".General.Code, LuaSTGEditorSharp"
+        && n.GetAttr("Code")?.Contains("ds*cos(dr)") == true
+      )
+      .ShouldBeFalse();
+  }
+
+  [Test]
+  public void Merge_StandaloneGeneralCodeBlock_ExcludedArchive_NotInjected()
+  {
+    // 方案 A：代码块若位于模板已持有的归档空间内（命中排除集）→ 模板已有该代码，作者不改动 → 不搬。
+    var excludedTemplate =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"common/\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert spellcards here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"code\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "3,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert objects here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n";
+    var template = LstgesParser.ParseDocument(excludedTemplate, out _)!;
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"common/\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".General.Code, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Code\",\"attrInput\":\"local pi = 180\",\"EditWindow\":\"code\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 归入 common/（模板已有）的代码块不注入到对象注入点。
+    result.Merged!.Nodes.Any(n => n.Type == ".General.Code, LuaSTGEditorSharp").ShouldBeFalse();
   }
 
   [Test]
