@@ -182,9 +182,9 @@ public class MergeEngineTest : TestClass
 
     var cards = SpellCardExtractor.Extract(doc!);
     cards.Count.ShouldBe(2);
-    // 第一张为空名（非符），第二张为真名「萃符「鬼之黑洞」」
+    // 第一张为空名（非符），第二张为真名「Spellcard 1」（脱敏版通用名）。
     cards.Any(c => c.IsNonSpell).ShouldBeTrue();
-    cards.Any(c => !c.IsNonSpell && c.Name.Contains("黑洞")).ShouldBeTrue();
+    cards.Any(c => !c.IsNonSpell && c.Name.Contains("Spellcard")).ShouldBeTrue();
   }
 
   // ==================== ResourceDetector Tests ====================
@@ -235,6 +235,6 @@ public class MergeEngineTest : TestClass
     doc.ShouldNotBeNull();
 
     var objects = ObjectDetector.Detect(doc!);
-    objects.Any(o => o.Type == "BossDefine" && o.Name == "samp_enm1").ShouldBeTrue();
+    objects.Any(o => o.Type == "BossDefine" && o.Name == "test_enm1").ShouldBeTrue();
   }
 }
