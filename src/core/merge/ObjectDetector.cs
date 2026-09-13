@@ -22,7 +22,12 @@ public sealed class ObjectInfo
 /// </summary>
 public static class ObjectDetector
 {
-  /// <summary>被视为自定义定义/对象的节点类型集合。</summary>
+  /// <summary>
+  /// 被视为「可移植定义/代码节点」的类型集合：类定义（Object/Bullet/Laser/Enemy）、任务定义、
+  /// Boss 背景定义、渲染节点、函数定义与自定义节点等承载运行时代码的节点。
+  /// 注意：① 不含 <c>.Stage.*</c>（关卡由模板统一提供，不移植）；② <c>.Boss.BossDefine</c> 由模板共享，
+  /// 在 Merger 中被排除注入；③ 资源型节点（<see cref="ResourceDetector"/>）走文件导入注入点，不属于本集合。
+  /// </summary>
   public static readonly HashSet<string> ObjectTypes = new()
   {
     ".Object.ObjectDefine, ",
@@ -30,6 +35,15 @@ public static class ObjectDetector
     ".Bullet.BulletDefine, ",
     ".Boss.BossDefine, ",
     ".Laser.LaserDefine, ",
+    ".Enemy.EnemyDefine, ",
+    ".Laser.BentLaserDefine, ",
+    ".Boss.BossBGDefine, ",
+    ".Render.RenderTarget, ",
+    ".Render.CreateRenderTarget, ",
+    ".Render.OnRender, ",
+    ".Render.Render4V, ",
+    ".Data.Function, ",
+    ".Advanced.UnidentifiedNode, LuaSTGEditorSharp",
   };
 
   private static readonly Dictionary<string, string> TypeShortNames = new()
@@ -39,6 +53,15 @@ public static class ObjectDetector
     [".Bullet.BulletDefine, "] = "BulletDefine",
     [".Boss.BossDefine, "] = "BossDefine",
     [".Laser.LaserDefine, "] = "LaserDefine",
+    [".Enemy.EnemyDefine, "] = "EnemyDefine",
+    [".Laser.BentLaserDefine, "] = "BentLaserDefine",
+    [".Boss.BossBGDefine, "] = "BossBGDefine",
+    [".Render.RenderTarget, "] = "RenderTarget",
+    [".Render.CreateRenderTarget, "] = "CreateRenderTarget",
+    [".Render.OnRender, "] = "OnRender",
+    [".Render.Render4V, "] = "Render4V",
+    [".Data.Function, "] = "Function",
+    [".Advanced.UnidentifiedNode, LuaSTGEditorSharp"] = "UnidentifiedNode",
   };
 
   private static readonly string NameAttr = "Name";

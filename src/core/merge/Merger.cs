@@ -181,16 +181,13 @@ public class Merger
       );
     }
 
-    // ---- 2. 对象定义收集（用于注入对象注入点，不依赖模板索引） ----
-    var objectSubtrees = CollectObjectSubtrees(packages);
-
-    // ---- 3. 顶层资源节点收集（未被任何注入子树覆盖、且未命中排除集的资源加载节点） ----
-    var topResources = CollectTopLevelResources(
-      packages,
-      spellSubtrees,
-      objectSubtrees,
-      excludedSpaces
-    );
+    // ---- 2. 统一采集可移植节点（定义/代码类 + 资源类），按 IsResource 分到两个注入点 ----
+    // 取代原第 2 步（定义采集）与第 3 步（顶层资源采集）。定义/代码类注入对象注入点；
+    // 资源类（带归档流式基准）注入资源注入点，另行物理随迁。
+    // 两语义差异仅在于资源类需处理文件导入链路（路径改写 + 物理复制），采集/注入逻辑一致。
+    var transplants = CollectTransplantables(packages, spellSubtrees, excludedSpaces);
+    var objectSubtrees = transplants.Definitions;
+    var topResources = transplants.Resources;
 
     // ---- 4. 资源路径解析（冲突检测 + 可选自动改名） ----
     var renameMap = ResolveResourceRenames(
@@ -273,59 +270,34 @@ public class Merger
     public List<LstgesNode> Nodes = new();
   }
 
-  private static List<SubtreeRef> CollectObjectSubtrees(IReadOnlyList<CreatorPackageDoc> packages)
-  {
-    var result = new List<SubtreeRef>();
-    for (int p = 0; p < packages.Count; p++)
-    {
-      var nodes = packages[p].Doc.Nodes;
-      for (int i = 0; i < nodes.Count; i++)
-      {
-        var node = nodes[i];
-        if (node.IsBanned)
-          continue;
-        var type = node.Type;
-        if (type == null || !ObjectDetector.ObjectTypes.Contains(type))
-          continue;
-        if (type == BossDefineType)
-          continue; // BossDefine 由模板共享
-
-        var subtree = packages[p].Doc.GetSubtree(i);
-        result.Add(
-          new SubtreeRef
-          {
-            Pkg = p,
-            RootLevel = node.Level,
-            StartIndex = i,
-            Nodes = subtree,
-          }
-        );
-      }
-    }
-    return result;
-  }
+  /// <summary>统一采集结果：定义/代码类子树（注入对象注入点）与资源类子树（注入资源注入点）。</summary>
+  private sealed record Transplantables(List<SubtreeRef> Definitions, List<SubtreeRef> Resources);
 
   /// <summary>
-  /// 收集未被任何已注入子树覆盖、且未命中排除集的顶层资源加载节点。
-  /// 未命中排除集的资源，把其最内层归属归档空间节点作为该资源的「相对路径基准」随段注入。
+  /// 统一采集创作者包中需要移植的可移植节点，按类型打到资源/定义两个注入点：
+  /// <list type="bullet">
+  /// <item><b>定义/代码类</b>（<see cref="ObjectDetector.ObjectTypes"/>，BossDefine 由模板共享除外）：对象/任务/
+  /// 子弹/激光/弯折激光/敌人/Boss背景/渲染/函数/自定义节点等承载运行时代码的节点，注入对象注入点。</item>
+  /// <item><b>资源类</b>（<see cref="ResourceDetector.ResourceTypes"/>）：加载外部文件、需另行物理随迁，
+  /// 注入资源注入点并带最内层归属归档空间作为相对路径基准。</item>
+  /// </list>
+  /// 两类共用同一覆盖规则（与旧实现一致）：已被已注入子树（符卡/定义）覆盖过的节点不重复采集，
+  /// 其嵌套定义/资源随所属被注入子树一起移植，避免双份。Stage 不入本集合（关卡由模板统一提供）。
   /// </summary>
-  private static List<SubtreeRef> CollectTopLevelResources(
+  private static Transplantables CollectTransplantables(
     IReadOnlyList<CreatorPackageDoc> packages,
     IReadOnlyList<SubtreeRef> spellSubtrees,
-    IReadOnlyList<SubtreeRef> objectSubtrees,
     IReadOnlySet<string> excludedSpaces
   )
   {
-    var result = new List<SubtreeRef>();
+    var definitions = new List<SubtreeRef>();
+    var resources = new List<SubtreeRef>();
 
-    // 每个包被注入子树覆盖的索引区间
+    // 每个包被已注入子树覆盖的索引区间（初始来自符卡子树；后续追加已采集定义子树）。
     var covered = new List<Tuple<int, int>>[packages.Count];
     for (int p = 0; p < packages.Count; p++)
       covered[p] = new();
-
     foreach (var s in spellSubtrees)
-      covered[s.Pkg].Add(Tuple.Create(s.StartIndex, s.Nodes.Count));
-    foreach (var s in objectSubtrees)
       covered[s.Pkg].Add(Tuple.Create(s.StartIndex, s.Nodes.Count));
 
     for (int p = 0; p < packages.Count; p++)
@@ -337,12 +309,36 @@ public class Merger
         if (node.IsBanned)
           continue;
         var type = node.Type;
-        if (type == null || !ResourceDetector.ResourceTypes.Contains(type))
-          continue;
-        if (IsCovered(i, covered[p]))
+        if (type == null)
           continue;
 
-        // 排除过滤：最内层归属归档空间命中排除集 → 该资源不检测/不导入（模板已有，创作者不改动）。
+        bool isDefinition = ObjectDetector.ObjectTypes.Contains(type);
+        bool isResource = ResourceDetector.ResourceTypes.Contains(type);
+        if (!isDefinition && !isResource)
+          continue;
+
+        if (IsCovered(i, covered[p]))
+          continue; // 已在已注入子树覆盖内（嵌套定义/资源随子树移植），不重复采集
+
+        if (isDefinition)
+        {
+          if (type == BossDefineType)
+            continue; // BossDefine 由模板共享
+          var subtree = packages[p].Doc.GetSubtree(i);
+          covered[p].Add(Tuple.Create(i, subtree.Count)); // 供后续嵌套定义/资源跳过重复采集
+          definitions.Add(
+            new SubtreeRef
+            {
+              Pkg = p,
+              RootLevel = node.Level,
+              StartIndex = i,
+              Nodes = subtree,
+            }
+          );
+          continue;
+        }
+
+        // 资源类：排除过滤——最内层归属归档空间命中排除集 → 不检测/不导入（模板已有，创作者不改动）。
         var archive = InnermostArchiveSpace(nodes, i);
         if (archive != null)
         {
@@ -355,13 +351,12 @@ public class Merger
         // 归档空间基准节点与资源节点一并注入（归档空间保持原层级，由 BuildInjectedSegments 重编号）。
         var nodesToInject =
           archive == null ? new List<LstgesNode> { node } : new List<LstgesNode> { archive, node };
-
-        result.Add(
+        resources.Add(
           new SubtreeRef
           {
             Pkg = p,
-            // 子树根为归档空间节点（若携带）。offset 以它为基准，使归档空间落在注入点同级、
-            // 资源落在其下（保持源包内的相对层级），避免归档空间被抬到注入点之上造成基准错乱。
+            // 子树根为归档空间节点（若携带），使归档空间落在注入点同级、资源落其下，
+            // 保持源包内相对层级，避免归档空间被抬到注入点之上造成基准错乱。
             RootLevel = archive == null ? node.Level : archive.Level,
             StartIndex = i,
             Nodes = nodesToInject,
@@ -370,7 +365,7 @@ public class Merger
       }
     }
 
-    return result;
+    return new Transplantables(definitions, resources);
   }
 
   private static bool IsCovered(int index, List<Tuple<int, int>> ranges)
