@@ -848,6 +848,98 @@ public class MergerTest : TestClass
   }
 
   [Test]
+  public void Merge_StandaloneDefinitions_InjectedIntoObjectMarker()
+  {
+    // 独立定义/代码节点（敌人类型/弯折激光/Boss背景/渲染目标/函数/自定义节点，未命中任何被注入子树、
+    // 非 BossDefine、非 Stage）应由统一采集器打上「定义」标签注入对象注入点，确保合并产物
+    // 不缺运行时代码（类/函数/背景），避免运行时缺席报错。
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Enemy.EnemyDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"my_enemy\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "1,{\"$type\":\".Laser.BentLaserDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"my_blaser\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "1,{\"$type\":\".Boss.BossBGDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"my_scbg\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "1,{\"$type\":\".Render.RenderTarget, \",\"Attributes\":[{\"attrCap\":\"Operation\",\"attrInput\":\"Push\",\"EditWindow\":\"renderOp\"},{\"attrCap\":\"Name\",\"attrInput\":\"\\\"\\\"\"}],\"AttributeCount\":2}\n"
+      + "1,{\"$type\":\".Render.CreateRenderTarget, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"my_target\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "1,{\"$type\":\".Data.Function, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"my_util\",\"EditWindow\":\"\"},{\"attrCap\":\"Parameter List\",\"attrInput\":\"\",\"EditWindow\":\"\"},{\"attrCap\":\"Localized\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":3}\n"
+      + "1,{\"$type\":\".Advanced.UnidentifiedNode, LuaSTGEditorSharp\",\"Attributes\":[{\"$type\":\".DependencyAttrItem, \",\"attrCap\":\"Type\",\"attrInput\":\"my_custom\",\"EditWindow\":\"userDefinedNodeDefinition\"},{\"attrCap\":\"tag\",\"attrInput\":\"normal\"}],\"AttributeCount\":2}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes;
+    nodes.Any(n => n.Type == ".Enemy.EnemyDefine, ").ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Laser.BentLaserDefine, ").ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Boss.BossBGDefine, ").ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Render.RenderTarget, ").ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Render.CreateRenderTarget, ").ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Data.Function, ").ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Advanced.UnidentifiedNode, LuaSTGEditorSharp").ShouldBeTrue();
+
+    // 定义注入在对象注入点上（模板中该注释位于 level 3，其子树根重编号到注入点层级）。
+    var enemy = nodes.First(n => n.Type == ".Enemy.EnemyDefine, ");
+    enemy.Level.ShouldBe(3);
+    var func = nodes.First(n => n.Type == ".Data.Function, ");
+    func.Level.ShouldBe(3);
+  }
+
+  [Test]
+  public void Merge_BossDefineChildren_NotStandaloneInjectedWhenCovered()
+  {
+    // 回归：BossDefine 及其子树（BossInit/Dialog/BossSpellCard 等）由模板共享，绝不作为独立定义注入，
+    // 其内部的字面代码/资源随符卡子树覆盖去重逻辑一并移植（不双份）。
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 模板已有一个 shared_boss；包内新 BossDefine 不应被当作定义再注入对象注入点（仅符卡注点注入符卡）。
+    var bossDefs = result.Merged!.Nodes.Where(n => n.Type == ".Boss.BossDefine, ").ToList();
+    bossDefs.Count.ShouldBe(1); // 只有一个（模板的），包内 BossDefine 不重复注入
+  }
+
+  [Test]
+  public void Merge_NestedDefinitionInsideInjectedSubtree_NotReInjected()
+  {
+    // 覆盖去重核心：位于已注入子树内部的嵌套定义（如对象子树内的 TaskDefine）不单独注入对象注入点，
+    // 只随所属被注入子树携带移植一次，避免双份注入（否则产物出现两个同名/重复的任务定义）。
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Object.ObjectDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"nested_obj\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"nested_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 嵌套 TaskDefine 只出现一次（随 ObjectDefine 子树带出），不作独立定义重复注入。
+    var tasks = result.Merged!.Nodes.Where(n => n.Type == ".Task.TaskDefine, ").ToList();
+    tasks.Count.ShouldBe(1);
+  }
+
+  [Test]
   public void HierarchyFindFirstInvalid_ValidSequence_ReturnsMinusOne()
   {
     // 父链完整、每行回落不超过现有父链深度的序列 → 无越界行。
