@@ -119,6 +119,8 @@ public class DataManager : IDisposable
     _aliases = new AutoList<CreatorAlias>(loadedAliases);
 
     _settings = LoadJson<AppSettings>("app_settings.json") ?? new();
+    // 回填被 JSON 显式 null 覆盖的 AutoValue/AutoList 属性，保证同步绑定链路非空
+    _settings.EnsureIntegrity();
     // Subscribe to AutoValue changes to notify UI components
     BindSettingsChanges();
 

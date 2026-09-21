@@ -27,6 +27,7 @@
 
 ### 修复
 
+- **GuessingPanel 启动 NRE（AppSettings 反序列化 null 覆盖）**：真机运行时 `GuessingPanel.OnResolved()` 抛 `NullReferenceException`（`GuessingPanel.cs:114`），依赖注入链中断、`MainWindow.OnProvided` 未执行，左栏 Tab 按钮 `Pressed` 信号未挂接、点击无反应。根因：`app_settings.json` 含显式 `"activeAiModelId": null`，System.Text.Json 反序列化用 JSON 值覆盖构造器默认值，使 `AppSettings.ActiveAiModelId`（`AutoValue<string?>`）变为 `null`；`DataManager.BindSettingsChanges` 有 `!= null` 防护故未崩，而 `GuessingPanel.OnResolved` 直接 `.Bind()` 无防护即 NRE。修复（根上、单一数据源）：`AppSettings` 新增 `EnsureIntegrity()`，把被 JSON null 覆盖的 AutoValue/AutoList 属性回填为构造器默认值；`DataManager.LoadAll` 反序列化 `Settings` 后调用。测试：`StorageTest` 新增 `DataManager_LoadAll_NullFieldsBackfilled`（写含 null 字段的 app_settings.json，断言各同步属性非空）。验证：dotnet build 0 错误、GoDotTest 296 通过/0 失败、真机复跑 NRE 消除。
 - **LogService 资源泄漏**：`Shutdown()` 正确释放 `RotatingFileWriter` 并清空内存缓冲区
 - **HeartbeatService CTS 浪费**：使用 `using` 声明替代显式 `finally Dispose`
 - **DataManager 竞态条件**：`TriggerAutoSave` 使用 `volatile` 标志 + `async/await` 防止保存重叠

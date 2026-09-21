@@ -48,4 +48,33 @@ public class AppSettings
 
   /// <summary>当前选中的 Boss 下标，用于共享手动与托管猜测流程的上下文</summary>
   public AutoValue<int> SelectedBossIndex { get; set; } = new(0);
+
+  /// <summary>
+  /// 恢复关键自动同步属性的非空完整性。
+  /// </summary>
+  /// <remarks>
+  /// 若 <c>app_settings.json</c> 中某字段为显式 <c>null</c>（例如
+  /// <c>"activeAiModelId": null</c>），System.Text.Json 反序列化会把对应
+  /// <see cref="AutoValue{T}"/>/<see cref="AutoList{T}"/> 属性覆盖为 <c>null</c>，
+  /// 导致依赖方（如 <c>GuardingPanel.OnResolved</c>）调用 <c>.Bind()</c> 时抛
+  /// <see cref="System.NullReferenceException"/>。此方法在加载后调用，把 null 属性回填为
+  /// 构造器默认值，保证单一数据源的自动同步链路始终可用。
+  /// </remarks>
+  public void EnsureIntegrity()
+  {
+    AiModels ??= new();
+    ActiveAiModelId ??= new(default(string?));
+    AiTimeoutSeconds ??= new(100);
+    WebSocketPort ??= new(5140);
+    MessageFilterMode ??= new("strict");
+    KoishiPluginPath ??= new(string.Empty);
+    WebSocketEnableAuth ??= new(false);
+    WebSocketAuthToken ??= new(string.Empty);
+    WebSocketMaxConnections ??= new(100);
+    WebSocketHeartbeatIntervalMs ??= new(30000);
+    WebSocketHeartbeatTimeoutMs ??= new(10000);
+    WebSocketMode ??= new("Server");
+    KoishiWebSocketUrl ??= new(string.Empty);
+    SelectedBossIndex ??= new(0);
+  }
 }
