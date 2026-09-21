@@ -224,6 +224,47 @@ public class StorageTest : TestClass
   }
 
   [Test]
+  public void DataManager_LoadAll_NullFieldsBackfilled()
+  {
+    // 模拟真实数据：app_settings.json 内含显式 null 字段（如 "activeAiModelId": null）。
+    // System.Text.Json 反序列化会把对应 AutoValue/AutoList 属性覆盖为 null，
+    // 此前导致 GuessingPanel.OnResolved 调用 .Bind() 时抛 NullReferenceException。
+    // 此处把 EnsureIntegrity 回填的全部 14 个属性都显式置 null，
+    // 确保测试真正覆盖遍历回填逻辑，避免个别属性回填失效但测试不报。
+    var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
+    var encryptor = new AesEncryptor(keyPath);
+    var jsonPath = Path.Combine(_tempDir, "app_settings.json");
+    File.WriteAllText(
+      jsonPath,
+      "{\"aiModels\": null, \"activeAiModelId\": null, \"aiTimeoutSeconds\": null, "
+        + "\"webSocketPort\": null, \"messageFilterMode\": null, \"koishiPluginPath\": null, "
+        + "\"webSocketEnableAuth\": null, \"webSocketAuthToken\": null, "
+        + "\"webSocketMaxConnections\": null, \"webSocketHeartbeatIntervalMs\": null, "
+        + "\"webSocketHeartbeatTimeoutMs\": null, \"webSocketMode\": null, "
+        + "\"koishiWebSocketUrl\": null, \"selectedBossIndex\": null}"
+    );
+
+    var dm = new DataManager(_tempDir, encryptor);
+    dm.LoadAll();
+
+    // 规范化后全部被回填的同步属性必须非空，保证 UI 绑定链路可用
+    dm.Settings.AiModels.ShouldNotBeNull();
+    dm.Settings.ActiveAiModelId.ShouldNotBeNull();
+    dm.Settings.AiTimeoutSeconds.ShouldNotBeNull();
+    dm.Settings.WebSocketPort.ShouldNotBeNull();
+    dm.Settings.MessageFilterMode.ShouldNotBeNull();
+    dm.Settings.KoishiPluginPath.ShouldNotBeNull();
+    dm.Settings.WebSocketEnableAuth.ShouldNotBeNull();
+    dm.Settings.WebSocketAuthToken.ShouldNotBeNull();
+    dm.Settings.WebSocketMaxConnections.ShouldNotBeNull();
+    dm.Settings.WebSocketHeartbeatIntervalMs.ShouldNotBeNull();
+    dm.Settings.WebSocketHeartbeatTimeoutMs.ShouldNotBeNull();
+    dm.Settings.WebSocketMode.ShouldNotBeNull();
+    dm.Settings.KoishiWebSocketUrl.ShouldNotBeNull();
+    dm.Settings.SelectedBossIndex.ShouldNotBeNull();
+  }
+
+  [Test]
   public void DataManager_AiModelApiKey_EncryptedOnSave()
   {
     var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
