@@ -182,9 +182,14 @@ public class MergeEngineTest : TestClass
 
     var cards = SpellCardExtractor.Extract(doc!);
     cards.Count.ShouldBe(2);
-    // 第一张为空名（非符），第二张为真名「Spellcard 1」（脱敏版通用名）。
+    // 第一张为空名（非符，Performing action=false），第二张为真名「Spellcard 1」（Performing action=true）。
     cards.Any(c => c.IsNonSpell).ShouldBeTrue();
     cards.Any(c => !c.IsNonSpell && c.Name.Contains("Spellcard")).ShouldBeTrue();
+    // 真名卡（sample_rich_package L315）Performing action=true，应收集前序 Dialog（L313）为 LeadingNodes。
+    var perfCard = cards.First(c => !c.IsNonSpell && c.Name.Contains("Spellcard"));
+    perfCard.HasPerformingAction.ShouldBeTrue();
+    perfCard.LeadingNodes.Count.ShouldBeGreaterThan(0);
+    perfCard.LeadingNodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeTrue();
   }
 
   // ==================== ResourceDetector Tests ====================
@@ -236,5 +241,59 @@ public class MergeEngineTest : TestClass
 
     var objects = ObjectDetector.Detect(doc!);
     objects.Any(o => o.Type == "BossDefine" && o.Name == "test_enm1").ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_RealRichPackage_PerformingActionTrueCardCarriesLeadingDialog_ValidParentChainAndRoundTrips()
+  {
+    // 真实数据往返：sample_rich_package 合并到模板，断言 Performing action=true 的卡（L315 "Spellcard 1"）
+    // 携带前序 Dialog（L313），注入后 Dialog 位于卡前、父链合法、产物往返可解析。
+    var template = LstgesParser.ParseDocument(TemplateText, out var tErr);
+    tErr.ShouldBeNull();
+    template.ShouldNotBeNull();
+
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.LoadFile(DataPath("sample_rich_package.lstges"), out var pErr)!
+    );
+    pErr.ShouldBeNull();
+
+    var result = new Merger().Merge(
+      template!,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 1, "A") } // 选第二张（真名卡 "Spellcard 1"，Performing action=true）
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 注入后：Performing action 卡的卡节点存在，且其前序 Dialog 也注入（位于卡前）
+    var cardNodes = nodes.Where(n => n.Type == ".Boss.BossSpellCard, ").ToList();
+    cardNodes.Count.ShouldBeGreaterThan(0);
+    // 找到真名卡（Performing action=true）的位置
+    var perfNode = cardNodes.FirstOrDefault(n => n.GetAttrAt(0)?.Contains("Spellcard") == true);
+    perfNode.ShouldNotBeNull();
+    // 注入点之后应有前序 Dialog，且位于该卡之前
+    var nodesAfterSpellMarker = nodes.ToList();
+    var markerIdx = nodesAfterSpellMarker.FindIndex(n =>
+      n.Type == ".General.Comment, LuaSTGEditorSharp"
+      && n.GetAttr("Comment") == "Insert spellcards here"
+    );
+    markerIdx.ShouldBeGreaterThan(-1);
+    var injected = nodesAfterSpellMarker.Skip(markerIdx + 1).ToList();
+    // 前序 Dialog 应存在，且在卡之前
+    var dialogInInjected = injected.Any(n => n.Type == ".Boss.Dialog, ");
+    dialogInInjected.ShouldBeTrue();
+    var perfCardInInjected = injected.First(n =>
+      n.Type == ".Boss.BossSpellCard, " && n.GetAttrAt(0)?.Contains("Spellcard") == true
+    );
+    var perfIdxInInjected = injected.IndexOf(perfCardInInjected);
+    // 存在至少一个 Dialog 位于真名卡之前（紧邻的前序阶段）
+    injected.Take(perfIdxInInjected).Any(n => n.Type == ".Boss.Dialog, ").ShouldBeTrue();
+
+    // 父链合法 + 往返可解析
+    LstgesHierarchy.FindFirstInvalidLevel(result.Merged.Nodes).ShouldBe(-1);
+    var reparsed = LstgesParser.ParseDocument(result.Merged.Serialize(), out var rErr);
+    rErr.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
   }
 }

@@ -1209,4 +1209,253 @@ public class MergerTest : TestClass
     error.ShouldBeNull();
     reparsed.ShouldNotBeNull();
   }
+
+  [Test]
+  public void Merge_SpellCard_PerformingActionTrue_CarriesLeadingDialog()
+  {
+    // 卡前同父(level 2)有 Dialog(level2 + 子 TaskCreate level3)，且该卡 Performing action=true。
+    // 实证自 Sharp：Dialog/MoveTo/符卡是 cards 表顺序阶段；BossInit 不是 cards 成员。
+    // 合并后该卡应连带 Dialog 子树一起注入（前置段保留，BossInit 不吞）。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Task.TaskCreate, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"dialog_1\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 注入后整段同级(level2)里 Dialog 应位于卡之前，且卡前 Dialog 与其子 TaskCreate 均存在。
+    var dialogIdx = nodes.FindIndex(n => n.Type == ".Boss.Dialog, ");
+    var cardIdx = nodes.FindIndex(n => n.Type == ".Boss.BossSpellCard, ");
+    var taskCreateIdx = nodes.FindIndex(n => n.Type == ".Task.TaskCreate, ");
+
+    dialogIdx.ShouldBeGreaterThan(-1);
+    taskCreateIdx.ShouldBeGreaterThan(-1);
+    cardIdx.ShouldBeGreaterThan(-1);
+    dialogIdx.ShouldBeLessThan(cardIdx); // 前置 Dialog 在卡前
+    taskCreateIdx.ShouldBeLessThan(cardIdx); // Dialog 子 TaskCreate 也在卡前
+    // 父链合法
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_SpellCard_PerformingActionFalse_NoLeadingCarried()
+  {
+    // 同结构但 Performing action=false：前置 Dialog 不被带走，只有卡注入。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Task.TaskCreate, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"dialog_1\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"NoLeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 前置 Dialog 未被带走
+    nodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeFalse();
+    nodes.Any(n => n.Type == ".Task.TaskCreate, ").ShouldBeFalse();
+    nodes
+      .Any(n => n.Type == ".Boss.BossSpellCard, " && n.GetAttrAt(0) == "NoLeadCard")
+      .ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_SpellCard_PerformingActionMissing_NoLeadingCarried()
+  {
+    // Performing action 属性缺失（容错）：按 false 处理，不携带前置。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"MissingLeadCard\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    nodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeFalse();
+    nodes
+      .Any(n => n.Type == ".Boss.BossSpellCard, " && n.GetAttrAt(0) == "MissingLeadCard")
+      .ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_SpellCard_PerformingActionTrue_CarriesOnlyImmediatelyPrecedingStage()
+  {
+    // 卡前同父(level 2)有多个阶段（Dialog + BossMoveTo），Performing action=true。
+    // 实证自 Sharp（DefineSpellCard.cgen / _sc_table）：scprac 通过该卡在 cards 表中的下标
+    // 定位「上一阶段」= cards[seq-1]，即只带紧邻的前一个阶段（含子树），而非直到 BossInit
+    // 的所有前序。故仅最近的 BossMoveTo 被注入，更早的 Dialog 不被带入。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Task.TaskCreate, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"dialog_1\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossMoveTo, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 紧邻前序 BossMoveTo 被带入（位于卡前）
+    var moveIdx = nodes.FindIndex(n => n.Type == ".Boss.BossMoveTo, ");
+    var cardIdx = nodes.FindIndex(n => n.Type == ".Boss.BossSpellCard, ");
+    moveIdx.ShouldBeGreaterThan(-1);
+    cardIdx.ShouldBeGreaterThan(-1);
+    moveIdx.ShouldBeLessThan(cardIdx);
+    // 更早的 Dialog（非紧邻前序）不被带入
+    nodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeFalse();
+    // 父链合法
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_SpellCard_PerformingActionTrue_NoPrecedingStage_CarriesNone()
+  {
+    // 卡前同父有多个阶段（Dialog + BossMoveTo），但 Performing action=true 的卡是**首个**阶段
+    // （之前无任何 phase，直接接 BossInit）。此时紧邻前序不存在，LeadingNodes 为空，
+    // 卡自身被注入、不携带任何前置段。验证「无前序返回空 + 卡自身」边界。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"FirstCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 首个阶段无前序：卡自身注入，无任何前置 Dialog/BossMoveTo
+    nodes
+      .Any(n => n.Type == ".Boss.BossSpellCard, " && n.GetAttrAt(0) == "FirstCard")
+      .ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeFalse();
+    nodes.Any(n => n.Type == ".Boss.BossMoveTo, ").ShouldBeFalse();
+  }
+
+  [Test]
+  public void Merge_SpellCard_PerformingActionTrue_CommentsPreceding_AreSkipped()
+  {
+    // 卡前同父有 Dialog + Comment（非 cards 阶段，不占下标）。Performing action=true。
+    // Comment 不属 cards 序列，应被跨越；紧邻前序 = 距卡最近的阶段。此用例确保
+    // 「跨越非 stages 同级兄弟继续向前找最近阶段」边界正确：Comment 不应阻断、也不应被带入。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Task.TaskCreate, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"dialog_1\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"\u5427\u524d\u6ce8\u91ca\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // Comment 跨越后仍正确命中紧邻前序 Dialog（位于卡前）
+    var dialogIdx = nodes.FindIndex(n => n.Type == ".Boss.Dialog, ");
+    var cardIdx = nodes.FindIndex(n => n.Type == ".Boss.BossSpellCard, ");
+    dialogIdx.ShouldBeGreaterThan(-1);
+    cardIdx.ShouldBeGreaterThan(-1);
+    dialogIdx.ShouldBeLessThan(cardIdx);
+  }
 }
