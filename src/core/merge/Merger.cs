@@ -204,13 +204,20 @@ public class Merger
       }
 
       var card = cards[entry.SpellCardIndex];
+
+      // Performing action=true 时，把前序阶段兄弟（及子树）并入 Nodes 一起注入，保证
+      // Sharp 符卡练习「入口重定向到上一阶段」引用的前序节点都在产物内。
+      var nodes = new List<LstgesNode>();
+      nodes.AddRange(card.LeadingNodes); // 前置段（文档序），无则空
+      nodes.AddRange(card.Subtree);
+
       spellSubtrees.Add(
         new SubtreeRef
         {
           Pkg = entry.PackageIndex,
           RootLevel = card.RootLevel,
-          StartIndex = card.StartIndex,
-          Nodes = card.Subtree.ToList(),
+          StartIndex = card.LeadingStartIndex, // 前移到前置段最前节点（无则 = 卡）
+          Nodes = nodes,
         }
       );
     }
@@ -335,6 +342,10 @@ public class Merger
     var resources = new List<SubtreeRef>();
 
     // 每个包被已注入子树覆盖的索引区间（初始来自符卡子树；后续追加已采集定义子树）。
+    // 注：符卡段（含 Performing action 携带的前序段）用 [StartIndex, StartIndex+Nodes.Count)
+    // 近似为连续区间。前序段是「跨越非 stages 同级兄弟」收集的非连续段，因此该近似会把被跳过的
+    // 同级兄弟一并包进 covered；这些兄弟通常不在 ObjectTypes/ResourceTypes（无独立采集影响），
+    // 仅当 BossDefine 下、卡前夹带资源/定义型非 stages 兄弟（罕见）时才可能被误覆盖漏采——属低危近似。
     var covered = new List<Tuple<int, int>>[packages.Count];
     for (int p = 0; p < packages.Count; p++)
       covered[p] = new();
