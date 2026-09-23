@@ -96,6 +96,7 @@ public class MergeEngine
     var options = new MergeOptions
     {
       AutoRenameResources = _dm.MergeConfig.AutoRenameConflicts.Value,
+      ForcePerformAction = _dm.MergeConfig.ForcePerformAction.Value,
       ExcludedArchiveSpaces = _dm.MergeConfig.ExcludedArchiveSpaces,
     };
     var result = new Merger().Merge(template, packageDocs, entries, options);

@@ -25,6 +25,12 @@ public sealed class MergeOptions
   public bool AutoRenameResources { get; set; }
 
   /// <summary>
+  /// 是否强制把「紧邻前序为对话/出场移动」的符卡按 Perform Action 方式整合
+  /// （默认 false）。紧邻前序为前一张符卡或无前序时不触发，按普通符卡整合。
+  /// </summary>
+  public bool ForcePerformAction { get; set; }
+
+  /// <summary>
   /// 额外排除的归档空间清单（用户配置兜底）。源包资源的最内层归属归档空间命中
   /// 「模板已有归档空间 ∪ 本清单」时，该资源不检测、不导入、不搬迁。
   /// </summary>
@@ -191,7 +197,7 @@ public class Merger
       var pkg = packages[entry.PackageIndex];
       if (!cardCache.TryGetValue(entry.PackageIndex, out var cards))
       {
-        cards = SpellCardExtractor.Extract(pkg.Doc);
+        cards = SpellCardExtractor.Extract(pkg.Doc, opt.ForcePerformAction);
         cardCache[entry.PackageIndex] = cards;
       }
 

@@ -74,6 +74,19 @@ public static class SpellCardExtractor
     SpellCardType,
   };
 
+  /// <summary>
+  /// 强制 Perform Action 的触发判定「紧邻前序类型」：仅对话/出场移动，**不含前一张符卡**。
+  /// 语义上区别于 <see cref="LeadingStageTypes"/>（后者含符卡，是收集侧类型）。
+  /// </summary>
+  private static readonly string[] NonCardLeadingStageTypes =
+  {
+    // 对话（可带子 TaskCreate 等）
+    ".Boss.Dialog, ",
+    // 出场移动（旧版 .Boss.MoveTo，V2 用 .Boss.BossMoveTo，双候选覆盖）
+    ".Boss.MoveTo, ",
+    ".Boss.BossMoveTo, ",
+  };
+
   /// <summary>BossInit（阶段序列首，非 cards 成员）——扫描停止边界之一。</summary>
   private static readonly string BossInitType = ".Boss.BossInit, ";
 
@@ -82,7 +95,7 @@ public static class SpellCardExtractor
   /// </summary>
   /// <param name="doc">创作者包文档。</param>
   /// <returns>符卡信息列表（按文件顺序）。</returns>
-  public static List<SpellCardInfo> Extract(LstgesDocument doc)
+  public static List<SpellCardInfo> Extract(LstgesDocument doc, bool forcePerformAction = false)
   {
     var result = new List<SpellCardInfo>();
     var nodes = doc.Nodes;
@@ -99,7 +112,10 @@ public static class SpellCardExtractor
 
       var subtree = doc.GetSubtree(i);
       var name = node.GetAttrAt(0) ?? string.Empty; // SCName 在第一个属性
+      // perform = 开关强制（紧邻前序为对话/移动）或 符卡自身属性为 true。
       var perform = ParsePerformingAction(node.GetAttr(PerformingActionAttr));
+      if (!perform && forcePerformAction)
+        perform = IsImmediatelyPrecededByNonCard(nodes, i, node.Level);
 
       // Performing action=true 时收集前置段（同父 BossDefine 下的前序阶段兄弟及其子树）。
       IReadOnlyList<LstgesNode> leadingNodes = new List<LstgesNode>();
@@ -195,4 +211,46 @@ public static class SpellCardExtractor
   /// <summary>判断类型是否属于 cards 序列的「前序阶段」成员。</summary>
   private static bool IsLeadingStageType(string? type) =>
     type != null && Array.IndexOf(LeadingStageTypes, type) >= 0;
+
+  /// <summary>
+  /// 判断该卡**字面紧邻**的前一个同父兄弟节点是否为「对话/出场移动」类型（不含前一张符卡）。
+  /// 供 forcePerformAction 开关使用：命中则强制把该卡按 Perform Action 方式整合。
+  /// </summary>
+  /// <remarks>
+  /// 这是**字面紧邻**判定（用户决策）：只看该卡紧邻的一个兄弟节点，**不跨越**非阶段兄弟
+  /// （如 Comment）。与 <see cref="CollectLeadingStages"/> 的收集侧语义（跨越 Comment 找最近
+  /// 阶段）刻意区分：此处仅判定触发条件，收集阶段仍由 <see cref="CollectLeadingStages"/>
+  /// 按既有紧邻逻辑完成。
+  /// </remarks>
+  /// <param name="nodes">全部节点。</param>
+  /// <param name="cardIndex">该卡根节点索引。</param>
+  /// <param name="cardLevel">该卡根节点层级。</param>
+  private static bool IsImmediatelyPrecededByNonCard(
+    IReadOnlyList<LstgesNode> nodes,
+    int cardIndex,
+    int cardLevel
+  )
+  {
+    // 从卡向前找最近的一个更浅或同 level 节点。注意：**不跨越**非阶段兄弟（字面紧邻语义）。
+    int scan = cardIndex - 1;
+    while (scan >= 0)
+    {
+      var n = nodes[scan];
+      if (n.Level < cardLevel)
+        break; // 回父层级：无更浅同父兄弟，视为无紧邻前序
+      if (n.Level != cardLevel)
+      {
+        scan--; // 更深（紧邻前兄弟的子内部），跳过其子树
+        continue;
+      }
+      // 同 level 兄弟节点：即字面紧邻的兄弟。无论是否 BossInit / 阶段 / Comment，
+      // 在此就停止——只判定这一个字面紧邻节点。
+      return IsNonCardLeadingStageType(n.Type);
+    }
+    return false;
+  }
+
+  /// <summary>判断类型是否属于「对话/出场移动」（不含符卡）的紧邻前序触发类型。</summary>
+  private static bool IsNonCardLeadingStageType(string? type) =>
+    type != null && Array.IndexOf(NonCardLeadingStageTypes, type) >= 0;
 }

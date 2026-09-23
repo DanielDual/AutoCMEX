@@ -29,6 +29,13 @@ public class MergeConfig
   /// <summary>冲突处理是否自动改名资源（默认 false，保留原名）。</summary>
   public AutoValue<bool> AutoRenameConflicts { get; set; } = new(false);
 
+  /// <summary>
+  /// 是否强制把「紧邻前序为对话/出场移动」的符卡按 Perform Action 方式整合
+  /// （携带其紧邻前序节点一起注入；默认 false，只按符卡自身 Performing action 属性）。
+  /// 紧邻前序为前一张符卡或无前序时不触发，按普通符卡整合。
+  /// </summary>
+  public AutoValue<bool> ForcePerformAction { get; set; } = new(false);
+
   /// <summary>导出完整项目包时使用的输出名（不含 .zip 后缀）。</summary>
   public AutoValue<string> OutputName { get; set; } = new("mod");
 
