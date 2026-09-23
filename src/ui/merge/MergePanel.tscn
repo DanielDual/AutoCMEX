@@ -193,3 +193,8 @@ text = "导出完整包"
 unique_name_in_owner = true
 layout_mode = 2
 text = "导出对应表"
+
+[node name="GroupByCreatorFoldersToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane" unique_id=1338109103]
+unique_name_in_owner = true
+layout_mode = 2
+text = "按创作者分组（每人专属文件夹）"
