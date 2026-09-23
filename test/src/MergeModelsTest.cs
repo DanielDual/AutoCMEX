@@ -100,6 +100,7 @@ public class MergeModelsTest : TestClass
     dm.MergeConfig.ObfuscateLua.Value = true;
     dm.MergeConfig.ForcePerformAction.Value = true;
     dm.MergeConfig.GroupByCreatorFolders.Value = true;
+    dm.MergeConfig.Algorithm.Value = AutoCMEX.Models.MergeAlgorithm.TopFolderCarry;
     dm.MergeConfig.Mapping.Add(
       new SpellCardMappingEntry
       {
@@ -128,6 +129,7 @@ public class MergeModelsTest : TestClass
     dm2.MergeConfig.ObfuscateLua.Value.ShouldBeTrue();
     dm2.MergeConfig.ForcePerformAction.Value.ShouldBeTrue();
     dm2.MergeConfig.GroupByCreatorFolders.Value.ShouldBeTrue();
+    dm2.MergeConfig.Algorithm.Value.ShouldBe(AutoCMEX.Models.MergeAlgorithm.TopFolderCarry);
     dm2.MergeConfig.Mapping.Count.ShouldBe(1);
     dm2.MergeConfig.Mapping[0].Name.ShouldBe("结界「境界」");
     dm2.MergeConfig.Mapping[0].Creator.Value.ShouldBe("Alice");
