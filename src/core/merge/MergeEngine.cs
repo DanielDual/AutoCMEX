@@ -64,6 +64,7 @@ public class MergeEngine
 
     // 取非删除包，按顺序编号（映射按包名回查下标）
     var packageNames = new List<string>();
+    var creatorNames = new List<string>();
     var packageDocs = new List<CreatorPackageDoc>();
     foreach (var pkg in _dm.CreatorPackages)
     {
@@ -76,6 +77,8 @@ public class MergeEngine
         continue;
       }
       packageNames.Add(pkg.PackageName);
+      var creator = pkg.CreatorName?.Value?.Trim() ?? string.Empty;
+      creatorNames.Add(string.IsNullOrWhiteSpace(creator) ? pkg.PackageName : creator);
       packageDocs.Add(new CreatorPackageDoc(pkg.PackageName, doc));
     }
 
@@ -97,9 +100,10 @@ public class MergeEngine
     {
       AutoRenameResources = _dm.MergeConfig.AutoRenameConflicts.Value,
       ForcePerformAction = _dm.MergeConfig.ForcePerformAction.Value,
+      GroupByCreatorFolders = _dm.MergeConfig.GroupByCreatorFolders.Value,
       ExcludedArchiveSpaces = _dm.MergeConfig.ExcludedArchiveSpaces,
     };
-    var result = new Merger().Merge(template, packageDocs, entries, options);
+    var result = new Merger().Merge(template, packageDocs, entries, options, creatorNames);
     if (result.IsSuccess)
     {
       PersistMergedProject(result.Merged!);

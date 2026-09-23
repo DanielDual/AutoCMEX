@@ -36,6 +36,13 @@ public class MergeConfig
   /// </summary>
   public AutoValue<bool> ForcePerformAction { get; set; } = new(false);
 
+  /// <summary>
+  /// 注入资源/Object 节点时是否按创作者分组：为每个有贡献的包建立一个专属
+  /// <c>.General.Folder</c> 文件夹（Name=创作者名），把该包节点放回各自文件夹；
+  /// 默认 false 时平铺到注入点旁。符卡注入点不受此开关影响。
+  /// </summary>
+  public AutoValue<bool> GroupByCreatorFolders { get; set; } = new(false);
+
   /// <summary>导出完整项目包时使用的输出名（不含 .zip 后缀）。</summary>
   public AutoValue<string> OutputName { get; set; } = new("mod");
 

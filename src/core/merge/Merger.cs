@@ -31,6 +31,13 @@ public sealed class MergeOptions
   public bool ForcePerformAction { get; set; }
 
   /// <summary>
+  /// 注入资源/对象节点时是否按创作者分组：为每个有贡献的包建立一个专属
+  /// <c>.General.Folder</c> 文件夹（Name=创作者名），把该包节点放进各自文件夹；
+  /// 默认 false 时全部平铺到注入点旁（与旧行为一致）。符卡注入点不受影响。
+  /// </summary>
+  public bool GroupByCreatorFolders { get; set; }
+
+  /// <summary>
   /// 额外排除的归档空间清单（用户配置兜底）。源包资源的最内层归属归档空间命中
   /// 「模板已有归档空间 ∪ 本清单」时，该资源不检测、不导入、不搬迁。
   /// </summary>
@@ -71,6 +78,9 @@ public class Merger
   /// <summary>通用代码块节点类型（承载任意 Lua 代码，可含被依赖的全局函数/类定义）。</summary>
   private const string GeneralCodeType = ".General.Code, LuaSTGEditorSharp";
 
+  /// <summary>按创作者分组注入时使用的专属文件夹节点类型（容器节点，带 Name）。</summary>
+  private const string FolderType = ".General.Folder, LuaSTGEditorSharp";
+
   private const string ArchiveSpaceIndicatorType =
     ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp";
 
@@ -92,6 +102,34 @@ public class Merger
       var name = node.GetAttr("Name");
       if (!string.IsNullOrEmpty(name))
         set.Add(NormalizeArchive(name));
+    }
+    return set;
+  }
+
+  /// <summary>
+  /// 取定义节点的名字（第一个 Name 属性，去首尾空白；无则为空串）。
+  /// 用于定义节点命中判断：同名即视为模板已持有、创作者不搬。
+  /// </summary>
+  private static string DefinitionName(LstgesNode node) =>
+    (node.GetAttr("Name") ?? string.Empty).Trim();
+
+  /// <summary>
+  /// 枚举模板中全部「可移植定义」名字（类型 ∈ <see cref="ObjectDetector.ObjectTypes"/>，且非共享 BossDefine）。
+  /// 用于定义节点命中判断：同名即视为模板已持有该定义、创作者不搬。
+  /// </summary>
+  private static HashSet<string> CollectTemplateDefinitionNames(LstgesDocument template)
+  {
+    var set = new HashSet<string>();
+    foreach (var node in template.Nodes)
+    {
+      if (node.IsBanned)
+        continue;
+      var type = node.Type;
+      if (type == null || type == BossDefineType || !ObjectDetector.ObjectTypes.Contains(type))
+        continue;
+      var name = DefinitionName(node);
+      if (!string.IsNullOrWhiteSpace(name))
+        set.Add(name);
     }
     return set;
   }
@@ -157,7 +195,8 @@ public class Merger
     LstgesDocument template,
     IReadOnlyList<CreatorPackageDoc> packages,
     IReadOnlyList<MergeMappingEntry> mapping,
-    MergeOptions? options = null
+    MergeOptions? options = null,
+    IReadOnlyList<string>? creatorNames = null
   )
   {
     var opt = options ?? new MergeOptions();
@@ -176,6 +215,10 @@ public class Merger
           excludedSpaces.Add(norm);
       }
     }
+
+    // 定义/对象节点「命中模板」判据（名字）：可移植定义不允许重名（同名会告警），
+    // 模板已有同名定义 → 视为模板已持有，创作者不再搬（Obj 类节点；BossDefine 由模板共享）。
+    var templateDefinitionNames = CollectTemplateDefinitionNames(template);
 
     var injection = new InjectionPointDetector().Detect(doc);
     var spellMarker = injection.Find(InjectionPointKind.SpellCards);
@@ -232,7 +275,12 @@ public class Merger
     // 取代原第 2 步（定义采集）与第 3 步（顶层资源采集）。定义/代码类注入对象注入点；
     // 资源类（带归档流式基准）注入资源注入点，另行物理随迁。
     // 两语义差异仅在于资源类需处理文件导入链路（路径改写 + 物理复制），采集/注入逻辑一致。
-    var transplants = CollectTransplantables(packages, spellSubtrees, excludedSpaces);
+    var transplants = CollectTransplantables(
+      packages,
+      spellSubtrees,
+      excludedSpaces,
+      templateDefinitionNames
+    );
     var objectSubtrees = transplants.Definitions;
     var topResources = transplants.Resources;
 
@@ -261,7 +309,13 @@ public class Merger
     }
     else if (objectMarker != null)
     {
-      var objSeg = BuildInjectedSegments(objectMarker.Value, objectSubtrees, renameMap);
+      var objSeg = BuildInjectedSegments(
+        objectMarker.Value,
+        objectSubtrees,
+        renameMap,
+        opt.GroupByCreatorFolders,
+        creatorNames
+      );
       InjectSegments(doc, EndOfMarker(doc, objectMarker.Value), objSeg);
     }
 
@@ -277,7 +331,13 @@ public class Merger
     }
     else if (resourceMarker != null)
     {
-      var resSeg = BuildInjectedSegments(resourceMarker.Value, topResources, renameMap);
+      var resSeg = BuildInjectedSegments(
+        resourceMarker.Value,
+        topResources,
+        renameMap,
+        opt.GroupByCreatorFolders,
+        creatorNames
+      );
       InjectSegments(doc, EndOfMarker(doc, resourceMarker.Value), resSeg);
     }
 
@@ -341,7 +401,8 @@ public class Merger
   private static Transplantables CollectTransplantables(
     IReadOnlyList<CreatorPackageDoc> packages,
     IReadOnlyList<SubtreeRef> spellSubtrees,
-    IReadOnlySet<string> excludedSpaces
+    IReadOnlySet<string> excludedSpaces,
+    IReadOnlySet<string> templateDefinitionNames
   )
   {
     var definitions = new List<SubtreeRef>();
@@ -384,12 +445,10 @@ public class Merger
             continue; // BossDefine 由模板共享
           if (type == GeneralCodeType)
           {
-            // 代码块必须「真正位于顶层/自有文件夹」才作为全局代码剥离注入；若嵌套在某定义型节点
-            // 子树内（最近祖先是定义，如 `.Laser.BentLaserDefine` 的 init 代码块），则应由所属定义
-            // 整棵携带，绝不独立剥离——否则会被提级到对象注入点、脱离 `self`/局部作用域而并列报错。
+            // 代码块嵌套在某定义型子树内 → 随所属定义整棵携带，不独立剥离。
             if (IsNestedInsideDefinition(nodes, i))
               continue;
-            // 代码块按「位置归属」近似：若其最内层归属归档命中排除集（模板已有该归档）→ 模板已持有，不搬。
+            // 代码块按「位置归属」：最内层归属归档命中排除集（模板已有该归档）→ 模板已持有该代码，不搬。
             var codeArchive = InnermostArchiveSpace(nodes, i);
             if (codeArchive != null)
             {
@@ -399,6 +458,14 @@ public class Merger
               if (excludedSpaces.Contains(codeNorm))
                 continue;
             }
+          }
+          else
+          {
+            // 普通定义（非代码块）命中判据=名字：可移植定义不允许重名（同名会告警），
+            // 模板已有同名可移植定义 → 视为模板已持有该定义（创作者不改动），不搬。
+            var defName = DefinitionName(node);
+            if (!string.IsNullOrWhiteSpace(defName) && templateDefinitionNames.Contains(defName))
+              continue;
           }
           var subtree = packages[p].Doc.GetSubtree(i);
           covered[p].Add(Tuple.Create(i, subtree.Count)); // 供后续嵌套定义/资源跳过重复采集
@@ -592,27 +659,84 @@ public class Merger
   private static List<LstgesNode> BuildInjectedSegments(
     InjectionMarker marker,
     List<SubtreeRef> subtrees,
-    Dictionary<(int Pkg, string Path), string> renameMap
+    Dictionary<(int Pkg, string Path), string> renameMap,
+    bool groupByCreator = false,
+    IReadOnlyList<string>? creatorNames = null
   )
   {
     var segments = new List<LstgesNode>();
     int targetLevel = marker.Level;
 
+    if (groupByCreator && creatorNames != null && subtrees.Count > 0)
+    {
+      // 按包（创作者）分组：每人一个专属 .General.Folder，节点放进各自文件夹。
+      // 文件夹头 = 注入点同级；其内节点位于下一层（相对偏移由 AppendFlatInjection 统一重算）。
+      // 资源同归档语义仍然成立：归档空间与资源在 Folder 内互为同级兄弟、非归档子树。
+      var order = new List<int>();
+      var byPkg = new Dictionary<int, List<SubtreeRef>>();
+      foreach (var s in subtrees)
+      {
+        if (!byPkg.TryGetValue(s.Pkg, out var list))
+        {
+          list = new List<SubtreeRef>();
+          byPkg[s.Pkg] = list;
+          order.Add(s.Pkg);
+        }
+        list.Add(s);
+      }
+
+      foreach (var pkg in order)
+      {
+        var creator = pkg < creatorNames.Count ? creatorNames[pkg] : string.Empty;
+        var folderName = string.IsNullOrWhiteSpace(creator) ? $"pkg{pkg}" : creator;
+        segments.Add(BuildFolderNode(folderName, targetLevel));
+        AppendFlatInjection(byPkg[pkg], targetLevel + 1, segments, renameMap);
+      }
+      return segments;
+    }
+
+    AppendFlatInjection(subtrees, targetLevel, segments, renameMap);
+    return segments;
+  }
+
+  /// <summary>把子树按基准层级平铺追加到 segments（含资源同归档的特殊平铺规则）。</summary>
+  private static void AppendFlatInjection(
+    List<SubtreeRef> subtrees,
+    int baseLevel,
+    List<LstgesNode> segments,
+    Dictionary<(int Pkg, string Path), string> renameMap
+  )
+  {
     foreach (var s in subtrees)
     {
-      int offset = targetLevel - s.RootLevel;
+      int offset = baseLevel - s.RootLevel;
       foreach (var node in s.Nodes)
       {
-        // 资源同归档：归档空间与资源节点都落在注入点同级、按 Nodes 列表序紧随（非归档子树）——\
+        // 资源同归档：归档空间与资源节点都落在 baseLevel、按 Nodes 列表序紧随（非归档子树）——
         // 保证 ArchiveSpaceIndicator(LeafNode) 下没有任何子树成员。
-        int level = s.ForceSiblingOfArchive ? targetLevel : node.Level + offset;
+        int level = s.ForceSiblingOfArchive ? baseLevel : node.Level + offset;
         var clone = new LstgesNode { Level = level, Line = node.Line?.DeepClone() };
         RewriteResourceNode(clone, s.Pkg, renameMap);
         segments.Add(clone);
       }
     }
+  }
 
-    return segments;
+  /// <summary>构造一个带 Name 属性的 .General.Folder 容器节点（用于按创作者分组）。</summary>
+  private static LstgesNode BuildFolderNode(string name, int level)
+  {
+    var obj = new JsonObject { ["$type"] = FolderType, ["AttributeCount"] = 1 };
+    var attrs = new JsonArray
+    {
+      new JsonObject
+      {
+        ["attrCap"] = "Name",
+        ["attrInput"] = name,
+        ["EditWindow"] = "",
+      },
+    };
+    obj["Attributes"] = attrs;
+    return new LstgesNode { Level = level, Line = obj };
   }
 
   private static void RewriteResourceNode(
