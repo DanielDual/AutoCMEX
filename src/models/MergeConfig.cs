@@ -2,6 +2,16 @@ namespace AutoCMEX.Models;
 
 using Chickensoft.Sync.Primitives;
 
+/// <summary>整合所采用的合并算法。</summary>
+public enum MergeAlgorithm
+{
+  /// <summary>提取式：把资源/Obj 节点按类型提取后分别重放到注入点（打散作者文件夹结构）。</summary>
+  Extractive,
+
+  /// <summary>整文件夹搬运：以「最靠近根目录的顶层文件夹」为单位整棵搬入对象注入点下。</summary>
+  TopFolderCarry,
+}
+
 /// <summary>
 /// 整合模块配置 + 编辑中的对应表。
 /// 「不提供工程文件」是导出选项（含 .lstges 开关），非硬约束；「加密 Lua」= 对 Lua 脚本做混淆。
@@ -42,6 +52,12 @@ public class MergeConfig
   /// 默认 false 时平铺到注入点旁。符卡注入点不受此开关影响。
   /// </summary>
   public AutoValue<bool> GroupByCreatorFolders { get; set; } = new(false);
+
+  /// <summary>
+  /// 整合采用的合并算法（默认 <see cref="MergeAlgorithm.Extractive"/> 提取式）。
+  /// 切换为 <see cref="MergeAlgorithm.TopFolderCarry"/> 时按顶层文件夹整棵搬运。
+  /// </summary>
+  public AutoValue<MergeAlgorithm> Algorithm { get; set; } = new(MergeAlgorithm.Extractive);
 
   /// <summary>导出完整项目包时使用的输出名（不含 .zip 后缀）。</summary>
   public AutoValue<string> OutputName { get; set; } = new("mod");

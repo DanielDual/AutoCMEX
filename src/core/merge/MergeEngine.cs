@@ -103,7 +103,10 @@ public class MergeEngine
       GroupByCreatorFolders = _dm.MergeConfig.GroupByCreatorFolders.Value,
       ExcludedArchiveSpaces = _dm.MergeConfig.ExcludedArchiveSpaces,
     };
-    var result = new Merger().Merge(template, packageDocs, entries, options, creatorNames);
+    MergeResult result =
+      _dm.MergeConfig.Algorithm.Value == MergeAlgorithm.TopFolderCarry
+        ? new TopFolderCarryMerger().Merge(template, packageDocs, entries, options)
+        : new Merger().Merge(template, packageDocs, entries, options, creatorNames);
     if (result.IsSuccess)
     {
       PersistMergedProject(result.Merged!);
