@@ -98,6 +98,7 @@ public class MergeModelsTest : TestClass
     dm.MergeConfig.PluginDll.Value = "LuaSTGPlusLib.dll";
     dm.MergeConfig.IncludeLstges.Value = false; // 不提供工程文件选项
     dm.MergeConfig.ObfuscateLua.Value = true;
+    dm.MergeConfig.ForcePerformAction.Value = true;
     dm.MergeConfig.Mapping.Add(
       new SpellCardMappingEntry
       {
@@ -124,6 +125,7 @@ public class MergeModelsTest : TestClass
     dm2.MergeConfig.PluginDll.Value.ShouldBe("LuaSTGPlusLib.dll");
     dm2.MergeConfig.IncludeLstges.Value.ShouldBeFalse();
     dm2.MergeConfig.ObfuscateLua.Value.ShouldBeTrue();
+    dm2.MergeConfig.ForcePerformAction.Value.ShouldBeTrue();
     dm2.MergeConfig.Mapping.Count.ShouldBe(1);
     dm2.MergeConfig.Mapping[0].Name.ShouldBe("结界「境界」");
     dm2.MergeConfig.Mapping[0].Creator.Value.ShouldBe("Alice");

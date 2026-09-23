@@ -1458,4 +1458,236 @@ public class MergerTest : TestClass
     cardIdx.ShouldBeGreaterThan(-1);
     dialogIdx.ShouldBeLessThan(cardIdx);
   }
+
+  [Test]
+  public void Merge_ForcePerformAction_True_ImmediatelyPrecededByDialog_CarriesLeading()
+  {
+    // 开关开启 + 卡自身 Performing action=false + 紧邻前序为 Dialog(BossInit 之后)：
+    // 应强制按 Perform Action 处理，携带紧邻前序 Dialog 子树一起注入、位于卡前。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Task.TaskCreate, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"dialog_1\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") },
+      new MergeOptions { ForcePerformAction = true }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    var dialogIdx = nodes.FindIndex(n => n.Type == ".Boss.Dialog, ");
+    var cardIdx = nodes.FindIndex(n => n.Type == ".Boss.BossSpellCard, ");
+    var taskCreateIdx = nodes.FindIndex(n => n.Type == ".Task.TaskCreate, ");
+    dialogIdx.ShouldBeGreaterThan(-1);
+    taskCreateIdx.ShouldBeGreaterThan(-1);
+    cardIdx.ShouldBeGreaterThan(-1);
+    dialogIdx.ShouldBeLessThan(cardIdx);
+    taskCreateIdx.ShouldBeLessThan(cardIdx);
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_ForcePerformAction_True_ImmediatelyPrecededByBossMoveTo_CarriesLeading()
+  {
+    // 紧邻前序为 BossMoveTo：同样触发，携带 BossMoveTo 一起注入且位于卡前。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossMoveTo, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") },
+      new MergeOptions { ForcePerformAction = true }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    var moveIdx = nodes.FindIndex(n => n.Type == ".Boss.BossMoveTo, ");
+    var cardIdx = nodes.FindIndex(n => n.Type == ".Boss.BossSpellCard, ");
+    moveIdx.ShouldBeGreaterThan(-1);
+    cardIdx.ShouldBeGreaterThan(-1);
+    moveIdx.ShouldBeLessThan(cardIdx);
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_ForcePerformAction_True_ImmediatelyPrecededBySpellCard_NotForced()
+  {
+    // 紧邻前序为前一张符卡（不含符卡进判定范围）：不触发强制，普通整合、不携带前置卡。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"PrevCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 1, "A") }, // 选第二张 LeadCard
+      new MergeOptions { ForcePerformAction = true }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // LeadCard 的紧邻前序是 PrevCard（符卡，不在判定范围）→ 不携带任何前置；
+    // 注入产物应只有 LeadCard 一张卡（PrevCard 未被带入）。
+    var cardNodes = nodes.Where(n => n.Type == ".Boss.BossSpellCard, ").ToList();
+    cardNodes.Count.ShouldBe(1);
+    cardNodes[0].GetAttrAt(0).ShouldBe("LeadCard");
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_ForcePerformAction_True_NoImmediatelyPreceding_NotForced()
+  {
+    // 卡为首个阶段（紧邻前序只有 BossInit）：无前置可带 → 普通整合，不携带。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"FirstCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") },
+      new MergeOptions { ForcePerformAction = true }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    nodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeFalse();
+    nodes.Any(n => n.Type == ".Boss.BossMoveTo, ").ShouldBeFalse();
+    nodes
+      .Any(n => n.Type == ".Boss.BossSpellCard, " && n.GetAttrAt(0) == "FirstCard")
+      .ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_ForcePerformAction_True_ImmediatelyPrecededByLegacyMoveTo_CarriesLeading()
+  {
+    // 紧邻前序为旧版 .Boss.MoveTo：同样触发强制，携带 MoveTo 一起注入且位于卡前（双候选覆盖）。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.MoveTo, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") },
+      new MergeOptions { ForcePerformAction = true }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    var moveIdx = nodes.FindIndex(n => n.Type == ".Boss.MoveTo, ");
+    var cardIdx = nodes.FindIndex(n => n.Type == ".Boss.BossSpellCard, ");
+    moveIdx.ShouldBeGreaterThan(-1);
+    cardIdx.ShouldBeGreaterThan(-1);
+    moveIdx.ShouldBeLessThan(cardIdx);
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_ForcePerformAction_False_NoChange()
+  {
+    // 开关关闭：与现状一致。卡 perform=false 且紧邻前序为 Dialog → 不携带（验证零回归）。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") } // 默认 MergeOptions{ForcePerformAction=false}
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    nodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeFalse();
+    nodes
+      .Any(n => n.Type == ".Boss.BossSpellCard, " && n.GetAttrAt(0) == "LeadCard")
+      .ShouldBeTrue();
+  }
 }
