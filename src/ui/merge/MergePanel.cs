@@ -103,6 +103,9 @@ public partial class MergePanel : Control, IMergePanel
   [Node("%AutoRenameConflictsToggle")]
   public ICheckBox AutoRenameConflictsToggle { get; set; } = default!;
 
+  [Node("%ForcePerformActionToggle")]
+  public ICheckBox ForcePerformActionToggle { get; set; } = default!;
+
   [Node("%ExportFullPackageBtn")]
   public IButton ExportFullPackageBtn { get; set; } = default!;
 
@@ -172,6 +175,7 @@ public partial class MergePanel : Control, IMergePanel
     IncludeLstgesToggle.Toggled += _ => PersistConfig();
     ObfuscateLuaToggle.Toggled += _ => PersistConfig();
     AutoRenameConflictsToggle.Toggled += _ => PersistConfig();
+    ForcePerformActionToggle.Toggled += _ => PersistConfig();
 
     // 工程模板配置：路径/目录编辑框输入即写回模型 + 触发保存（避免只填不写、重启丢失）
     TemplatePathEdit.TextChanged += _ => SyncConfigToModel();
@@ -196,6 +200,7 @@ public partial class MergePanel : Control, IMergePanel
     _dm.MergeConfig.IncludeLstges.Value = IncludeLstgesToggle.ButtonPressed;
     _dm.MergeConfig.ObfuscateLua.Value = ObfuscateLuaToggle.ButtonPressed;
     _dm.MergeConfig.AutoRenameConflicts.Value = AutoRenameConflictsToggle.ButtonPressed;
+    _dm.MergeConfig.ForcePerformAction.Value = ForcePerformActionToggle.ButtonPressed;
     _dm.MergeConfig.OutputDir.Value = OutputDirEdit.Text.Trim();
     _dm.MergeConfig.OutputName.Value = string.IsNullOrWhiteSpace(_dm.MergeConfig.OutputName.Value)
       ? "mod"
@@ -230,6 +235,7 @@ public partial class MergePanel : Control, IMergePanel
     IncludeLstgesToggle.ButtonPressed = _dm.MergeConfig.IncludeLstges.Value;
     ObfuscateLuaToggle.ButtonPressed = _dm.MergeConfig.ObfuscateLua.Value;
     AutoRenameConflictsToggle.ButtonPressed = _dm.MergeConfig.AutoRenameConflicts.Value;
+    ForcePerformActionToggle.ButtonPressed = _dm.MergeConfig.ForcePerformAction.Value;
   }
 
   #endregion
@@ -434,6 +440,7 @@ public partial class MergePanel : Control, IMergePanel
     _dm.MergeConfig.IncludeLstges.Value = IncludeLstgesToggle.ButtonPressed;
     _dm.MergeConfig.ObfuscateLua.Value = ObfuscateLuaToggle.ButtonPressed;
     _dm.MergeConfig.AutoRenameConflicts.Value = AutoRenameConflictsToggle.ButtonPressed;
+    _dm.MergeConfig.ForcePerformAction.Value = ForcePerformActionToggle.ButtonPressed;
   }
 
   /// <summary>
