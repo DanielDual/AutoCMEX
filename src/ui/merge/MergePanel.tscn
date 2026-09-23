@@ -198,3 +198,7 @@ text = "导出对应表"
 unique_name_in_owner = true
 layout_mode = 2
 text = "按创作者分组（每人专属文件夹）"
+
+[node name="MergeAlgorithmOption" type="OptionButton" parent="RootSplit/RightSplit/ExportPane" unique_id=568184294]
+unique_name_in_owner = true
+layout_mode = 2

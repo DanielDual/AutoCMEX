@@ -109,6 +109,9 @@ public partial class MergePanel : Control, IMergePanel
   [Node("%GroupByCreatorFoldersToggle")]
   public ICheckBox GroupByCreatorFoldersToggle { get; set; } = default!;
 
+  [Node("%MergeAlgorithmOption")]
+  public IOptionButton MergeAlgorithmOption { get; set; } = default!;
+
   [Node("%ExportFullPackageBtn")]
   public IButton ExportFullPackageBtn { get; set; } = default!;
 
@@ -154,6 +157,11 @@ public partial class MergePanel : Control, IMergePanel
     ShuffleBtn.Pressed += OnShuffleMapping;
     ExportFullPackageBtn.Pressed += OnExportFullPackage;
     ExportMappingBtn.Pressed += OnExportMapping;
+
+    // 合并算法选择：提取式（默认）/ 按顶层文件夹整搬
+    MergeAlgorithmOption.AddItem("提取式（按类型重放）");
+    MergeAlgorithmOption.AddItem("按顶层文件夹整搬");
+    MergeAlgorithmOption.ItemSelected += _ => PersistConfig();
   }
 
   public void OnResolved()
@@ -206,6 +214,7 @@ public partial class MergePanel : Control, IMergePanel
     _dm.MergeConfig.AutoRenameConflicts.Value = AutoRenameConflictsToggle.ButtonPressed;
     _dm.MergeConfig.ForcePerformAction.Value = ForcePerformActionToggle.ButtonPressed;
     _dm.MergeConfig.GroupByCreatorFolders.Value = GroupByCreatorFoldersToggle.ButtonPressed;
+    _dm.MergeConfig.Algorithm.Value = (MergeAlgorithm)MergeAlgorithmOption.Selected;
     _dm.MergeConfig.OutputDir.Value = OutputDirEdit.Text.Trim();
     _dm.MergeConfig.OutputName.Value = string.IsNullOrWhiteSpace(_dm.MergeConfig.OutputName.Value)
       ? "mod"
@@ -242,6 +251,7 @@ public partial class MergePanel : Control, IMergePanel
     AutoRenameConflictsToggle.ButtonPressed = _dm.MergeConfig.AutoRenameConflicts.Value;
     ForcePerformActionToggle.ButtonPressed = _dm.MergeConfig.ForcePerformAction.Value;
     GroupByCreatorFoldersToggle.ButtonPressed = _dm.MergeConfig.GroupByCreatorFolders.Value;
+    MergeAlgorithmOption.Select((int)_dm.MergeConfig.Algorithm.Value);
   }
 
   #endregion
@@ -448,6 +458,7 @@ public partial class MergePanel : Control, IMergePanel
     _dm.MergeConfig.AutoRenameConflicts.Value = AutoRenameConflictsToggle.ButtonPressed;
     _dm.MergeConfig.ForcePerformAction.Value = ForcePerformActionToggle.ButtonPressed;
     _dm.MergeConfig.GroupByCreatorFolders.Value = GroupByCreatorFoldersToggle.ButtonPressed;
+    _dm.MergeConfig.Algorithm.Value = (MergeAlgorithm)MergeAlgorithmOption.Selected;
   }
 
   /// <summary>
