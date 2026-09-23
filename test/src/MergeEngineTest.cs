@@ -296,4 +296,39 @@ public class MergeEngineTest : TestClass
     rErr.ShouldBeNull();
     reparsed.ShouldNotBeNull();
   }
+
+  [Test]
+  public void Merge_RealRichPackage_GroupByCreatorFolders_CreatesFolderAndRoundTrips()
+  {
+    // 需求2真实数据往返：sample_rich_package 合并到模板，开关开启 + creatorNames。
+    // 断言注入产生按创作者命名的 .General.Folder（Name=Alice）、父链合法且往返可解析。
+    var template = LstgesParser.ParseDocument(TemplateText, out var tErr);
+    tErr.ShouldBeNull();
+    template.ShouldNotBeNull();
+
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.LoadFile(DataPath("sample_rich_package.lstges"), out var pErr)!
+    );
+    pErr.ShouldBeNull();
+
+    var result = new Merger().Merge(
+      template!,
+      new[] { pkg },
+      System.Array.Empty<MergeMappingEntry>(),
+      new MergeOptions { GroupByCreatorFolders = true },
+      new[] { "Alice" }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    nodes
+      .Any(n => n.Type == ".General.Folder, LuaSTGEditorSharp" && n.GetAttr("Name") == "Alice")
+      .ShouldBeTrue();
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+
+    var reparsed = LstgesParser.ParseDocument(result.Merged.Serialize(), out var rErr);
+    rErr.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+  }
 }

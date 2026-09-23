@@ -1075,7 +1075,7 @@ public class MergerTest : TestClass
   {
     // 真机实际形态（akari 包）：`self.colli=flase`/`local kx,ky=self.x,self.y`/`self.x=ds*cos(dr)+kx`
     // 位于 **IsBanned 的 BentLaserDefine/OjbectDefine** 内部。banned 定义在采集时被 `IsBanned → continue`
-    // 跳过且不进入 covered 区间，其内部**非 banned** 的代码块会逃逸成“顶层全局代码”被剥离注入对象注入点、
+    // 跳过且不进入 covered 区间，其内部**非 banned** 的代码块会逃逸成"顶层全局代码"被剥离注入对象注入点、
     // 与定义并列脱离 self 作用域报错。必须沿完整父链回溯父级，判定其嵌套于定义内而不剥离。
     var template = LstgesParser.ParseDocument(TemplateText, out _)!;
     // 容器定义为 IsBanned（含 init 及多层 Repeat→TaskNode 子级），内部嵌三段 self.* 代码块。
@@ -1689,5 +1689,238 @@ public class MergerTest : TestClass
     nodes
       .Any(n => n.Type == ".Boss.BossSpellCard, " && n.GetAttrAt(0) == "LeadCard")
       .ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_Definition_SameNameAsTemplate_Skipped()
+  {
+    // 需求1：定义不允许重名（同名会告警）——判据为「名字」：模板已存在同名可移植定义 → 命中跳过（不搬）。
+    // 注意：判据是名字而非归档，避免「归档口径把所有创作者定义误跳过」（用户实测反馈修正）。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"卡A\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    // 模板自身也含同名 TaskDefine "shared_task"（对象注点之后作为既有内容）
+    var template = LstgesParser.ParseDocument(
+      FullTemplateA
+        + "2,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n",
+      out _
+    )!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 产物仅模板原有的 1 个 TaskDefine；创作者同名定义命中 → 未注入（无第二份）
+    nodes.Count(n => n.Type == ".Task.TaskDefine, ").ShouldBe(1);
+    nodes.Any(n => n.Type == ".Boss.BossSpellCard, ").ShouldBeTrue();
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_Definition_DifferentNameFromTemplate_Injected()
+  {
+    // 需求1负例：模板已有 shared_task，创作者定义不同名 custom_task → 未命中 → 照常注入。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"卡A\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"custom_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    // 模板含同名 shared_task（不同名即不命中）
+    var template = LstgesParser.ParseDocument(
+      FullTemplateA
+        + "2,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n",
+      out _
+    )!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 模板 shared_task + 注入 custom_task 共 2 个 TaskDefine；custom_task 已注入（对象注点）
+    nodes.Count(n => n.Type == ".Task.TaskDefine, ").ShouldBe(2);
+    nodes
+      .Any(n => n.Type == ".Task.TaskDefine, " && n.GetAttrAt(0) == "custom_task")
+      .ShouldBeTrue();
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_GroupByCreatorFolders_True_CreatesFolderPerCreator()
+  {
+    // 需求2：开关开启 = 每人一个专属 .General.Folder（Name=创作者名），对象与资源分居各自文件夹。
+    var pkgA =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm_A\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"卡A\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"resource\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"images/a.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"code\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"task_a\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkgB =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm_B\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"卡B\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"resource\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"images/b.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"code\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"task_b\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n";
+
+    var template = LstgesParser.ParseDocument(FullTemplateA, out _)!;
+    var pkgAObj = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgA, out _)!);
+    var pkgBObj = new CreatorPackageDoc("B", LstgesParser.ParseDocument(pkgB, out _)!);
+    var mapping = new[]
+    {
+      new MergeMappingEntry(0, 0, "Alice"),
+      new MergeMappingEntry(1, 0, "Bob"),
+    };
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgAObj, pkgBObj },
+      mapping,
+      new MergeOptions { GroupByCreatorFolders = true },
+      new[] { "Alice", "Bob" }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    var aliceFolders = FolderIndexes(nodes, "Alice");
+    var bobFolders = FolderIndexes(nodes, "Bob");
+    aliceFolders.Count.ShouldBe(2); // 资源注入点 + 对象注入点各一个
+    bobFolders.Count.ShouldBe(2);
+
+    // 每人的对象进入各自文件夹、资源进入各自文件夹（归属不串包）
+    aliceFolders.Any(f => FolderContainsTask(nodes, f, "task_a")).ShouldBeTrue();
+    aliceFolders.Any(f => FolderContainsImage(nodes, f, "images/a.png")).ShouldBeTrue();
+    aliceFolders.Any(f => FolderContainsTask(nodes, f, "task_b")).ShouldBeFalse();
+    bobFolders.Any(f => FolderContainsTask(nodes, f, "task_b")).ShouldBeTrue();
+    bobFolders.Any(f => FolderContainsImage(nodes, f, "images/b.png")).ShouldBeTrue();
+    bobFolders.Any(f => FolderContainsTask(nodes, f, "task_a")).ShouldBeFalse();
+
+    // 文件夹头 = 注入点同级；内容在其下一层（父链合法）
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_GroupByCreatorFolders_False_NoCreatorFolders()
+  {
+    // 需求2回归：开关关闭 = 与旧行为一致，对象/资源平铺到注入点旁，不产生按人文件夹。
+    var template = LstgesParser.ParseDocument(FullTemplateA, out _)!;
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"卡A\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"images/x.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "1,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"task_x\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 不出现创作者名命名的文件夹（模板自身 references/code 仍在）
+    FolderIndexes(nodes, "Alice").ShouldBeEmpty();
+    FolderIndexes(nodes, "Bob").ShouldBeEmpty();
+    // 对象/资源平铺到注入点同龄：层级 = 注点注释层级(2)
+    var taskIdx = nodes.FindIndex(n => n.Type == ".Task.TaskDefine, ");
+    var imgIdx = nodes.FindIndex(n => n.Type == ".Graphics.LoadImage, ");
+    taskIdx.ShouldBeGreaterThan(-1);
+    imgIdx.ShouldBeGreaterThan(-1);
+    nodes[taskIdx].Level.ShouldBe(2);
+    nodes[imgIdx].Level.ShouldBe(2);
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  private static System.Collections.Generic.List<int> FolderIndexes(
+    System.Collections.Generic.List<LstgesNode> nodes,
+    string name
+  )
+  {
+    var result = new System.Collections.Generic.List<int>();
+    for (int i = 0; i < nodes.Count; i++)
+    {
+      if (nodes[i].Type == ".General.Folder, LuaSTGEditorSharp" && nodes[i].GetAttr("Name") == name)
+        result.Add(i);
+    }
+    return result;
+  }
+
+  private static bool FolderContainsTask(
+    System.Collections.Generic.List<LstgesNode> nodes,
+    int folderIdx,
+    string taskName
+  )
+  {
+    int level = nodes[folderIdx].Level;
+    for (int i = folderIdx + 1; i < nodes.Count && nodes[i].Level > level; i++)
+    {
+      if (nodes[i].Type == ".Task.TaskDefine, " && nodes[i].GetAttrAt(0) == taskName)
+        return true;
+    }
+    return false;
+  }
+
+  private static bool FolderContainsImage(
+    System.Collections.Generic.List<LstgesNode> nodes,
+    int folderIdx,
+    string path
+  )
+  {
+    int level = nodes[folderIdx].Level;
+    for (int i = folderIdx + 1; i < nodes.Count && nodes[i].Level > level; i++)
+    {
+      if (nodes[i].Type == ".Graphics.LoadImage, " && nodes[i].GetAttrAt(0) == path)
+        return true;
+    }
+    return false;
   }
 }
