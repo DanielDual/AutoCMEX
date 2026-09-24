@@ -81,6 +81,7 @@ public partial class MergePanel : Control, IMergePanel
   [Node("%ShuffleBtn")]
   public IButton ShuffleBtn { get; set; } = default!;
 
+  /// <summary>右上「对应表」·按创作者分组开关（持久化为 <see cref="Models.MergeConfig.GroupMappingByCreator"/>；目前仅持久化，分组消费逻辑待实现）。</summary>
   [Node("%GroupOption")]
   public ICheckBox GroupOption { get; set; } = default!;
 
@@ -159,9 +160,9 @@ public partial class MergePanel : Control, IMergePanel
     ExportMappingBtn.Pressed += OnExportMapping;
 
     // 合并算法选择：提取式（默认）/ 按顶层文件夹整搬
+    // 仅添加选项；ItemSelected 的接线放在 OnResolved 回填之后（见该方法内的时序说明）。
     MergeAlgorithmOption.AddItem("提取式（按类型重放）");
     MergeAlgorithmOption.AddItem("按顶层文件夹整搬");
-    MergeAlgorithmOption.ItemSelected += _ => PersistConfig();
   }
 
   public void OnResolved()
@@ -182,21 +183,29 @@ public partial class MergePanel : Control, IMergePanel
       .MergeConfig.SelectedPackageIndex.Bind()
       .OnValue(_ => CallDeferred(nameof(RefreshPackageDetail)));
 
-    // 导出选项：事件只写数据模型 + 触发保存（指示 24）
+    // 初始态：把持久化模型值同步到导出控件（避免开关默认值与模型不一致导致首次导出失真）。
+    // 必须早于下方事件注册：程序化回填 ButtonPressed 会按 Godot 语义触发 Toggled，
+    // 若此时监听者已就绪，回填信号会被误判为用户输入，导致全量写回 + 落盘，
+    // 把尚未回填的项用控件默认值覆盖（加载即被清空）。回填阶段无监听者，
+    // 才能保证「只有真实用户交互才写回模型」。
+    LoadConfigToControls();
+
+    // 事件注册（回填完成之后）：开关/算法/路径编辑框一律只写数据模型 + 触发保存（指示 24）。
     IncludeLstgesToggle.Toggled += _ => PersistConfig();
     ObfuscateLuaToggle.Toggled += _ => PersistConfig();
     AutoRenameConflictsToggle.Toggled += _ => PersistConfig();
     ForcePerformActionToggle.Toggled += _ => PersistConfig();
     GroupByCreatorFoldersToggle.Toggled += _ => PersistConfig();
+    MergeAlgorithmOption.ItemSelected += _ => PersistConfig();
+
+    // 右上「对应表」·按创作者分组开关：只属于对应表本身，与导出配置无关，故单独写回。
+    GroupOption.Toggled += _ => SyncMappingGroupingToModel();
 
     // 工程模板配置：路径/目录编辑框输入即写回模型 + 触发保存（避免只填不写、重启丢失）
     TemplatePathEdit.TextChanged += _ => SyncConfigToModel();
     SharpPathEdit.TextChanged += _ => SyncConfigToModel();
     PluginDllEdit.TextChanged += _ => SyncConfigToModel();
     OutputDirEdit.TextChanged += _ => SyncConfigToModel();
-
-    // 初始态：把持久化模型值同步到导出控件（避免开关默认值与模型不一致导致首次导出失真）
-    LoadConfigToControls();
 
     RefreshPackageList();
     RefreshMappingList();
@@ -237,11 +246,24 @@ public partial class MergePanel : Control, IMergePanel
     _dm.TriggerAutoSave();
   }
 
+  /// <summary>
+  /// 把右上「对应表」的「按创作者分组」开关写回模型并触发自动保存（事件只写模型，指示 24）。
+  /// 该开关与导出/整合控件无关，故不并入 <see cref="PersistConfig"/>。
+  /// </summary>
+  private void SyncMappingGroupingToModel()
+  {
+    if (_dm == null)
+      return;
+    _dm.MergeConfig.GroupMappingByCreator.Value = GroupOption.ButtonPressed;
+    _dm.TriggerAutoSave();
+  }
+
   /// <summary>把持久化模型值同步到导出控件（初始态驱动，保证首次导出与配置一致，重启后回显）。</summary>
   private void LoadConfigToControls()
   {
     if (_dm == null)
       return;
+    GroupOption.ButtonPressed = _dm.MergeConfig.GroupMappingByCreator.Value;
     TemplatePathEdit.Text = _dm.MergeConfig.TemplatePath.Value;
     SharpPathEdit.Text = _dm.MergeConfig.SharpEditorPath.Value;
     PluginDllEdit.Text = _dm.MergeConfig.PluginDll.Value;

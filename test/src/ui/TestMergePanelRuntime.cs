@@ -312,4 +312,81 @@ public class TestMergePanelRuntime : TestClass
     panel.PluginDllEdit.Text.ShouldBe("LuaSTGPlusLib.dll");
     panel.OutputDirEdit.Text.ShouldBe("C:/out/mod");
   }
+
+  [Test]
+  public async Task LoadConfig_Backfill_DoesNotOverwriteModel()
+  {
+    _dm = CreateDataManager();
+
+    // 预置全部非默认配置（模拟用户上次选择后重启，磁盘上已是这些值）。
+    _dm.MergeConfig.IncludeLstges.Value = true;
+    _dm.MergeConfig.ObfuscateLua.Value = true;
+    _dm.MergeConfig.AutoRenameConflicts.Value = true;
+    _dm.MergeConfig.ForcePerformAction.Value = true;
+    _dm.MergeConfig.GroupByCreatorFolders.Value = true;
+    _dm.MergeConfig.GroupMappingByCreator.Value = true;
+    _dm.MergeConfig.Algorithm.Value = MergeAlgorithm.TopFolderCarry;
+    _dm.MergeConfig.TemplatePath.Value = "C:/tmp/template/main.lstgproj";
+    _dm.MergeConfig.SharpEditorPath.Value = "C:/Program Files/LuaSTG";
+    _dm.MergeConfig.PluginDll.Value = "LuaSTGPlusLib.dll";
+    _dm.MergeConfig.OutputDir.Value = "C:/out/mod";
+
+    var panel = InstantiatePanel();
+
+    // 等待 OnResolved 完成回填（回填期间不应存在监听者，故不得触发任何写回）。
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    // 正向：模型 → 控件 回显正确。
+    panel.IncludeLstgesToggle.ButtonPressed.ShouldBeTrue();
+    panel.ObfuscateLuaToggle.ButtonPressed.ShouldBeTrue();
+    panel.AutoRenameConflictsToggle.ButtonPressed.ShouldBeTrue();
+    panel.ForcePerformActionToggle.ButtonPressed.ShouldBeTrue();
+    panel.GroupByCreatorFoldersToggle.ButtonPressed.ShouldBeTrue();
+    panel.GroupOption.ButtonPressed.ShouldBeTrue();
+    panel.MergeAlgorithmOption.Selected.ShouldBe((int)MergeAlgorithm.TopFolderCarry);
+
+    // 反向（本用例的核心回归）：回填不得污染模型。
+    // 修复前：回填的程序化赋值触发 Toggled → PersistConfig 全量写回，
+    // 把尚未回填的控件默认值写进模型并落盘，导致重载后配置丢失。
+    _dm.MergeConfig.IncludeLstges.Value.ShouldBeTrue();
+    _dm.MergeConfig.ObfuscateLua.Value.ShouldBeTrue();
+    _dm.MergeConfig.AutoRenameConflicts.Value.ShouldBeTrue();
+    _dm.MergeConfig.ForcePerformAction.Value.ShouldBeTrue();
+    _dm.MergeConfig.GroupByCreatorFolders.Value.ShouldBeTrue();
+    _dm.MergeConfig.GroupMappingByCreator.Value.ShouldBeTrue();
+    _dm.MergeConfig.Algorithm.Value.ShouldBe(MergeAlgorithm.TopFolderCarry);
+    _dm.MergeConfig.TemplatePath.Value.ShouldBe("C:/tmp/template/main.lstgproj");
+    _dm.MergeConfig.SharpEditorPath.Value.ShouldBe("C:/Program Files/LuaSTG");
+    _dm.MergeConfig.PluginDll.Value.ShouldBe("LuaSTGPlusLib.dll");
+    _dm.MergeConfig.OutputDir.Value.ShouldBe("C:/out/mod");
+  }
+
+  [Test]
+  public async Task MappingGroupOption_Toggle_WritesBackToModel()
+  {
+    _dm = CreateDataManager();
+    var panel = InstantiatePanel();
+
+    // 等待 OnResolved 完成（回填在 OnResolved 执行；OnReady 仅填充下拉选项）。
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    // 初始：模型默认 false → 控件未勾选。
+    _dm.MergeConfig.GroupMappingByCreator.Value.ShouldBeFalse();
+    panel.GroupOption.ButtonPressed.ShouldBeFalse();
+
+    // 事件只写模型（指示 24）：CheckBox 程序化设 ButtonPressed 会按引擎语义触发 Toggled，
+    // 驱动 SyncMappingGroupingToModel 写回模型（等价于一次真实勾选）。
+    var node = panel.FindChild("GroupOption", owned: false, recursive: true) as Godot.CheckBox;
+    node.ShouldNotBeNull();
+    node.ButtonPressed = true;
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    _dm.MergeConfig.GroupMappingByCreator.Value.ShouldBeTrue();
+
+    // 取消勾选同样触发写回（保证状态可逆、不残留）。
+    node.ButtonPressed = false;
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    _dm.MergeConfig.GroupMappingByCreator.Value.ShouldBeFalse();
+  }
 }

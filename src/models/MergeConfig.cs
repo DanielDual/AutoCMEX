@@ -72,6 +72,13 @@ public class MergeConfig
   public AutoList<string> ExcludedArchiveSpaces { get; set; } = new();
 
   /// <summary>
+  /// 右上「对应表」的「按创作者分组」开关（默认 false = 按注入顺序平铺）。
+  /// 注意与 <see cref="GroupByCreatorFolders"/>（整合注入时按创作者建专属文件夹）语义无关，此开关只描述对应表本身的分组意图。
+  /// 注意：目前仅持久化开关状态（写回/回填），对应表按创作者分组/排序的**消费逻辑尚未实现**（TODO，待补 OnExportMapping 等处）。
+  /// </summary>
+  public AutoValue<bool> GroupMappingByCreator { get; set; } = new(false);
+
+  /// <summary>
   /// 编辑中的「符卡—创作者对应表」（顺序即注入顺序；符卡/非符分开标注）。
   /// </summary>
   public AutoList<SpellCardMappingEntry> Mapping { get; set; } = new();
