@@ -50,6 +50,10 @@ public static class MergeImporter
       ZipFile.ExtractToDirectory(zipPath, tempDir);
 
       var packageName = Path.GetFileNameWithoutExtension(zipPath);
+      // 创作者名从包名推导（「前缀_创作者」命名约定取末段）。
+      // Fallback：包名不含「_」时 Split("_", 2) 只产生 1 段，[^1] 即整包名，
+      // 隐式回退为整包名作创作者名；无需额外分支。
+      var creatorName = packageName.Split("_", 2)[^1];
       var doc = LoadPackageDoc(tempDir);
       if (doc == null)
         return new CreatorImportResult { Error = "zip 内未找到可解析的 .lstges 工程文件" };
@@ -62,7 +66,7 @@ public static class MergeImporter
             {
               Name = card.Name,
               IsNonSpell = new(card.IsNonSpell),
-              Creator = new(packageName),
+              Creator = new(creatorName),
               PackageName = packageName,
               SourceCardIndex = idx,
             }
@@ -77,7 +81,7 @@ public static class MergeImporter
       var pkg = new CreatorPackage
       {
         PackageName = packageName,
-        CreatorName = new(packageName),
+        CreatorName = new(creatorName),
         SourcePath = new(zipPath),
         IsDeleted = new(false),
         SpellCards = spellNames,
