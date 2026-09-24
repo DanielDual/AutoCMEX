@@ -154,30 +154,58 @@ layout_mode = 2
 layout_mode = 2
 text = "导出功能"
 
-[node name="IncludeLstgesToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane" unique_id=1172509]
+[node name="MergeModeLabel" type="Label" parent="RootSplit/RightSplit/ExportPane" unique_id=468364723]
+layout_mode = 2
+text = "合并模式"
+
+[node name="MergeAlgorithmOption" type="OptionButton" parent="RootSplit/RightSplit/ExportPane" unique_id=568184294]
+unique_name_in_owner = true
+layout_mode = 2
+
+[node name="OptionsLabel" type="Label" parent="RootSplit/RightSplit/ExportPane" unique_id=67254288]
+layout_mode = 2
+text = "选项"
+
+[node name="OptionsFlow" type="HFlowContainer" parent="RootSplit/RightSplit/ExportPane" unique_id=1417255728]
+layout_mode = 2
+
+[node name="IncludeLstgesToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane/OptionsFlow" unique_id=1172509]
 unique_name_in_owner = true
 layout_mode = 2
 text = "导出包含 .lstges 工程文件"
 
-[node name="ObfuscateLuaToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane" unique_id=621693574]
+[node name="ObfuscateLuaToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane/OptionsFlow" unique_id=621693574]
 unique_name_in_owner = true
 layout_mode = 2
 text = "混淆 Lua 脚本"
 
-[node name="OutputDirEdit" type="LineEdit" parent="RootSplit/RightSplit/ExportPane" unique_id=2128794710]
-unique_name_in_owner = true
-layout_mode = 2
-placeholder_text = "输出目录"
-
-[node name="AutoRenameConflictsToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane" unique_id=1634520156]
+[node name="AutoRenameConflictsToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane/OptionsFlow" unique_id=1634520156]
 unique_name_in_owner = true
 layout_mode = 2
 text = "冲突自动改名"
 
-[node name="ForcePerformActionToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane" unique_id=2114783056]
+[node name="ForcePerformActionToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane/OptionsFlow" unique_id=2114783056]
 unique_name_in_owner = true
 layout_mode = 2
 text = "前置对话/移动的符卡强制按 Perform Action 整合"
+
+[node name="GroupByCreatorFoldersToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane/OptionsFlow" unique_id=1338109103]
+unique_name_in_owner = true
+layout_mode = 2
+text = "按创作者分组（每人专属文件夹）"
+
+[node name="OutputDirRow" type="HBoxContainer" parent="RootSplit/RightSplit/ExportPane" unique_id=1664116336]
+layout_mode = 2
+
+[node name="OutputDirLabel" type="Label" parent="RootSplit/RightSplit/ExportPane/OutputDirRow" unique_id=497581197]
+layout_mode = 2
+text = "输出路径"
+
+[node name="OutputDirEdit" type="LineEdit" parent="RootSplit/RightSplit/ExportPane/OutputDirRow" unique_id=2128794710]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "输出目录"
 
 [node name="ConflictList" type="ItemList" parent="RootSplit/RightSplit/ExportPane" unique_id=144785272]
 unique_name_in_owner = true
@@ -193,12 +221,3 @@ text = "导出完整包"
 unique_name_in_owner = true
 layout_mode = 2
 text = "导出对应表"
-
-[node name="GroupByCreatorFoldersToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane" unique_id=1338109103]
-unique_name_in_owner = true
-layout_mode = 2
-text = "按创作者分组（每人专属文件夹）"
-
-[node name="MergeAlgorithmOption" type="OptionButton" parent="RootSplit/RightSplit/ExportPane" unique_id=568184294]
-unique_name_in_owner = true
-layout_mode = 2
