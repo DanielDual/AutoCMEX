@@ -72,11 +72,12 @@ public class MergeConfig
   public AutoList<string> ExcludedArchiveSpaces { get; set; } = new();
 
   /// <summary>
-  /// 右上「对应表」的「按创作者分组」开关（默认 false = 按注入顺序平铺）。
-  /// 注意与 <see cref="GroupByCreatorFolders"/>（整合注入时按创作者建专属文件夹）语义无关，此开关只描述对应表本身的分组意图。
-  /// 注意：目前仅持久化开关状态（写回/回填），对应表按创作者分组/排序的**消费逻辑尚未实现**（TODO，待补 OnExportMapping 等处）。
+  /// 右上「对应表」的「打乱模式」（默认 <see cref="MappingShuffleMode.Random"/> 完全随机）。
+  /// 点击「按模式重排」按钮时按此模式重排 <see cref="Mapping"/>；下拉选择会持久化（重启回显）。
+  /// 注意与 <see cref="GroupByCreatorFolders"/>（整合注入时按创作者建专属文件夹）语义无关，
+  /// 此模式只描述对应表本身的重排方式。
   /// </summary>
-  public AutoValue<bool> GroupMappingByCreator { get; set; } = new(false);
+  public AutoValue<MappingShuffleMode> ShuffleMode { get; set; } = new(MappingShuffleMode.Random);
 
   /// <summary>
   /// 编辑中的「符卡—创作者对应表」（顺序即注入顺序；符卡/非符分开标注）。

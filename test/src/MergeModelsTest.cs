@@ -48,6 +48,38 @@ public class MergeModelsTest : TestClass
     dm.MergeConfig.Mapping.ShouldBeEmpty();
   }
 
+  /// <summary>
+  /// 向后兼容：本次改动删除了 <c>MergeConfig.GroupMappingByCreator</c> 字段。
+  /// 旧 <c>merge_config.json</c> 里的 <c>groupMappingByCreator</c> 键必须被宽容忽略
+  /// （而不是整份配置反序列化抛错、被 <c>LoadJson</c> 静默重置为默认值 —— 那会丢用户全部设置），
+  /// 且缺失的 <c>shuffleMode</c> 回落默认 <see cref="MappingShuffleMode.Random"/>。
+  /// </summary>
+  [Test]
+  public void DataManager_LoadMergeConfig_IgnoresRemovedLegacyKey()
+  {
+    File.WriteAllText(
+      Path.Combine(_tempDir, "merge_config.json"),
+      """
+      {
+        "templatePath": "C:/templates/legacy",
+        "groupMappingByCreator": true,
+        "algorithm": 1
+      }
+      """
+    );
+
+    var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(_tempDir));
+    var dm = new DataManager(_tempDir, encryptor);
+
+    dm.LoadAll();
+
+    // 非默认值被读入 ⇒ 整份配置确实加载成功（未因未知键回退到 new MergeConfig()）。
+    dm.MergeConfig.TemplatePath.Value.ShouldBe("C:/templates/legacy");
+    dm.MergeConfig.Algorithm.Value.ShouldBe(MergeAlgorithm.TopFolderCarry);
+    // 新增字段在旧文件里缺失 ⇒ 取默认值。
+    dm.MergeConfig.ShuffleMode.Value.ShouldBe(MappingShuffleMode.Random);
+  }
+
   [Test]
   public void DataManager_SaveLoad_CreatorPackageInventoryCacheRoundTrip()
   {
@@ -100,7 +132,7 @@ public class MergeModelsTest : TestClass
     dm.MergeConfig.ObfuscateLua.Value = true;
     dm.MergeConfig.ForcePerformAction.Value = true;
     dm.MergeConfig.GroupByCreatorFolders.Value = true;
-    dm.MergeConfig.GroupMappingByCreator.Value = true;
+    dm.MergeConfig.ShuffleMode.Value = AutoCMEX.Models.MappingShuffleMode.Interleave;
     dm.MergeConfig.Algorithm.Value = AutoCMEX.Models.MergeAlgorithm.TopFolderCarry;
     dm.MergeConfig.Mapping.Add(
       new SpellCardMappingEntry
@@ -130,7 +162,7 @@ public class MergeModelsTest : TestClass
     dm2.MergeConfig.ObfuscateLua.Value.ShouldBeTrue();
     dm2.MergeConfig.ForcePerformAction.Value.ShouldBeTrue();
     dm2.MergeConfig.GroupByCreatorFolders.Value.ShouldBeTrue();
-    dm2.MergeConfig.GroupMappingByCreator.Value.ShouldBeTrue();
+    dm2.MergeConfig.ShuffleMode.Value.ShouldBe(AutoCMEX.Models.MappingShuffleMode.Interleave);
     dm2.MergeConfig.Algorithm.Value.ShouldBe(AutoCMEX.Models.MergeAlgorithm.TopFolderCarry);
     dm2.MergeConfig.Mapping.Count.ShouldBe(1);
     dm2.MergeConfig.Mapping[0].Name.ShouldBe("结界「境界」");

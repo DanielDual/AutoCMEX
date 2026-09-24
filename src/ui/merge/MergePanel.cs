@@ -81,9 +81,9 @@ public partial class MergePanel : Control, IMergePanel
   [Node("%ShuffleBtn")]
   public IButton ShuffleBtn { get; set; } = default!;
 
-  /// <summary>右上「对应表」·按创作者分组开关（持久化为 <see cref="Models.MergeConfig.GroupMappingByCreator"/>；目前仅持久化，分组消费逻辑待实现）。</summary>
-  [Node("%GroupOption")]
-  public ICheckBox GroupOption { get; set; } = default!;
+  /// <summary>右上「对应表」·「打乱模式」下拉（持久化为 <see cref="Models.MergeConfig.ShuffleMode"/>）：随机 / 交替 / 按创作者分组。</summary>
+  [Node("%MappingModeOption")]
+  public IOptionButton MappingModeOption { get; set; } = default!;
 
   #endregion
 
@@ -163,6 +163,12 @@ public partial class MergePanel : Control, IMergePanel
     // 仅添加选项；ItemSelected 的接线放在 OnResolved 回填之后（见该方法内的时序说明）。
     MergeAlgorithmOption.AddItem("提取式（按类型重放）");
     MergeAlgorithmOption.AddItem("按顶层文件夹整搬");
+
+    // 对应表「打乱模式」下拉：随机（默认）/ 交替 / 按创作者分组。
+    // 顺序必须与 MappingShuffleMode 枚举值一致；同样只添加选项，ItemSelected 接线见 OnResolved。
+    MappingModeOption.AddItem("随机");
+    MappingModeOption.AddItem("交替（非符/符卡）");
+    MappingModeOption.AddItem("按创作者分组");
   }
 
   public void OnResolved()
@@ -198,8 +204,8 @@ public partial class MergePanel : Control, IMergePanel
     GroupByCreatorFoldersToggle.Toggled += _ => PersistConfig();
     MergeAlgorithmOption.ItemSelected += _ => PersistConfig();
 
-    // 右上「对应表」·按创作者分组开关：只属于对应表本身，与导出配置无关，故单独写回。
-    GroupOption.Toggled += _ => SyncMappingGroupingToModel();
+    // 右上「对应表」·打乱模式下拉：只属于对应表本身，与导出配置无关，故单独写回。
+    MappingModeOption.ItemSelected += _ => SyncMappingModeToModel();
 
     // 工程模板配置：路径/目录编辑框输入即写回模型 + 触发保存（避免只填不写、重启丢失）
     TemplatePathEdit.TextChanged += _ => SyncConfigToModel();
@@ -247,14 +253,14 @@ public partial class MergePanel : Control, IMergePanel
   }
 
   /// <summary>
-  /// 把右上「对应表」的「按创作者分组」开关写回模型并触发自动保存（事件只写模型，指示 24）。
-  /// 该开关与导出/整合控件无关，故不并入 <see cref="PersistConfig"/>。
+  /// 把右上「对应表」的「打乱模式」下拉写回模型并触发自动保存（事件只写模型，指示 24）。
+  /// 该下拉与导出/整合控件无关，故不并入 <see cref="PersistConfig"/>。
   /// </summary>
-  private void SyncMappingGroupingToModel()
+  private void SyncMappingModeToModel()
   {
     if (_dm == null)
       return;
-    _dm.MergeConfig.GroupMappingByCreator.Value = GroupOption.ButtonPressed;
+    _dm.MergeConfig.ShuffleMode.Value = (MappingShuffleMode)MappingModeOption.Selected;
     _dm.TriggerAutoSave();
   }
 
@@ -263,7 +269,7 @@ public partial class MergePanel : Control, IMergePanel
   {
     if (_dm == null)
       return;
-    GroupOption.ButtonPressed = _dm.MergeConfig.GroupMappingByCreator.Value;
+    MappingModeOption.Select((int)_dm.MergeConfig.ShuffleMode.Value);
     TemplatePathEdit.Text = _dm.MergeConfig.TemplatePath.Value;
     SharpPathEdit.Text = _dm.MergeConfig.SharpEditorPath.Value;
     PluginDllEdit.Text = _dm.MergeConfig.PluginDll.Value;
@@ -443,17 +449,36 @@ public partial class MergePanel : Control, IMergePanel
       _dm.TriggerAutoSave();
     };
 
+  /// <summary>
+  /// 按右上「对应表」所选「打乱模式」重排 <see cref="Models.MergeConfig.Mapping"/>
+  /// （顺序即注入顺序，同时决定对应表导出顺序）。
+  /// <para>
+  /// 三种模式**每次都产生不同排列**：随机 = 整体 Fisher-Yates；
+  /// 交替 = 形态由规则（非符/符卡块长）决定、两类内容各自随机；
+  /// 按创作者分组 = 分组与组序确定、组内随机。
+  /// </para>
+  /// </summary>
   private void OnShuffleMapping()
   {
     if (_dm == null || _dm.MergeConfig.Mapping.Count <= 1)
       return;
-    var entries = _dm.MergeConfig.Mapping.ToList();
-    var rng = new Random();
-    for (int i = entries.Count - 1; i > 0; i--)
+
+    var rng = Random.Shared;
+    List<SpellCardMappingEntry> entries;
+    switch (_dm.MergeConfig.ShuffleMode.Value)
     {
-      int j = rng.Next(i + 1);
-      (entries[i], entries[j]) = (entries[j], entries[i]);
+      case MappingShuffleMode.Interleave:
+        entries = MappingInterleave.Reinterleave(_dm.MergeConfig.Mapping, rng);
+        break;
+      case MappingShuffleMode.GroupByCreator:
+        entries = MappingGroupByCreator.RegroupByCreator(_dm.MergeConfig.Mapping, rng);
+        break;
+      default:
+        entries = _dm.MergeConfig.Mapping.ToList();
+        ListShuffler.Shuffle(entries, rng);
+        break;
     }
+
     _dm.MergeConfig.Mapping.Clear();
     foreach (var e in entries)
       _dm.MergeConfig.Mapping.Add(e);

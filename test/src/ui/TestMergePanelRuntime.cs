@@ -1,6 +1,8 @@
 namespace AutoCMEX;
 
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
@@ -86,7 +88,7 @@ public class TestMergePanelRuntime : TestClass
     panel.MoveUpBtn.ShouldNotBeNull();
     panel.MoveDownBtn.ShouldNotBeNull();
     panel.ShuffleBtn.ShouldNotBeNull();
-    panel.GroupOption.ShouldNotBeNull();
+    panel.MappingModeOption.ShouldNotBeNull();
 
     panel.IncludeLstgesToggle.ShouldNotBeNull();
     panel.ObfuscateLuaToggle.ShouldNotBeNull();
@@ -324,7 +326,7 @@ public class TestMergePanelRuntime : TestClass
     _dm.MergeConfig.AutoRenameConflicts.Value = true;
     _dm.MergeConfig.ForcePerformAction.Value = true;
     _dm.MergeConfig.GroupByCreatorFolders.Value = true;
-    _dm.MergeConfig.GroupMappingByCreator.Value = true;
+    _dm.MergeConfig.ShuffleMode.Value = MappingShuffleMode.Interleave;
     _dm.MergeConfig.Algorithm.Value = MergeAlgorithm.TopFolderCarry;
     _dm.MergeConfig.TemplatePath.Value = "C:/tmp/template/main.lstgproj";
     _dm.MergeConfig.SharpEditorPath.Value = "C:/Program Files/LuaSTG";
@@ -343,18 +345,19 @@ public class TestMergePanelRuntime : TestClass
     panel.AutoRenameConflictsToggle.ButtonPressed.ShouldBeTrue();
     panel.ForcePerformActionToggle.ButtonPressed.ShouldBeTrue();
     panel.GroupByCreatorFoldersToggle.ButtonPressed.ShouldBeTrue();
-    panel.GroupOption.ButtonPressed.ShouldBeTrue();
+    panel.MappingModeOption.Selected.ShouldBe((int)MappingShuffleMode.Interleave);
     panel.MergeAlgorithmOption.Selected.ShouldBe((int)MergeAlgorithm.TopFolderCarry);
 
     // 反向（本用例的核心回归）：回填不得污染模型。
     // 修复前：回填的程序化赋值触发 Toggled → PersistConfig 全量写回，
     // 把尚未回填的控件默认值写进模型并落盘，导致重载后配置丢失。
+    // 注：OptionButton.Select() 本身不发 ItemSelected，属同一类「回填即触发」风险的守门用例。
     _dm.MergeConfig.IncludeLstges.Value.ShouldBeTrue();
     _dm.MergeConfig.ObfuscateLua.Value.ShouldBeTrue();
     _dm.MergeConfig.AutoRenameConflicts.Value.ShouldBeTrue();
     _dm.MergeConfig.ForcePerformAction.Value.ShouldBeTrue();
     _dm.MergeConfig.GroupByCreatorFolders.Value.ShouldBeTrue();
-    _dm.MergeConfig.GroupMappingByCreator.Value.ShouldBeTrue();
+    _dm.MergeConfig.ShuffleMode.Value.ShouldBe(MappingShuffleMode.Interleave);
     _dm.MergeConfig.Algorithm.Value.ShouldBe(MergeAlgorithm.TopFolderCarry);
     _dm.MergeConfig.TemplatePath.Value.ShouldBe("C:/tmp/template/main.lstgproj");
     _dm.MergeConfig.SharpEditorPath.Value.ShouldBe("C:/Program Files/LuaSTG");
@@ -363,7 +366,7 @@ public class TestMergePanelRuntime : TestClass
   }
 
   [Test]
-  public async Task MappingGroupOption_Toggle_WritesBackToModel()
+  public async Task MappingModeOption_Selection_WritesBackToModel()
   {
     _dm = CreateDataManager();
     var panel = InstantiatePanel();
@@ -372,21 +375,239 @@ public class TestMergePanelRuntime : TestClass
     await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
     await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
 
-    // 初始：模型默认 false → 控件未勾选。
-    _dm.MergeConfig.GroupMappingByCreator.Value.ShouldBeFalse();
-    panel.GroupOption.ButtonPressed.ShouldBeFalse();
+    // 初始：模型默认 Random → 下拉选中第 0 项。
+    _dm.MergeConfig.ShuffleMode.Value.ShouldBe(MappingShuffleMode.Random);
+    panel.MappingModeOption.Selected.ShouldBe((int)MappingShuffleMode.Random);
 
-    // 事件只写模型（指示 24）：CheckBox 程序化设 ButtonPressed 会按引擎语义触发 Toggled，
-    // 驱动 SyncMappingGroupingToModel 写回模型（等价于一次真实勾选）。
-    var node = panel.FindChild("GroupOption", owned: false, recursive: true) as Godot.CheckBox;
+    // 事件只写模型（指示 24）：模拟用户在下拉选定「交替」→ ItemSelected 驱动 SyncMappingModeToModel 写回。
+    var node =
+      panel.FindChild("MappingModeOption", owned: false, recursive: true) as Godot.OptionButton;
     node.ShouldNotBeNull();
-    node.ButtonPressed = true;
+    node.Selected = (int)MappingShuffleMode.Interleave;
+    node.EmitSignal(Godot.OptionButton.SignalName.ItemSelected, (int)MappingShuffleMode.Interleave);
     await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
-    _dm.MergeConfig.GroupMappingByCreator.Value.ShouldBeTrue();
+    _dm.MergeConfig.ShuffleMode.Value.ShouldBe(MappingShuffleMode.Interleave);
 
-    // 取消勾选同样触发写回（保证状态可逆、不残留）。
-    node.ButtonPressed = false;
+    // 改选「按创作者分组」同样写回（状态可逆、不残留）。
+    node.Selected = (int)MappingShuffleMode.GroupByCreator;
+    node.EmitSignal(
+      Godot.OptionButton.SignalName.ItemSelected,
+      (int)MappingShuffleMode.GroupByCreator
+    );
     await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
-    _dm.MergeConfig.GroupMappingByCreator.Value.ShouldBeFalse();
+    _dm.MergeConfig.ShuffleMode.Value.ShouldBe(MappingShuffleMode.GroupByCreator);
+  }
+
+  /// <summary>对应表的类型序列（形态），如 "N S N N S"。</summary>
+  private static string MappingShape(IEnumerable<SpellCardMappingEntry> entries) =>
+    string.Join(" ", entries.Select(e => e.IsNonSpell.Value ? "N" : "S"));
+
+  /// <summary>对应表的名称序列（内容）。</summary>
+  private static List<string> MappingNames(IEnumerable<SpellCardMappingEntry> entries) =>
+    entries.Select(e => e.Name).ToList();
+
+  [Test]
+  public async Task ShuffleMapping_Interleave_FollowsRuleShape()
+  {
+    _dm = CreateDataManager();
+    _dm.MergeConfig.ShuffleMode.Value = MappingShuffleMode.Interleave;
+
+    // 3 非符 + 2 符卡 → 形态由规则决定：块长 [1,2] ⇒ N S N N S（元素身份随机，故只断言形态）。
+    _dm.MergeConfig.Mapping.Add(
+      new SpellCardMappingEntry
+      {
+        Name = "n1",
+        IsNonSpell = new(true),
+        Creator = new("Alice"),
+      }
+    );
+    _dm.MergeConfig.Mapping.Add(
+      new SpellCardMappingEntry
+      {
+        Name = "n2",
+        IsNonSpell = new(true),
+        Creator = new("Alice"),
+      }
+    );
+    _dm.MergeConfig.Mapping.Add(
+      new SpellCardMappingEntry
+      {
+        Name = "n3",
+        IsNonSpell = new(true),
+        Creator = new("Alice"),
+      }
+    );
+    _dm.MergeConfig.Mapping.Add(
+      new SpellCardMappingEntry
+      {
+        Name = "s1",
+        IsNonSpell = new(false),
+        Creator = new("Bob"),
+      }
+    );
+    _dm.MergeConfig.Mapping.Add(
+      new SpellCardMappingEntry
+      {
+        Name = "s2",
+        IsNonSpell = new(false),
+        Creator = new("Bob"),
+      }
+    );
+
+    var panel = InstantiatePanel();
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    panel.GetNode<Godot.Button>("%ShuffleBtn").EmitSignal(Godot.Button.SignalName.Pressed);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    _dm.MergeConfig.Mapping.Count.ShouldBe(5);
+    MappingShape(_dm.MergeConfig.Mapping).ShouldBe("N S N N S");
+    MappingNames(_dm.MergeConfig.Mapping)
+      .ShouldBe(new List<string> { "n1", "n2", "n3", "s1", "s2" }, ignoreOrder: true);
+  }
+
+  /// <summary>
+  /// 回归：用户实测「按很多次都是一个结果」。交替模式也必须每次给出不同排列
+  /// （形态恒定、内容随机），否则等于没打乱。
+  /// </summary>
+  [Test]
+  public async Task ShuffleMapping_Interleave_RepeatedPresses_ProduceDifferentOrders()
+  {
+    _dm = CreateDataManager();
+    _dm.MergeConfig.ShuffleMode.Value = MappingShuffleMode.Interleave;
+
+    for (var i = 1; i <= 5; i++)
+      _dm.MergeConfig.Mapping.Add(
+        new SpellCardMappingEntry
+        {
+          Name = $"n{i}",
+          IsNonSpell = new(true),
+          Creator = new("Alice"),
+        }
+      );
+    for (var i = 1; i <= 5; i++)
+      _dm.MergeConfig.Mapping.Add(
+        new SpellCardMappingEntry
+        {
+          Name = $"s{i}",
+          IsNonSpell = new(false),
+          Creator = new("Bob"),
+        }
+      );
+
+    var panel = InstantiatePanel();
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    var shuffleBtn = panel.GetNode<Godot.Button>("%ShuffleBtn");
+    var orders = new List<string>();
+    for (var press = 0; press < 10; press++)
+    {
+      shuffleBtn.EmitSignal(Godot.Button.SignalName.Pressed);
+      await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+      // 5×5 ⇒ 块长恒为 1，形态必须是严格交替；内容逐次随机。
+      MappingShape(_dm.MergeConfig.Mapping).ShouldBe("N S N S N S N S N S");
+      MappingNames(_dm.MergeConfig.Mapping)
+        .ShouldBe(
+          new List<string> { "n1", "n2", "n3", "n4", "n5", "s1", "s2", "s3", "s4", "s5" },
+          ignoreOrder: true
+        );
+      orders.Add(string.Join(" ", MappingNames(_dm.MergeConfig.Mapping)));
+    }
+
+    orders.Distinct().Count().ShouldBeGreaterThan(1);
+  }
+
+  /// <summary>「随机」模式（默认）仍为整体洗牌，且保持旧的完全随机行为不回归。</summary>
+  [Test]
+  public async Task ShuffleMapping_Random_ShufflesWholeList()
+  {
+    _dm = CreateDataManager();
+    _dm.MergeConfig.ShuffleMode.Value = MappingShuffleMode.Random;
+
+    for (var i = 1; i <= 6; i++)
+      _dm.MergeConfig.Mapping.Add(
+        new SpellCardMappingEntry
+        {
+          Name = $"e{i}",
+          IsNonSpell = new(i % 2 == 1),
+          Creator = new("Alice"),
+        }
+      );
+
+    var panel = InstantiatePanel();
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    var shuffleBtn = panel.GetNode<Godot.Button>("%ShuffleBtn");
+    var orders = new List<string>();
+    for (var press = 0; press < 10; press++)
+    {
+      shuffleBtn.EmitSignal(Godot.Button.SignalName.Pressed);
+      await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+      // 随机模式不受规则约束：只要求内容守恒。
+      MappingNames(_dm.MergeConfig.Mapping)
+        .ShouldBe(new List<string> { "e1", "e2", "e3", "e4", "e5", "e6" }, ignoreOrder: true);
+      orders.Add(string.Join(" ", MappingNames(_dm.MergeConfig.Mapping)));
+    }
+
+    orders.Distinct().Count().ShouldBeGreaterThan(1);
+  }
+
+  [Test]
+  public async Task ShuffleMapping_GroupByCreator_ReordersModel()
+  {
+    _dm = CreateDataManager();
+    _dm.MergeConfig.ShuffleMode.Value = MappingShuffleMode.GroupByCreator;
+
+    _dm.MergeConfig.Mapping.Add(
+      new SpellCardMappingEntry
+      {
+        Name = "a1",
+        IsNonSpell = new(false),
+        Creator = new("Alice"),
+      }
+    );
+    _dm.MergeConfig.Mapping.Add(
+      new SpellCardMappingEntry
+      {
+        Name = "b1",
+        IsNonSpell = new(false),
+        Creator = new("Bob"),
+      }
+    );
+    _dm.MergeConfig.Mapping.Add(
+      new SpellCardMappingEntry
+      {
+        Name = "a2",
+        IsNonSpell = new(false),
+        Creator = new("Alice"),
+      }
+    );
+    _dm.MergeConfig.Mapping.Add(
+      new SpellCardMappingEntry
+      {
+        Name = "b2",
+        IsNonSpell = new(false),
+        Creator = new("Bob"),
+      }
+    );
+
+    var panel = InstantiatePanel();
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    panel.GetNode<Godot.Button>("%ShuffleBtn").EmitSignal(Godot.Button.SignalName.Pressed);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    // 组间按首次出现（Alice → Bob）、组内随机，故只断言分组归属与内容守恒。
+    _dm.MergeConfig.Mapping.Count.ShouldBe(4);
+    _dm.MergeConfig.Mapping.Select(e => e.Creator.Value)
+      .ShouldBe(new List<string> { "Alice", "Alice", "Bob", "Bob" });
+    MappingNames(_dm.MergeConfig.Mapping)
+      .ShouldBe(new List<string> { "a1", "a2", "b1", "b2" }, ignoreOrder: true);
   }
 }
