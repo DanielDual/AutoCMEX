@@ -87,7 +87,7 @@ Koishi 记的是 `Client disconnected: code=1006`，AutoCMEX 记的是 `server c
 - `dotnet build`：0 错误。
 - `$GODOT --run-tests --quit-on-finish --coverage`（**带窗口，非 headless**）：**679 通过 / 0 失败 / 0 跳过**（修复前 656 条）。
 - 新增单测：`WebSocketClientLifecycleTest`、`WebSocketServerLifecycleTest`、`WebSocketLifecycleTest`，并在 `TestWebSocketPanel` 补两条（重连中按钮方向与状态文案）。
-- 覆盖率：整体行 68.3%（`WebSocketLifecycle` 36/37 行、`WebSocketClient` 47/65 行、`WebSocketServer` 51/74 行）。
+- 覆盖率：整体行 68.2%、分支 57.1%（`WebSocketLifecycle` 36/37 行、`WebSocketClient` 47/65 行、`WebSocketServer` 51/74 行）。
 - **真机验收留待用户执行**：Client 模式连 Koishi 5141，启动后 30s 内 Koishi 端只应看到 1 次连接、0 次踢出（手动停止除外）。
 
 ## 遗留观察（本次未处理）
