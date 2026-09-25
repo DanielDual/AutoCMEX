@@ -206,10 +206,10 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 任务由 CMEX 写、结果与诊断日志由插件写，目录固定为 `<引擎>/game/autocmex/{jobs,results,logs}/`（由 CMEX 预建）；任务内的路径一律用正斜杠、相对 `game/`（即引擎进程的工作目录）。
 
-| 阶段 | `phase`     | 任务关键字段                                                     | 结果关键字段                                                                               |
-| ---- | ----------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
-| 枚举 | `enumerate` | —                                                                | `boss_name` / `boss_class` / `cards[]`（`absolute_index`/`name`/`is_sc`/`is_combat`/`t3`） |
-| 录制 | `record`    | `absolute_index` / `interval` / `max_frame` / `include_previous` | `task_name` / `gif_path` / `frames` / `complete` / `success` / `size`                      |
+| 阶段 | `phase`     | 任务关键字段                                                               | 结果关键字段                                                                               |
+| ---- | ----------- | -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 枚举 | `enumerate` | —                                                                          | `boss_name` / `boss_class` / `cards[]`（`absolute_index`/`name`/`is_sc`/`is_combat`/`t3`） |
+| 录制 | `record`    | `absolute_index` / `interval` / `max_frame` / `scale` / `include_previous` | `task_name` / `gif_path` / `frames` / `complete` / `success` / `size`                      |
 
 - 结果必须回传同一 `job_id`，CMEX 据此拒绝上一轮遗留的结果文件。
 - 插件先写 `.tmp` 再改名，避免 CMEX 读到写了一半的 JSON。
@@ -219,6 +219,7 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 - **跳卡置 `lstg.var.sc_index = nil`**（而非沿用 `StageDebugView` 的 `-1`）：`UI.lua` 只判真值就直接索引 `_sc_table[sc_index][1]`，`-1` 会索引 nil 崩渲染。
 - **逐帧推进靠包装全局 `DoFrame`**：引擎每帧按名字取该函数；插件在 `afterTHlib` 事件后包装，并在原函数执行**完毕之后**判定当前卡（`b.current_card` 由 `DoFrame` 内部赋值）。
 - **收尾以录制器自报为准**：`get_last_record_info()` 的 `success`/`frame`/`task_name`/`size` 可直接读，无需轮询文件大小；录满 `max_frame` 时由录制器自行收尾，插件不得重复 `end_record`。
+- **产物分辨率由放缩比决定**：插件在 `start_record` 之前调录制器的 `set_scale(job.scale)`，产物像素 = 捕获区域 × `screen.scale` × 放缩比（与录制器 `CreateRenderTarget` 的算法一致，故日志里会打出预期尺寸）；与抓帧区域同理，`set_scale` 也只在 `status == "initialized"` 时生效。CMEX 侧以整数百分比暴露（`ScalePercent`，10..100，默认 50 = 录制器默认的 0.5），写任务文件时除以 100 还原成倍率；插件只做「正数 + 0.1..1.0」的兜底收敛（越界会写 `WARN`）。放缩比同时影响清晰度与产物体积，故它是 30MB 换挡判据的上游变量。
 - **同一引擎目录不可并发**：录制器产物名是秒级时间戳、临时目录在启动时被清空，并发会互相破坏，串行化由编排层保证。
 - **进程超时必须把编码耗时算进去**：`end_record` 同步编码，实测约 0.08–0.17 s/帧（350 帧约 36 s、702 帧约 58 s）。
 - **卡表口径**：`_editor_class[boss].cards` 含对话阶段，`_sc_table` 只含符卡，二者不同构；序号一律取 `cards` 中的**绝对下标**（1 基）。字段与引擎自身判定同源：`is_combat` 由 `spboss.lua:1433`（`c.is_combat = not (fake)`，对话卡按 `fake` 处理后为 `false`）置位，`is_sc` 由 `boss_card.lua:44`（`c.is_sc = (name ~= '')`）置位；`t3` 在引擎内是**帧**（`boss_card.lua:42` 的 `int(t3) * 60`），插件按 ÷60 换算成秒后写出。
@@ -227,8 +228,8 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 `RecordingOrchestrator.RecordCardAsync(engineDir, modPackName, card, outputDir, config, token, timeout)` 把一张卡录成集内文件 `{序号}.gif`，产物命名与序号在归集时**重写**，与录制器自报的秒级时间戳产物名解耦。
 
-- **「录两遍」是常态而非补救**：`config.MaxFrame` 默认 350 帧，`interval=3`（20 fps）只覆盖 17.5 秒，长卡必然录满被截断；故首次 `result.complete == true` 即换 `config.SecondInterval`（默认 5，12 fps）重录一次，并**采用第二次的产物**，`RecordingCardOutcome.Attempts` 记为 2。
-- **截断即视为不完整**：凡触发重录的卡一律回 `Complete = false`（保守口径），实际帧数与间隔照实回传，由调用方决定是否接受。
+- **「录两遍」是常态而非补救**：`config.MaxFrame` 默认 350 帧，`interval=3`（20 fps）只覆盖 17.5 秒，长卡必然录满被截断；故首次 `result.complete == true`**或首次产物已达 QQ 的动图体积上限**（`GifSizeLimitBytes` = **30,000,000 字节**，即 30MB 按十进制取——这是两种可能口径里**保守**的那个：若 QQ 实际按 1024 进制限流，十进制阈值只会更早触发换挡、不会漏放；反之取 1024 进制则会放过 30,000,000..31,457,280 字节这一段，而真机上确有一张 30,291,854 字节的产物落在该带内）即换 `config.SecondInterval`（默认 5，12 fps）重录一次，并**采用第二次的产物**，`RecordingCardOutcome.Attempts` 记为 2。两条触发条件共用同一段重录逻辑（判据集中在 `DescribeSecondAttempt`）：截断的日志沿用「录满 N 帧被截断」，体积的日志给「产物 X MiB 已达 30MB 上限」；重录失败的原因按触发条件区分为「首次截断后重录失败」与「首次产物超限后重录失败」。换挡后仍 `>= 30MB` 时**不做第三次尝试**：产物本身可用，故照常采用，只补一条带卡号与体积的 `WARN` 日志供真机定位；每张卡收尾时也会把产物实际体积（MiB，与资源管理器显示同口径）打进日志。
+- **截断即视为不完整**：凡触发重录的卡（含体积超限触发的换挡）一律回 `Complete = false`（保守口径），实际帧数与间隔照实回传，由调用方决定是否接受。
 - **失败重试只发生在单次尝试内部**：超时 / 非零退出 / 结果缺失 / 产物缺失 / 卡名核对不符即自动重试 1 次；两次都失败则本卡判失败并返回原因。第二次尝试彻底失败时**不**回退首次的截断产物——半截 GIF 混进集里比明确失败更难排查。
 - **单次尝试的超时预算**：`min(card.t3, maxFrame × interval ÷ 60) + 45 秒启动余量 + maxFrame × 0.3 秒编码余量`（`CardTimeout`）；预算按「一次尝试」计，不随重试与第二次尝试叠加。
 - **归集**：`GifSetBuilder` 负责把录制器产物按 `{CombatOrdinal}.gif` 拷进输出目录（同名覆盖），并读 GIF 逻辑屏尺寸回填 `Width`/`Height`；产物无 GIF 魔数或头截断时抛 `InvalidDataException`，由编排层转成可展示的失败原因。
