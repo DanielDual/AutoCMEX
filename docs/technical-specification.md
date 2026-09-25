@@ -279,7 +279,7 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 - **零写入约束**：用户没点任何按钮时，面板只做只读检查（`Inspect`），不碰引擎目录。
 - 沙箱侧新增 `TryValidateRoot`（沙箱根存在性 + 一次性写入探针；配置为空时允许就地创建默认目录，用户手选的目录必须已存在）；`EstimateFootprint` 允许工程包路径为空（设置页刚配引擎时还没有包），缺失项按 0 计。
 
-验证：编译 0 错误，GoDotTest **586 通过 / 0 失败**（带窗口运行；新增 `PluginDeployerTest`（三态判定、清单损坏、清单缺失、同名前缀目录不误命中、禁用条目、只读检查不写盘、安装幂等与备份、启用最小改动、缺件原因串逐字比对）、`RecordingConfigPanelTest`（配置回填、非法值不落盘、越界收敛、推断失败不写配置、状态渲染与按钮启停、一键部署联动与失败原因、无引擎目录时误点不改盘）与 `RecordingSandboxTest` 的 `TryValidateRoot` 与四种插件缺件拒绝建副本）。
+验证：编译 0 错误，GoDotTest **588 通过 / 0 失败**（带窗口运行；新增 `PluginDeployerTest`（三态判定、清单损坏、清单缺失、同名前缀目录不误命中、禁用条目、只读检查不写盘、安装幂等与备份、启用最小改动、缺件原因串逐字比对）、`RecordingConfigPanelTest`（配置回填、非法值不落盘、越界收敛、推断失败不写配置、状态渲染与按钮启停、一键部署联动与失败原因、无引擎目录时误点不改盘）与 `RecordingSandboxTest` 的 `TryValidateRoot` 与四种插件缺件拒绝建副本）。
 
 ### 实施阶段
 
