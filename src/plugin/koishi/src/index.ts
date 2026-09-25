@@ -7,12 +7,18 @@
 const { Schema, h } = require("koishi");
 const WebSocket = require("ws");
 const crypto = require("crypto");
+const fs = require("fs");
+const path = require("path");
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 5140;
 const RECONNECT_INTERVAL = 5000;
 const HEARTBEAT_INTERVAL = 30000;
 const REQUEST_TTL = 5 * 60 * 1000;
+
+// 合并转发节点使用的署名（OneBot 的 node 必须带昵称与 QQ 号）
+const FORWARD_NICKNAME = "AutoCMEX";
+const FORWARD_UIN = "10000";
 
 // Client mode state
 let ws = null;
@@ -95,6 +101,208 @@ async function replyToSession(ctx, session, replyText) {
   }
 
   await session.send(replyText);
+}
+
+/**
+ * 通过收到请求的同一条连接回传事件。
+ */
+function sendEvent(send, eventName, data) {
+  if (typeof send !== "function") return;
+  send({
+    id: generateId(),
+    type: "event",
+    timestamp: Date.now(),
+    payload: { event: eventName, data },
+  });
+}
+
+/**
+ * 判断本地文件存在且非空（图片经适配器上传时会静默丢图，必须在发送前自检）。
+ */
+function isUsableFile(filePath) {
+  try {
+    return fs.statSync(filePath).isFile() && fs.statSync(filePath).size > 0;
+  } catch (err) {
+    return false;
+  }
+}
+
+/**
+ * 本地绝对路径转 file:// URL（OneBot 的 image.file 支持 file:// 形式）。
+ */
+function toFileUrl(filePath) {
+  const normalized = path.resolve(filePath).replace(/\\/g, "/");
+  return `file:///${encodeURI(normalized).replace(/^%2F/, "")}`;
+}
+
+/**
+ * 选择用于主动发送的机器人：优先在线实例，其次任意实例。
+ */
+function pickBot(ctx) {
+  const bots = ctx.bots || [];
+  return bots.find((bot) => bot.status === 1) || bots[0] || null;
+}
+
+/**
+ * 拉取所有机器人可见的群，按 channelId 去重。
+ */
+async function collectGroups(ctx) {
+  const groups = [];
+  const seen = new Set();
+
+  for (const bot of ctx.bots || []) {
+    let list = null;
+    try {
+      if (typeof bot.getGuildList === "function") {
+        list = await bot.getGuildList();
+      }
+
+      if ((!list || list.length === 0) && bot.internal && typeof bot.internal.getGroupList === "function") {
+        list = await bot.internal.getGroupList();
+      }
+    } catch (err) {
+      ctx.logger.warn(`[AutoCMEX] Failed to fetch group list: ${err.message}`);
+      continue;
+    }
+
+    for (const item of list || []) {
+      const channelId = String(item.id || item.group_id || item.channelId || "");
+      if (!channelId || seen.has(channelId)) continue;
+
+      seen.add(channelId);
+      groups.push({
+        channelId,
+        guildId: String(item.guildId || item.guild_id || ""),
+        name: String(item.name || item.group_name || ""),
+      });
+    }
+  }
+
+  return groups;
+}
+
+/**
+ * 处理群列表查询（info_group_list_request → info_group_list_result）。
+ */
+async function handleGroupListRequest(ctx, send) {
+  const groups = await collectGroups(ctx);
+  ctx.logger.info(`[AutoCMEX] Group list request: ${groups.length} group(s)`);
+
+  sendEvent(send, "info_group_list_result", {
+    groups,
+    count: groups.length,
+  });
+}
+
+/**
+ * 处理主动发布请求（info_publish_forward → info_publish_result）。
+ *
+ * 关键约束：合并转发整条消息只能由 node 元素组成；图片经适配器上传失败只会记 warn，
+ * 因此这里对每个附件做本地可读性自检，任何一张不可读都整条拒发并回报具体序号。
+ */
+async function handlePublishForward(ctx, payload, send) {
+  const requestId = payload?.requestId || "";
+  const channelId = String(payload?.channelId || "");
+  const kind = payload?.kind || "";
+  const nodes = Array.isArray(payload?.nodes) ? payload.nodes : [];
+
+  const report = (success, message, failedNodes) => {
+    sendEvent(send, "info_publish_result", {
+      requestId,
+      channelId,
+      kind,
+      success,
+      message: message || "",
+      failedNodes: failedNodes || [],
+    });
+  };
+
+  if (!requestId || !channelId) {
+    report(false, "发布请求缺少 requestId 或 channelId。");
+    return;
+  }
+
+  if (nodes.length === 0) {
+    report(false, "发布请求没有可发送的内容。");
+    return;
+  }
+
+  const failedNodes = [];
+  for (const node of nodes) {
+    if (!node || !node.imagePath) continue;
+    if (!isUsableFile(node.imagePath)) {
+      failedNodes.push({
+        index: node.index || 0,
+        title: node.title || node.text || "",
+        reason: `图片不存在或为空：${node.imagePath}`,
+      });
+    }
+  }
+
+  if (failedNodes.length > 0) {
+    report(false, `预检失败：${failedNodes.length} 个附件的图片不可读，未发送。`, failedNodes);
+    return;
+  }
+
+  const bot = pickBot(ctx);
+  if (!bot) {
+    report(false, "Koishi 当前没有可用的机器人实例。");
+    return;
+  }
+
+  const forwardNodes = nodes.map((node) => {
+    const title = node?.text || node?.title || "";
+    const content = [];
+    if (title) content.push({ type: "text", data: { text: `${title}\n` } });
+    if (node?.imagePath) content.push({ type: "image", data: { file: toFileUrl(node.imagePath) } });
+
+    return {
+      type: "node",
+      data: {
+        user_id: FORWARD_UIN,
+        nickname: FORWARD_NICKNAME,
+        content,
+      },
+    };
+  });
+
+  const numericChannelId = Number(channelId);
+  if (!Number.isFinite(numericChannelId)) {
+    report(false, `无法解析群 ID：${channelId}。`);
+    return;
+  }
+
+  const internal = bot.internal || {};
+  if (typeof internal.sendGroupForwardMsg !== "function") {
+    report(false, "当前适配器不支持 sendGroupForwardMsg，无法发送合并转发。");
+    return;
+  }
+
+  try {
+    await internal.sendGroupForwardMsg(numericChannelId, forwardNodes);
+    ctx.logger.info(
+      `[AutoCMEX] Published ${forwardNodes.length} node(s) to ${channelId} (kind=${kind}, requestId=${requestId})`
+    );
+    report(true, "");
+  } catch (err) {
+    // 兼容不同 OneBot 实现的字段命名差异后重试一次
+    try {
+      const legacyNodes = forwardNodes.map((node) => ({
+        type: "node",
+        data: {
+          name: node.data.nickname,
+          uin: node.data.user_id,
+          content: node.data.content,
+        },
+      }));
+      await internal.sendGroupForwardMsg(numericChannelId, legacyNodes);
+      ctx.logger.info(`[AutoCMEX] Published to ${channelId} with legacy node fields.`);
+      report(true, "");
+    } catch (retryErr) {
+      ctx.logger.warn(`[AutoCMEX] Publish failed: ${retryErr.message}`);
+      report(false, `发送失败：${retryErr.message}`);
+    }
+  }
 }
 
 /**
@@ -225,7 +433,11 @@ function startClient(ctx, host, port, token) {
       }, HEARTBEAT_INTERVAL);
     });
 
-    ws.on("message", (data) => handleMessage(ctx, data));
+    ws.on("message", (data) =>
+      handleMessage(ctx, data, (message) => {
+        if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
+      })
+    );
 
     ws.on("close", () => {
       ctx.logger.warn("[AutoCMEX] Disconnected, reconnecting...");
@@ -310,7 +522,11 @@ function startServer(ctx, token) {
       }
     }
 
-    client.on("message", (data) => handleMessage(ctx, data));
+    client.on("message", (data) =>
+      handleMessage(ctx, data, (message) => {
+        if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(message));
+      })
+    );
 
     client.on("close", (code, reason) => {
       ctx.logger.warn(
@@ -328,7 +544,7 @@ function startServer(ctx, token) {
 /**
  * 处理收到的消息
  */
-async function handleMessage(ctx, data) {
+async function handleMessage(ctx, data, send) {
   try {
     const msg = JSON.parse(data.toString());
     switch (msg.type) {
@@ -365,6 +581,16 @@ async function handleMessage(ctx, data) {
           await replyToSession(ctx, pending.session, replyText);
           ctx.logger.info(`[AutoCMEX] Replied to request ${requestId}`);
           pendingRequests.delete(requestId);
+          break;
+        }
+
+        if (msg.payload?.event === "info_group_list_request") {
+          await handleGroupListRequest(ctx, send);
+          break;
+        }
+
+        if (msg.payload?.event === "info_publish_forward") {
+          await handlePublishForward(ctx, msg.payload?.data || {}, send);
           break;
         }
 
