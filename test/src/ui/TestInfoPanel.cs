@@ -283,6 +283,19 @@ public class TestInfoPanel : TestClass
   private static Color CellBackground(Node grid, int index) =>
     ((StyleBoxFlat)grid.GetChild<PanelContainer>(index).GetThemeStylebox("panel")).BgColor;
 
+  /// <summary>按指定列的文本定位数据行，返回的行号把表头算作第 0 行；找不到返回 -1。</summary>
+  private static int FindRow(GridContainer grid, int column, string cellText)
+  {
+    for (var row = 0; row < grid.GetChildCount() / grid.Columns; row++)
+    {
+      var cell = (Label)grid.GetChild(row * grid.Columns + column).GetChild(0);
+      if (cell.Text == cellText)
+        return row;
+    }
+
+    return -1;
+  }
+
   private static Button FindButton(Node root, string name)
   {
     var button = root.FindChild(name, owned: false, recursive: true) as Button;
@@ -460,6 +473,50 @@ public class TestInfoPanel : TestClass
     ((Label)grid.GetChild(4).GetChild(0)).Text.ShouldBe("Beta");
     ((Label)grid.GetChild(5).GetChild(0)).Text.ShouldBe("0");
     CellBackground(grid, 4).ShouldBe(InfoTablePalette.HighlightBackground);
+  }
+
+  /// <summary>
+  /// 猜测板块改了符卡后，两张表要立刻重建，而不是等下次启动重新读盘才同步。
+  /// </summary>
+  /// <remarks>
+  /// 猜测板块标记「已猜出」改的是符卡自身的 <c>AutoValue</c>，符卡列表对象没有增删；观察者只订阅
+  /// 集合级通知时会漏掉这类变化，界面就一直停在旧数据上（用户报告的「关掉重开才同步」）。
+  /// </remarks>
+  [Test]
+  public async Task SpellCardGuessedOut_RefreshesBothTablesWithoutRestart()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var guessingGrid = FindGrid(panel.ColumnPanels[1]!, "TableGrid");
+    var creatorGrid = FindGrid(panel.ColumnPanels[2]!, "TableGrid");
+
+    // 起始：符卡 2 未猜出 → 创作者被掩码成空串、整行不染色；Alpha 还剩 1 张没被猜出
+    var cardRow = FindRow(guessingGrid, 2, "符卡 2");
+    cardRow.ShouldBeGreaterThan(0, "猜测情况表应列出未猜出的符卡 2");
+    ((Label)guessingGrid.GetChild(cardRow * 3).GetChild(0)).Text.ShouldBe(string.Empty);
+    CellBackground(guessingGrid, cardRow * 3).ShouldBe(InfoTablePalette.Background);
+
+    var creatorRow = FindRow(creatorGrid, 0, "Alpha");
+    creatorRow.ShouldBeGreaterThan(0, "创作者剩余表应列出 Alpha");
+    ((Label)creatorGrid.GetChild(creatorRow * 2 + 1).GetChild(0)).Text.ShouldBe("1");
+
+    // 猜测板块标记「符卡 2 已猜出」：只有符卡属性变化，符卡列表没有增删
+    _dm.Bosses[0].SpellCards[1].IsGuessedOut.Value = true;
+    await SettleAsync(panel);
+
+    // 猜测情况表：该行立刻染绿，创作者由掩码空串变成真实创作者
+    CellBackground(guessingGrid, cardRow * 3)
+      .ShouldBe(
+        InfoTablePalette.HighlightBackground,
+        "标记已猜出后猜测情况表应立即重建，而不是等下次启动读盘才同步"
+      );
+    ((Label)guessingGrid.GetChild(cardRow * 3).GetChild(0)).Text.ShouldBe("Alpha");
+
+    // 创作者表：Alpha 已全部猜出 → 剩余数归零并整行染绿
+    ((Label)creatorGrid.GetChild(creatorRow * 2 + 1).GetChild(0)).Text.ShouldBe("0");
+    CellBackground(creatorGrid, creatorRow * 2).ShouldBe(InfoTablePalette.HighlightBackground);
   }
 
   [Test]
