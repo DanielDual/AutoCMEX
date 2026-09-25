@@ -139,7 +139,7 @@ public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
     var path = _settings.KoishiPluginPath.Value.Trim();
     PluginPathLabel.Text =
       path.Length == 0
-        ? "插件状态: 未安装（点上方按钮选择 Koishi plugins 目录）"
+        ? $"插件状态: 未安装（点上方按钮选择 Koishi 应用根目录或它的 {KoishiPluginSpec.ExternalDirName} 目录）"
         : $"插件状态: 已安装到 {path}";
   }
 
@@ -213,20 +213,36 @@ public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
 
   private void OnInstallPlugin()
   {
+    PluginFileDialog.Title =
+      $"选择 Koishi 应用根目录（含 {KoishiPluginSpec.AppManifestFileName}）"
+      + $"或它的 {KoishiPluginSpec.ExternalDirName} 目录";
     PluginFileDialog.PopupCentered();
   }
 
+  /// <summary>
+  /// 一键安装：把插件复制到 Koishi 工作区的短名落点目录。
+  /// </summary>
+  /// <remarks>
+  /// 落点必须是 <c>&lt;应用根&gt;/external/&lt;包短名&gt;</c>：external 下的目录才是工作区成员，
+  /// 且短名与工作区链接（node_modules/&lt;包名&gt;）指向的目录同名，覆盖安装才会生效。
+  /// </remarks>
+  /// <param name="dir">用户在文件对话框里选择的目录。</param>
   private void OnPluginDirSelected(string dir)
   {
-    var sourceDir = "res://src/plugin/koishi/";
-    var destDir = System.IO.Path.Combine(dir, "auto-cmex");
-    PluginInstaller.CopyPluginDir(sourceDir, destDir);
-    _settings.KoishiPluginPath.Value = destDir;
+    if (!KoishiPluginSpec.TryResolve(dir, out var plan, out var error))
+    {
+      PluginOkDialog.DialogText = error;
+      PluginOkDialog.PopupCentered();
+      return;
+    }
+
+    PluginInstaller.CopyPluginDir(KoishiPluginSpec.SourceDir, plan.InstallDir);
+    _settings.KoishiPluginPath.Value = plan.InstallDir;
     _dm?.TriggerAutoSave();
 
     RefreshPluginPath();
 
-    PluginOkDialog.DialogText = $"插件已安装到 {destDir}";
+    PluginOkDialog.DialogText = KoishiPluginSpec.DescribeInstalled(plan);
     PluginOkDialog.PopupCentered();
   }
 }
