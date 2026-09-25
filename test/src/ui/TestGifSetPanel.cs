@@ -115,9 +115,17 @@ public class TestGifSetPanel : TestClass
   private static ScrollContainer GetCardScroll(Node column) =>
     (ScrollContainer)column.FindChild("CardScroll", owned: false, recursive: true)!;
 
-  /// <summary>按用途取文件选择框（同一栏里文件夹/压缩包各有一个，不能只按位置取）。</summary>
+  /// <summary>按用途取导入用的文件选择框（录制入口另有两个且模式相同，不能只按模式取）。</summary>
   private static FileDialog GetFileDialog(Node column, FileDialog.FileModeEnum mode) =>
-    column.GetChildren().OfType<FileDialog>().Single(d => d.FileMode == mode);
+    column.GetChildren().OfType<FileDialog>().Single(d => d.FileMode == mode && !IsRecordDialog(d));
+
+  /// <summary>取录制入口的选择框（与导入用同模式，靠节点名区分）。</summary>
+  private static FileDialog GetRecordDialog(Node column, FileDialog.FileModeEnum mode) =>
+    column.GetChildren().OfType<FileDialog>().Single(d => d.FileMode == mode && IsRecordDialog(d));
+
+  /// <summary>是否为录制入口的选择框。</summary>
+  private static bool IsRecordDialog(FileDialog dialog) =>
+    dialog.Name.ToString().StartsWith("Record", StringComparison.Ordinal);
 
   /// <summary>取错误明细弹窗（<see cref="FileDialog"/> 也是 <see cref="AcceptDialog"/>，必须排除）。</summary>
   private static AcceptDialog? GetMessageDialog(Node column) =>
@@ -221,10 +229,62 @@ public class TestGifSetPanel : TestClass
     GetSetSelector(column).Disabled.ShouldBeTrue("没有集时不应能切换");
     column.PublishButton.Disabled.ShouldBeTrue("没有内容可发布");
 
-    // 录制本期占位禁用（代码再确认一次，防止场景被误改后按钮看似可用）
-    (
-      (Button)column.FindChild("RecordButton", owned: false, recursive: true)!
-    ).Disabled.ShouldBeTrue();
+    // 录制入口不再占位禁用（代码再确认一次，防止场景被误改回 disabled 后按钮看似不可用）
+    var record = (Button)column.FindChild("RecordButton", owned: false, recursive: true)!;
+    record.Disabled.ShouldBeFalse();
+    record.TooltipText.ShouldNotBeEmpty();
+  }
+
+  [Test]
+  public async Task RecordPressed_UnconfiguredEngine_ShowsBlockerWithoutOpeningPickers()
+  {
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+    var column = GetGifColumn(panel);
+
+    ((Button)column.FindChild("RecordButton", owned: false, recursive: true)!).EmitSignal(
+      BaseButton.SignalName.Pressed
+    );
+    await SettleAsync(panel);
+
+    // 引擎目录未设：直接给可执行原因，连工程包选择框都不该弹（省得让人白选一轮）
+    GetRecordDialog(column, FileDialog.FileModeEnum.OpenFile).Visible.ShouldBeFalse();
+
+    var message = GetMessageDialog(column);
+    message.ShouldNotBeNull("前置不通过必须说明原因，而不是静默无反应");
+    message!.Visible.ShouldBeTrue();
+    message.Title.ShouldBe("暂时无法录制");
+    message.DialogText.ShouldContain("引擎目录");
+  }
+
+  [Test]
+  public async Task RecordTwoStepPicking_StartsRecordingAndShowsFailure()
+  {
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+    var column = GetGifColumn(panel);
+
+    // 引擎目录为空：本轮必定停在前置检查；这里验的是「两步手选 → 起录 → 失败反馈」的接线
+    _dm.RecordingConfig.SandboxRoot.Value = Path.Combine(_dir, "sandbox");
+    var outputDir = Path.Combine(_dir, "record_out");
+
+    GetRecordDialog(column, FileDialog.FileModeEnum.OpenFile)
+      .EmitSignal(FileDialog.SignalName.FileSelected, Path.Combine(_dir, "sample.zip"));
+    await SettleAsync(panel);
+
+    var dirDialog = GetRecordDialog(column, FileDialog.FileModeEnum.OpenDir);
+    dirDialog.Visible.ShouldBeTrue("选定工程包之后必须接着让你选输出目录");
+
+    dirDialog.EmitSignal(FileDialog.SignalName.DirSelected, outputDir);
+
+    // 起录是同步的：先把输出目录写进状态行，再进入录制态
+    GetSetInfoLabel(column).Text.ShouldContain(outputDir);
+    await SettleAsync(panel);
+
+    (await WaitUntil(panel, () => GetMessageDialog(column)?.Visible == true)).ShouldBeTrue(
+      "本轮失败必须给可读提示"
+    );
+    GetMessageDialog(column)!.Title.ShouldBe("录制失败");
   }
 
   [Test]

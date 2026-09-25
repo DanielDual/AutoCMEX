@@ -8,7 +8,9 @@ using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using AutoCMEX.Core.Info;
 using AutoCMEX.Core.Recording;
+using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.Test.Drivers;
 using Chickensoft.GoDotTest;
@@ -37,6 +39,7 @@ public class RecordingOrchestratorTest : TestClass
   private readonly List<FakeEngineProcess> _fakes = new();
   private int _startedProcesses;
   private Mock<ILog> _log = new();
+  private DataManager? _dataManager;
 
   public RecordingOrchestratorTest(Node testScene)
     : base(testScene) { }
@@ -64,11 +67,33 @@ public class RecordingOrchestratorTest : TestClass
   [Cleanup]
   public void Cleanup()
   {
+    _dataManager?.Dispose();
+
     if (Directory.Exists(_root))
     {
       Directory.Delete(_root, recursive: true);
     }
   }
+
+  /// <summary>造一个指向临时数据目录的 GIF 集服务（导入链路的真实实现，只在需要导入的用例里建）。</summary>
+  /// <remarks>
+  /// 每个用例都重建：测试类实例在整轮里是同一个，<see cref="Cleanup"/> 会释放上一条，
+  /// 缓存复用会让第二条用例拿到已释放的对象。
+  /// </remarks>
+  /// <returns>集服务。</returns>
+  private GifSetService CreateSetService()
+  {
+    var dataDir = Path.Combine(_root, "data");
+    _dataManager?.Dispose();
+    _dataManager = new DataManager(dataDir, new AesEncryptor("test-key"), _log.Object);
+    return new GifSetService(_dataManager, dataDir, _log.Object);
+  }
+
+  /// <summary>按读取侧选项把清单文本读回模型（与导入链路读清单用的是同一套选项）。</summary>
+  /// <param name="text">清单文本。</param>
+  /// <returns>清单。</returns>
+  private static GifSetManifest DeserializeManifest(string text) =>
+    JsonSerializer.Deserialize<GifSetManifest>(text, GifSetManifest.CreateReadOptions())!;
 
   [Test]
   public async Task RunAsync_InvalidEngineDir_FailsBeforeTouchingDisk()
@@ -686,6 +711,146 @@ public class RecordingOrchestratorTest : TestClass
     Directory.Exists(Path.Combine(_gameDir, GifSetBuilder.RecorderOutputDirName)).ShouldBeFalse();
 
     SandboxDirs(sandboxRoot).ShouldBeEmpty();
+  }
+
+  [Test]
+  public async Task RunAsync_EveryCardRecorded_WritesManifestImportableAsGifSet()
+  {
+    var packPath = PrepareSandboxReadyEngine();
+    var cards = CreateCardTable();
+    var sandboxRoot = Path.Combine(_root, "sandboxes");
+
+    var result = await CreateBulkOrchestrator(SimulateEngine(cards))
+      .RunAsync(CreateRequest(packPath, sandboxRoot, parallelism: 2));
+
+    result.Succeeded.ShouldBeTrue();
+    result.ManifestPath.ShouldNotBeNull();
+
+    var manifestPath = result.ManifestPath!;
+    manifestPath.ShouldBe(Path.Combine(_outputDir, GifSetManifest.FileName));
+    File.Exists(manifestPath).ShouldBeTrue();
+
+    var text = File.ReadAllText(manifestPath);
+    // 契约键名是 camelCase，不能漏出 PascalCase 属性名
+    text.ShouldContain($"\"setName\": \"{ModPackName}\"");
+    // Shouldly 的字符串比较默认忽略大小写，要判「没漏出 PascalCase」必须显式区分大小写
+    text.ShouldNotContain("\"SetName\"", Case.Sensitive);
+
+    var manifest = DeserializeManifest(text);
+    manifest.BossLabel.ShouldBe("测试Boss");
+    manifest.GeneratedAt.ShouldNotBeEmpty();
+    manifest.Entries.Select(entry => entry.Index).ShouldBe(new[] { 1, 2, 3 });
+    manifest
+      .Entries.Select(entry => entry.SpellCardName)
+      .ShouldBe(new[] { "普通攻击 1", "符卡·一", "符卡·二" });
+    manifest.Entries.Select(entry => entry.FileName).ShouldBe(new[] { "1.gif", "2.gif", "3.gif" });
+
+    // 关键断言：输出目录原封不动就能当 GIF 集导入（清单与产物必须同构）
+    var imported = CreateSetService().ImportFolder(_outputDir);
+
+    imported.IsSuccess.ShouldBeTrue(imported.ToDisplayText());
+    imported.Set.ShouldNotBeNull();
+    imported.Set!.SetName.Value.ShouldBe(ModPackName);
+    imported.Set.EntryCount.Value.ShouldBe(3);
+    imported.Set.RootPath.Value.ShouldBe(Path.GetFullPath(_outputDir));
+  }
+
+  [Test]
+  public async Task RunAsync_SomeCardsFail_ManifestKeepsOnlySuccessesAndStillImports()
+  {
+    var packPath = PrepareSandboxReadyEngine();
+    var cards = CreateCardTable();
+    var sandboxRoot = Path.Combine(_root, "sandboxes");
+    // 只有序号 1（绝对下标 2 的「普通攻击 1」）回插件错误，其余照常录成
+    var simulate = SimulateEngine(
+      cards,
+      (card, jobId) =>
+        card.AbsoluteIndex == 2
+          ? new RecordingJobResult
+          {
+            JobId = jobId,
+            Status = RecordingJobStatus.Error,
+            Error = "boss_not_found",
+          }
+          : null
+    );
+
+    var result = await CreateBulkOrchestrator(simulate)
+      .RunAsync(CreateRequest(packPath, sandboxRoot, parallelism: 2));
+
+    result.Succeeded.ShouldBeTrue();
+    result.Report.Failed.ShouldBe(1);
+    result.ManifestPath.ShouldNotBeNull();
+
+    // 失败卡没有产物，故清单里只留成功卡；序号有洞不影响导入（校验只要求序号为正且唯一）
+    var manifest = DeserializeManifest(File.ReadAllText(result.ManifestPath!));
+    manifest.Entries.Select(entry => entry.Index).ShouldBe(new[] { 2, 3 });
+
+    var imported = CreateSetService().ImportFolder(_outputDir);
+
+    imported.IsSuccess.ShouldBeTrue(imported.ToDisplayText());
+    imported.Set!.EntryCount.Value.ShouldBe(2);
+  }
+
+  [Test]
+  public async Task RunAsync_NoCardRecorded_WritesNoManifestAndWarns()
+  {
+    var packPath = PrepareSandboxReadyEngine();
+    var cards = CreateCardTable();
+    var sandboxRoot = Path.Combine(_root, "sandboxes");
+    var simulate = SimulateEngine(
+      cards,
+      (_, jobId) =>
+        new RecordingJobResult
+        {
+          JobId = jobId,
+          Status = RecordingJobStatus.Error,
+          Error = "boss_not_found",
+        }
+    );
+
+    var result = await CreateBulkOrchestrator(simulate)
+      .RunAsync(CreateRequest(packPath, sandboxRoot, parallelism: 2));
+
+    result.Succeeded.ShouldBeTrue();
+    result.Report.Succeeded.ShouldBe(0);
+    result.ManifestPath.ShouldBeNull();
+    File.Exists(Path.Combine(_outputDir, GifSetManifest.FileName)).ShouldBeFalse();
+    result.Warning.ShouldNotBeNull();
+    result.Warning!.ShouldContain("未生成 GIF 集清单");
+
+    // 没有清单就导不进去，这一步必须给出可读原因，而不是让人对着产物猜
+    var imported = CreateSetService().ImportFolder(_outputDir);
+
+    imported.IsSuccess.ShouldBeFalse();
+    imported.ErrorMessage.ShouldContain(GifSetManifest.FileName);
+  }
+
+  [Test]
+  public async Task RunAsync_ForeignGifInOutputDir_RejectsImportWithoutDeletingFiles()
+  {
+    var packPath = PrepareSandboxReadyEngine();
+    var cards = CreateCardTable();
+    var sandboxRoot = Path.Combine(_root, "sandboxes");
+    // 上一轮或别的工具留下的 .gif：集内自洽校验要求清单与目录内 .gif 一一对应
+    Directory.CreateDirectory(_outputDir);
+    var foreign = Path.Combine(_outputDir, "9.gif");
+    File.WriteAllBytes(foreign, new byte[] { 0x47, 0x49, 0x46, 0x38 });
+
+    var result = await CreateBulkOrchestrator(SimulateEngine(cards))
+      .RunAsync(CreateRequest(packPath, sandboxRoot, parallelism: 2));
+
+    result.Succeeded.ShouldBeTrue();
+    result.ManifestPath.ShouldNotBeNull();
+
+    var imported = CreateSetService().ImportFolder(_outputDir);
+
+    imported.IsSuccess.ShouldBeFalse();
+    imported.Details.ShouldContain(detail => detail.Contains("9.gif"));
+    // 但绝不替用户删文件：外来 gif、本轮产物与清单都还在，可手动处理后重新导入
+    File.Exists(foreign).ShouldBeTrue();
+    File.Exists(result.ManifestPath!).ShouldBeTrue();
+    File.Exists(Path.Combine(_outputDir, "1.gif")).ShouldBeTrue();
   }
 
   [Test]
