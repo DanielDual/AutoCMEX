@@ -51,6 +51,8 @@
     <PackageReference Include="Chickensoft.Sync" Version="3.0.0" />
     <PackageReference Include="ClosedXML" Version="0.104.2" />
     <PackageReference Include="CsvHelper" Version="33.0.1" />
+    <!-- GIF 帧解码（信息板块：符卡 GIF 集展示）；纯托管实现，不引入原生资产 -->
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(RunTests)' == 'true'">

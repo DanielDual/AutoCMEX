@@ -49,6 +49,9 @@ public class AppSettings
   /// <summary>当前选中的 Boss 下标，用于共享手动与托管猜测流程的上下文</summary>
   public AutoValue<int> SelectedBossIndex { get; set; } = new(0);
 
+  /// <summary>信息板块的发布目标群聊列表（由设置面板「信息」类别维护）</summary>
+  public AutoList<TargetGroup> TargetGroups { get; set; } = new();
+
   /// <summary>
   /// 恢复关键自动同步属性的非空完整性。
   /// </summary>
@@ -76,5 +79,11 @@ public class AppSettings
     WebSocketMode ??= new("Server");
     KoishiWebSocketUrl ??= new(string.Empty);
     SelectedBossIndex ??= new(0);
+    TargetGroups ??= new();
+
+    foreach (var group in TargetGroups)
+    {
+      group?.EnsureIntegrity();
+    }
   }
 }

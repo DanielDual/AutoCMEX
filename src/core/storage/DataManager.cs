@@ -26,6 +26,7 @@ public class DataManager : IDisposable
   private AppSettings _settings = new();
   private AutoList<CreatorPackage> _creatorPackages = new();
   private MergeConfig _mergeConfig = new();
+  private InfoConfig _infoConfig = new();
 
   private CancellationTokenSource? _saveCts;
   private readonly object _saveLock = new();
@@ -38,6 +39,16 @@ public class DataManager : IDisposable
   public AppSettings Settings => _settings;
   public AutoList<CreatorPackage> CreatorPackages => _creatorPackages;
   public MergeConfig MergeConfig => _mergeConfig;
+  public InfoConfig InfoConfig => _infoConfig;
+
+  /// <summary>
+  /// 数据目录绝对路径。
+  /// </summary>
+  /// <remarks>
+  /// 供服务层在数据目录下托管自有子目录（如符卡 GIF 集的解压落点），避免各处重复拼接
+  /// 数据目录导致落点不一致。
+  /// </remarks>
+  public string DataDir => _dataDir;
 
   private AutoValue<string?>.Binding? _activeAiModelIdBinding;
   private AutoValue<int>.Binding? _webSocketPortBinding;
@@ -93,6 +104,8 @@ public class DataManager : IDisposable
         new AutoListConverter<string>(),
         new AutoListConverter<CreatorPackage>(),
         new AutoListConverter<SpellCardMappingEntry>(),
+        new AutoListConverter<GifSetRecord>(),
+        new AutoListConverter<TargetGroup>(),
         new AutoValueJsonConverterFactory(),
       },
     };
@@ -129,9 +142,14 @@ public class DataManager : IDisposable
 
     _mergeConfig = LoadJson<MergeConfig>("merge_config.json") ?? new();
 
+    _infoConfig = LoadJson<InfoConfig>("info_config.json") ?? new();
+    // 回填被 JSON 显式 null 覆盖的 AutoValue/AutoList 属性，保证同步绑定链路非空
+    _infoConfig.EnsureIntegrity();
+
     _log.Print(
       $"DataManager.LoadAll: bosses={_bosses.Count}, aliases={_aliases.Count}, "
-        + $"aiModels={_settings.AiModels.Count}, creatorPackages={_creatorPackages.Count}"
+        + $"aiModels={_settings.AiModels.Count}, creatorPackages={_creatorPackages.Count}, "
+        + $"gifSets={_infoConfig.GifSets.Count}, targetGroups={_settings.TargetGroups.Count}"
     );
 
     // 解密 API 密钥
@@ -211,6 +229,7 @@ public class DataManager : IDisposable
       SaveJson("app_settings.json", settingsToSave);
       SaveJson("creator_packages.json", new List<CreatorPackage>(_creatorPackages));
       SaveJson("merge_config.json", _mergeConfig);
+      SaveJson("info_config.json", _infoConfig);
       _log.Print("DataManager: SaveAll succeeded.");
     }
     catch (Exception ex)
@@ -238,6 +257,7 @@ public class DataManager : IDisposable
     _aliases.Dispose();
     _creatorPackages.Dispose();
     _mergeConfig.Mapping.Dispose();
+    _infoConfig.GifSets?.Dispose();
     GC.SuppressFinalize(this);
   }
 
