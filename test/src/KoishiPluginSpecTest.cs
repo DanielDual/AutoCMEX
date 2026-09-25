@@ -106,6 +106,27 @@ public class KoishiPluginSpecTest : TestClass
   }
 
   [Test]
+  public void TryResolve_ExternalDirOfNonKoishiApp_Fails()
+  {
+    // Arrange: a directory that happens to be called external but has no Koishi
+    // manifest next to it, so it must not be accepted on its name alone.
+    var orphanExternal = Path.Combine(
+      _tempDir,
+      "not-a-koishi-app",
+      KoishiPluginSpec.ExternalDirName
+    );
+    Directory.CreateDirectory(orphanExternal);
+
+    // Act
+    var ok = KoishiPluginSpec.TryResolve(orphanExternal, out var plan, out var error);
+
+    // Assert
+    ok.ShouldBeFalse();
+    plan.ShouldBeNull();
+    error.ShouldNotBeEmpty();
+  }
+
+  [Test]
   public void TryResolve_EmptySelection_Fails()
   {
     // Act
