@@ -25,4 +25,18 @@ public interface IWebSocketServer
 
   /// <summary>客户端断开事件（参数：connectionId）</summary>
   event Action<string>? OnClientDisconnected;
+
+  /// <summary>
+  /// 向已连接的对端主动推送消息（非应答）。
+  /// </summary>
+  /// <param name="message">出站消息。</param>
+  /// <remarks>
+  /// <para>
+  /// 用于由本端发起的推送（信息板块的发布请求、群列表查询等），与"收到消息后回包"区分开。
+  /// </para>
+  /// <para>
+  /// 无可用连接时直接返回，调用方应先用 <see cref="ConnectionCount"/> 预检，避免请求被静默丢弃。
+  /// </para>
+  /// </remarks>
+  Task BroadcastAsync(WebSocketMessage message);
 }

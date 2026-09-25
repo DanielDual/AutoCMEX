@@ -2,6 +2,7 @@ namespace AutoCMEX.Core.WebSocket;
 
 using System;
 using AutoCMEX.Core.Guessing;
+using AutoCMEX.Core.Info;
 using AutoCMEX.Models;
 using Chickensoft.Log;
 
@@ -13,6 +14,7 @@ public class WebSocketInitializer
 {
   private readonly ILog _log;
   private readonly IGuessProcessingService _guessProcessingService;
+  private readonly InfoEventBus? _infoEvents;
 
   /// <summary>
   /// 创建 WebSocket 初始化器。
@@ -20,9 +22,25 @@ public class WebSocketInitializer
   /// <param name="log">日志接口。</param>
   /// <param name="guessProcessingService">猜测处理服务。</param>
   public WebSocketInitializer(ILog log, IGuessProcessingService guessProcessingService)
+    : this(log, guessProcessingService, null) { }
+
+  /// <summary>
+  /// 创建 WebSocket 初始化器（带信息板块事件总线）。
+  /// </summary>
+  /// <param name="log">日志接口。</param>
+  /// <param name="guessProcessingService">猜测处理服务。</param>
+  /// <param name="infoEvents">
+  /// 信息板块入站事件总线；透传给事件处理器，使 WebSocket 重建后回执仍能到达信息面板。
+  /// </param>
+  public WebSocketInitializer(
+    ILog log,
+    IGuessProcessingService guessProcessingService,
+    InfoEventBus? infoEvents
+  )
   {
     _log = log;
     _guessProcessingService = guessProcessingService;
+    _infoEvents = infoEvents;
   }
 
   /// <summary>
@@ -36,7 +54,7 @@ public class WebSocketInitializer
     var messageRouter = new MessageRouter(_log);
 
     var commandHandler = new CommandHandler(_log, _guessProcessingService);
-    var eventHandler = new EventHandler(_log);
+    var eventHandler = new EventHandler(_log, _infoEvents);
     messageRouter.RegisterHandler(commandHandler);
     messageRouter.RegisterHandler(eventHandler);
 

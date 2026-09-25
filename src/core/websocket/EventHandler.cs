@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.Text.Json;
 using System.Threading.Tasks;
+using AutoCMEX.Core.Info;
 using Chickensoft.Log;
 
 /// <summary>
@@ -12,13 +13,23 @@ using Chickensoft.Log;
 public class EventHandler : IMessageHandler
 {
   private readonly ILog _log;
+  private readonly InfoEventBus? _infoEvents;
 
   /// <summary>
   /// 创建事件处理器
   /// </summary>
   public EventHandler(ILog log)
+    : this(log, null) { }
+
+  /// <summary>
+  /// 创建事件处理器（带信息板块事件总线）
+  /// </summary>
+  /// <param name="log">日志接口。</param>
+  /// <param name="infoEvents">信息板块入站事件总线；为 null 时信息板块事件会被记为未知事件。</param>
+  public EventHandler(ILog log, InfoEventBus? infoEvents)
   {
     _log = log;
+    _infoEvents = infoEvents;
   }
 
   /// <inheritdoc/>
@@ -57,6 +68,17 @@ public class EventHandler : IMessageHandler
         return HandleStatusQuery(message);
 
       default:
+        // 信息板块的入站回执（群列表、发布结果）：先交给总线，再按“无同步应答”返回
+        if (InfoEventBus.IsInfoEvent(eventName))
+        {
+          _infoEvents?.Publish(eventName, payload);
+
+          if (_infoEvents is null)
+            _log.Warn($"EventHandler: info event '{eventName}' dropped, bus is not wired.");
+
+          return Task.FromResult<IReadOnlyList<WebSocketMessage>>(Array.Empty<WebSocketMessage>());
+        }
+
         _log.Warn($"EventHandler: unknown event '{eventName}' from {connectionId}.");
         return Task.FromResult<IReadOnlyList<WebSocketMessage>>(
           new[]

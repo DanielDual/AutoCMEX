@@ -149,6 +149,30 @@ public class WebSocketServer : IWebSocketServer, IDisposable
   }
 
   /// <inheritdoc/>
+  public async Task BroadcastAsync(WebSocketMessage message)
+  {
+    var json = _protocolHandler.SerializeMessage(message);
+    _log.Print($"WebSocketServer broadcasting: type={message.Type}, id={message.Id}");
+
+    var sentCount = 0;
+    foreach (var conn in _connectionManager.GetAllConnections())
+    {
+      try
+      {
+        await _connectionManager.SendAsync(conn.Id, json);
+        sentCount++;
+      }
+      catch (Exception ex)
+      {
+        // 单个连接失败不影响其它目标：记录后继续，失败明细由调用方按目标群汇总
+        _log.Warn($"WebSocketServer broadcast failed for {conn.Id}: {ex.Message}");
+      }
+    }
+
+    _log.Print($"WebSocketServer broadcast delivered to {sentCount} connection(s).");
+  }
+
+  /// <inheritdoc/>
   public void Dispose()
   {
     if (_disposed)

@@ -122,6 +122,27 @@ public class WebSocketClient : IWebSocketServer, IDisposable
     _log.Print("WebSocketClient stopped.");
   }
 
+  /// <inheritdoc/>
+  public async Task BroadcastAsync(WebSocketMessage message)
+  {
+    var ws = _ws;
+    if (ws is null || ws.State != WebSocketState.Open)
+    {
+      _log.Warn($"WebSocketClient: outbound {message.Type} skipped, connection is not open.");
+      return;
+    }
+
+    var json = _protocolHandler.SerializeMessage(message);
+    _log.Print($"WebSocketClient sending: type={message.Type}, id={message.Id}");
+    var bytes = Encoding.UTF8.GetBytes(json);
+    await ws.SendAsync(
+      new ArraySegment<byte>(bytes),
+      WebSocketMessageType.Text,
+      true,
+      CancellationToken.None
+    );
+  }
+
   /// <summary>
   /// 根据设置构建 Client 模式的 WebSocket URL（自动补全 ws:// 前缀和 Token）。
   /// </summary>
