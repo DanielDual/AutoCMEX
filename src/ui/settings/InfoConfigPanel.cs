@@ -11,7 +11,7 @@ using Chickensoft.Sync.Primitives;
 using Godot;
 
 /// <summary>
-/// 设置面板「信息」类别页：维护发布的目标群列表（群 ID、展示名、是否启用）。
+/// 设置面板「信息」类别页：维护发布的目标群列表（群 ID、展示名、是否启用），并承载符卡 GIF 录制设置分组。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -24,6 +24,11 @@ using Godot;
 /// </para>
 /// <para>
 /// 文本输入只在提交/失焦时写回模型：若每次按键都写回，绑定触发的重建会打断正在进行的输入。
+/// </para>
+/// <para>
+/// 录制设置分组（<see cref="RecordingConfigPanel"/>）挂在目标群列表下方：本页没有独立场景
+/// （节点直接写在 <c>SettingsPanel.tscn</c> 里），而分组自带二十余个控件，写进共享场景既挤又难维护，
+/// 故按本页既有的「C# 构建行」范式在依赖解析后按需创建。
 /// </para>
 /// </remarks>
 [Meta(typeof(IAutoNode))]
@@ -55,6 +60,10 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
   private DataManager? _dm;
   private AppSettings _settings = new();
   private AutoList<TargetGroup>.Binding? _binding;
+  private RecordingConfigPanel? _recordingSection;
+
+  /// <summary>本页底部挂载的录制设置分组（依赖解析后创建，未解析时为 null）。</summary>
+  public RecordingConfigPanel? RecordingSection => _recordingSection;
 
   private readonly List<Control> _rows = new();
 
@@ -75,9 +84,12 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
     AddGroupButton.Pressed += OnAddGroupPressed;
     HintLabel.Text =
       "目标群是发布内容的接收方；勾选状态在「信息」板块下栏调整。「信息」板块的「刷新群列表」可从 Koishi 拉取并并入此处。";
+
+    // 类别页是切显隐而不是重建：每次被切到本页时刷新一次录制分组的插件/磁盘状态
+    VisibilityChanged += OnVisibilityChanged;
   }
 
-  /// <summary>AutoInject 依赖解析完成：绑定目标群列表并首次刷新。</summary>
+  /// <summary>AutoInject 依赖解析完成：绑定目标群列表、首次刷新，并挂上录制设置分组。</summary>
   public void OnResolved()
   {
     _dm = DataManager;
@@ -87,6 +99,19 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
     _settings = _dm.Settings;
     _binding = _settings.TargetGroups.Bind().OnModify(OnTargetGroupsChanged);
     Refresh();
+    EnsureRecordingSection();
+  }
+
+  /// <summary>创建并挂载录制设置分组（幂等；依赖未解析时不创建）。</summary>
+  /// <returns>已挂载的分组；依赖未解析时为 null。</returns>
+  public RecordingConfigPanel? EnsureRecordingSection()
+  {
+    if (_recordingSection is not null || _dm is null)
+      return _recordingSection;
+
+    _recordingSection = new RecordingConfigPanel(_dm) { Name = "RecordingSection" };
+    AddChild(_recordingSection);
+    return _recordingSection;
   }
 
   /// <summary>按当前数据重建目标群行（供绑定回调与测试调用）。</summary>
@@ -229,6 +254,13 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
     StatusLabel.Text = $"共 {_settings.TargetGroups.Count} 个目标群（启用 {CountEnabled()} 个）。";
 
   private void OnTargetGroupsChanged() => CallDeferred(nameof(Refresh));
+
+  /// <summary>本页被切显示时刷新录制分组状态（引擎目录可能在「整合」板块刚改过）。</summary>
+  private void OnVisibilityChanged()
+  {
+    if (Visible)
+      _recordingSection?.Refresh();
+  }
 
   private void OnAddGroupPressed()
   {

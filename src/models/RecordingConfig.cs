@@ -56,11 +56,33 @@ public class RecordingConfig
   /// <summary>并行度上限。</summary>
   public const int MaxParallelism = 32;
 
+  /// <summary>帧数上限的下限。</summary>
+  public const int MinMaxFrame = 1;
+
+  /// <summary>帧数上限的上限（录制器自身的接受范围）。</summary>
+  public const int MaxMaxFrame = 1000;
+
+  /// <summary>抽帧间隔的下限。</summary>
+  public const int MinInterval = 1;
+
+  /// <summary>抽帧间隔的上限（60 即 1 fps）。</summary>
+  public const int MaxInterval = 60;
+
   /// <summary>把任意并行度收敛到合法区间。</summary>
   /// <param name="value">用户配置值。</param>
   /// <returns>收敛后的并行度。</returns>
   public static int ClampParallelism(int value) =>
     Math.Clamp(value, MinParallelism, MaxParallelism);
+
+  /// <summary>把任意帧数上限收敛到录制器可接受区间。</summary>
+  /// <param name="value">用户配置值。</param>
+  /// <returns>收敛后的帧数上限。</returns>
+  public static int ClampMaxFrame(int value) => Math.Clamp(value, MinMaxFrame, MaxMaxFrame);
+
+  /// <summary>把任意抽帧间隔收敛到合法区间（两个间隔共用）。</summary>
+  /// <param name="value">用户配置值。</param>
+  /// <returns>收敛后的间隔。</returns>
+  public static int ClampInterval(int value) => Math.Clamp(value, MinInterval, MaxInterval);
 
   /// <summary>
   /// 恢复被 JSON 显式 <c>null</c> 覆盖的自动同步属性。
