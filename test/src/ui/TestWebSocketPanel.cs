@@ -15,6 +15,7 @@ using Shouldly;
 public class TestWebSocketPanel : TestClass
 {
   private WebSocketPanel _panel = default!;
+  private Mock<ILabel> _statusLabel = default!;
   private Mock<ILabel> _modeLabel = default!;
   private Mock<ILabel> _portLabel = default!;
   private Mock<ILabel> _connCountLabel = default!;
@@ -35,7 +36,7 @@ public class TestWebSocketPanel : TestClass
     (_panel as IAutoInit).IsTesting = true;
     _toCleanup.Add(_panel);
 
-    var statusLabel = new Mock<ILabel>();
+    _statusLabel = new Mock<ILabel>();
     _modeLabel = new Mock<ILabel>();
     _portLabel = new Mock<ILabel>();
     _connCountLabel = new Mock<ILabel>();
@@ -49,7 +50,7 @@ public class TestWebSocketPanel : TestClass
     _panel.FakeNodeTree(
       new()
       {
-        ["%StatusLabel"] = statusLabel.Object,
+        ["%StatusLabel"] = _statusLabel.Object,
         ["%ModeLabel"] = _modeLabel.Object,
         ["%PortLabel"] = _portLabel.Object,
         ["%ConnectionCountLabel"] = _connCountLabel.Object,
@@ -227,11 +228,57 @@ public class TestWebSocketPanel : TestClass
 
     _startStopBtn.VerifySet(m => m.Text = "停止");
   }
+
+  [Test]
+  public void StartStopBtn_ClientMode_Reconnecting_SaysDisconnect()
+  {
+    // 客户端断线重连中：未连接（IsRunning=false）但实例仍在工作，
+    // 按钮必须仍能给用户提供「断开」，否则正在重连的客户端停不掉
+    var mockServer = new MockWebSocketServer
+    {
+      Mode = "Client",
+      IsRunning = false,
+      IsActive = true,
+    };
+    _panel.UpdateServer(mockServer);
+
+    _startStopBtn.VerifySet(m => m.Text = "断开");
+    _statusLabel.VerifySet(m => m.Text = "未连接（重连中）");
+  }
+
+  [Test]
+  public void StartStopPressed_WhileReconnecting_StopsInsteadOfStartingAgain()
+  {
+    // Arrange：重连等待中的客户端
+    var mockServer = new MockWebSocketServer
+    {
+      Mode = "Client",
+      IsRunning = false,
+      IsActive = true,
+    };
+    _panel.UpdateServer(mockServer);
+
+    // Act：点一次启停按钮
+    _startStopBtn.Raise(button => button.Pressed += null);
+
+    // Assert：走的是停止分支（旧实现按 IsRunning 判定，会再启动一次）
+    mockServer.StopCount.ShouldBe(1);
+    mockServer.StartCount.ShouldBe(0);
+  }
 }
 
 public class MockWebSocketServer : IWebSocketServer
 {
   public bool IsRunning { get; set; }
+
+  /// <summary>实例是否持有活动链路；用例可单独设置以模拟「未连接但仍在重连」的 Client。</summary>
+  public bool IsActive { get; set; }
+
+  /// <summary>启动/停止被调用的次数（供启停方向断言用）。</summary>
+  public int StartCount { get; private set; }
+
+  /// <summary>停止被调用的次数（供启停方向断言用）。</summary>
+  public int StopCount { get; private set; }
 
   /// <summary>当前连接数；用例可设为非零以验证面板的连接数显示。</summary>
   public int ConnectionCount { get; set; }
@@ -253,13 +300,17 @@ public class MockWebSocketServer : IWebSocketServer
 
   public Task StartAsync()
   {
+    StartCount++;
     IsRunning = true;
+    IsActive = true;
     return Task.CompletedTask;
   }
 
   public Task StopAsync()
   {
+    StopCount++;
     IsRunning = false;
+    IsActive = false;
     return Task.CompletedTask;
   }
 
