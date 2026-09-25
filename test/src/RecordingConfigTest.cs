@@ -59,6 +59,8 @@ public class RecordingConfigTest : TestClass
     config.FirstInterval.Value.ShouldBe(3);
     config.SecondInterval.Value.ShouldBe(5);
     config.LastOutputDir.Value.ShouldBeEmpty();
+    config.Parallelism.Value.ShouldBe(RecordingConfig.DefaultParallelism);
+    config.SandboxRoot.Value.ShouldBeEmpty();
   }
 
   [Test]
@@ -71,6 +73,8 @@ public class RecordingConfigTest : TestClass
       FirstInterval = null!,
       SecondInterval = null!,
       LastOutputDir = null!,
+      Parallelism = null!,
+      SandboxRoot = null!,
     };
 
     config.EnsureIntegrity();
@@ -80,6 +84,17 @@ public class RecordingConfigTest : TestClass
     config.FirstInterval.Value.ShouldBe(3);
     config.SecondInterval.Value.ShouldBe(5);
     config.LastOutputDir.Value.ShouldBeEmpty();
+    config.Parallelism.Value.ShouldBe(RecordingConfig.DefaultParallelism);
+    config.SandboxRoot.Value.ShouldBeEmpty();
+  }
+
+  [Test]
+  public void ClampParallelism_OutOfRange_ConvergesIntoBounds()
+  {
+    RecordingConfig.ClampParallelism(0).ShouldBe(RecordingConfig.MinParallelism);
+    RecordingConfig.ClampParallelism(-3).ShouldBe(RecordingConfig.MinParallelism);
+    RecordingConfig.ClampParallelism(2).ShouldBe(2);
+    RecordingConfig.ClampParallelism(9999).ShouldBe(RecordingConfig.MaxParallelism);
   }
 
   [Test]
@@ -92,6 +107,8 @@ public class RecordingConfigTest : TestClass
     manager.RecordingConfig.FirstInterval.Value = 2;
     manager.RecordingConfig.SecondInterval.Value = 4;
     manager.RecordingConfig.LastOutputDir.Value = @"D:\out";
+    manager.RecordingConfig.Parallelism.Value = 4;
+    manager.RecordingConfig.SandboxRoot.Value = @"D:\sb";
     manager.SaveAll();
 
     var reloaded = CreateDataManager();
@@ -102,5 +119,7 @@ public class RecordingConfigTest : TestClass
     reloaded.RecordingConfig.FirstInterval.Value.ShouldBe(2);
     reloaded.RecordingConfig.SecondInterval.Value.ShouldBe(4);
     reloaded.RecordingConfig.LastOutputDir.Value.ShouldBe(@"D:\out");
+    reloaded.RecordingConfig.Parallelism.Value.ShouldBe(4);
+    reloaded.RecordingConfig.SandboxRoot.Value.ShouldBe(@"D:\sb");
   }
 }

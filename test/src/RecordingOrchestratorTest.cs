@@ -1,8 +1,11 @@
 namespace AutoCMEX;
 
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoCMEX.Core.Recording;
@@ -15,21 +18,24 @@ using Moq;
 using Shouldly;
 
 /// <summary>
-/// 录制编排器单测（P1：枚举最小闭环）：引擎目录校验、任务写出 → 进程 → 结果校验的串接，
-/// 以及卡表序号与清单名的派生。
+/// 录制编排器单测：引擎目录校验、任务写出 → 进程 → 结果校验的串接与卡表序号派生（P1/P2），
+/// 以及一轮批量录制的编排、沙箱隔离、归集与取消（P3）。
 /// </summary>
 /// <remarks>
 /// 一律注入假进程，不真启游戏（真启需要引擎与 ffmpeg，且同一引擎目录不可并发）。
 /// </remarks>
 public class RecordingOrchestratorTest : TestClass
 {
-  private const string ModPackName = "CMEX22_Qerfcxz";
+  private const string ModPackName = "sample_project";
 
   private string _root = string.Empty;
   private string _engineDir = string.Empty;
   private string _gameDir = string.Empty;
   private string _outputDir = string.Empty;
+  private string _packPath = string.Empty;
   private FakeEngineProcess _fake = new();
+  private readonly List<FakeEngineProcess> _fakes = new();
+  private int _startedProcesses;
   private Mock<ILog> _log = new();
 
   public RecordingOrchestratorTest(Node testScene)
@@ -51,6 +57,8 @@ public class RecordingOrchestratorTest : TestClass
 
     _fake = new FakeEngineProcess();
     _log = new Mock<ILog>();
+    _fakes.Clear();
+    _startedProcesses = 0;
   }
 
   [Cleanup]
@@ -60,6 +68,25 @@ public class RecordingOrchestratorTest : TestClass
     {
       Directory.Delete(_root, recursive: true);
     }
+  }
+
+  [Test]
+  public async Task RunAsync_InvalidEngineDir_FailsBeforeTouchingDisk()
+  {
+    var sandboxRoot = Path.Combine(_root, "sandboxes");
+    var request = new RecordingRequest(
+      Path.Combine(_root, "not_exists"),
+      Path.Combine(_root, "not_exists.zip"),
+      _outputDir,
+      new RecordingConfig { Parallelism = new(4), SandboxRoot = new(sandboxRoot) }
+    );
+
+    var result = await CreateOrchestrator().RunAsync(request);
+
+    result.Succeeded.ShouldBeFalse();
+    result.Error.ShouldContain("引擎目录不可用");
+    Directory.Exists(sandboxRoot).ShouldBeFalse(); // 前置检查没过就不建沙箱
+    Directory.Exists(_outputDir).ShouldBeFalse(); // 也不该留下输出目录
   }
 
   /// <summary>构造编排器，进程一律由假进程代替。</summary>
@@ -219,7 +246,7 @@ public class RecordingOrchestratorTest : TestClass
             "job_id": "{{jobId}}",
             "status": "ok",
             "boss_name": "测试Boss",
-            "boss_class": "cmex22_enm1",
+            "boss_class": "sample_enm1",
             "cards": [
               {"absolute_index":1,"name":"","is_sc":false,"is_combat":false,"t3":15.0},
               {"absolute_index":2,"name":"","is_sc":false,"is_combat":true,"t3":20.0},
@@ -236,7 +263,7 @@ public class RecordingOrchestratorTest : TestClass
     outcome.Succeeded.ShouldBeTrue();
     outcome.Error.ShouldBeNull();
     outcome.BossName.ShouldBe("测试Boss");
-    outcome.BossClass.ShouldBe("cmex22_enm1");
+    outcome.BossClass.ShouldBe("sample_enm1");
     outcome.Cards.Count.ShouldBe(5);
     // 对话阶段不计数：5 张里只有 3 张是战斗阶段
     RecordingOrchestrator.CountCombat(outcome.Cards).ShouldBe(3);
@@ -344,19 +371,24 @@ public class RecordingOrchestratorTest : TestClass
     _fake.OnStart = () => WriteRecordResult(frames: 200, interval: 3, complete: false);
 
     var outcome = await CreateOrchestrator()
-      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), new RecordingConfig());
 
     outcome.Succeeded.ShouldBeTrue();
     outcome.Error.ShouldBeNull();
-    outcome.GifFileName.ShouldBe("2.gif");
-    outcome.Width.ShouldBe(640);
-    outcome.Height.ShouldBe(480);
+    // 本层只录不归集：产物留在引擎目录的录制器输出里，集内命名与宽高由 RunAsync 归集时定
+    outcome.RecorderGifAbsolutePath.ShouldBe(
+      GifSetBuilder.GetRecorderGifAbsolutePath(
+        _engineDir,
+        $"{GifSetBuilder.RecorderOutputDirName}/task_unit.gif"
+      )
+    );
+    File.Exists(outcome.RecorderGifAbsolutePath).ShouldBeTrue();
     outcome.Frames.ShouldBe(200);
     outcome.Interval.ShouldBe(3);
     outcome.Complete.ShouldBeTrue();
     outcome.Attempts.ShouldBe(1);
     outcome.Runs.ShouldBe(1);
-    File.Exists(Path.Combine(_outputDir, "2.gif")).ShouldBeTrue();
+    Directory.Exists(_outputDir).ShouldBeFalse();
 
     // 任务先落盘再启动，阶段为录制且不演前序阶段
     var jobFile = Directory.GetFiles(RecordingJobWriter.GetJobsDir(_engineDir), "*.json").Single();
@@ -398,7 +430,7 @@ public class RecordingOrchestratorTest : TestClass
     };
 
     var outcome = await CreateOrchestrator()
-      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), new RecordingConfig());
 
     run.ShouldBe(2);
     outcome.Succeeded.ShouldBeTrue();
@@ -408,10 +440,14 @@ public class RecordingOrchestratorTest : TestClass
     outcome.Frames.ShouldBe(210);
     // 方案 §6.3.4：凡触发重录的卡一律记 complete=false
     outcome.Complete.ShouldBeFalse();
-    // 集里只留第二次的产物，首次的截断件不进集
-    var gifs = Directory.GetFiles(_outputDir);
-    gifs.Length.ShouldBe(1);
-    GifSetBuilder.ReadGifSize(gifs[0]).ShouldBe((800, 600));
+    // 采用第二次的产物；首次的截断件留在录制器目录里，随沙箱一起丢弃
+    outcome.RecorderGifAbsolutePath.ShouldBe(
+      GifSetBuilder.GetRecorderGifAbsolutePath(
+        _engineDir,
+        $"{GifSetBuilder.RecorderOutputDirName}/task_second.gif"
+      )
+    );
+    GifSetBuilder.ReadGifSize(outcome.RecorderGifAbsolutePath).ShouldBe((800, 600));
   }
 
   [Test]
@@ -425,7 +461,7 @@ public class RecordingOrchestratorTest : TestClass
     };
 
     var outcome = await CreateOrchestrator()
-      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), new RecordingConfig());
 
     run.ShouldBe(2);
     outcome.Succeeded.ShouldBeTrue();
@@ -442,14 +478,15 @@ public class RecordingOrchestratorTest : TestClass
     _fake.OnStart = () => { };
 
     var outcome = await CreateOrchestrator()
-      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), new RecordingConfig());
 
     outcome.Succeeded.ShouldBeFalse();
     outcome.Error.ShouldNotBeNull();
     outcome.Error!.ShouldContain("result_missing");
     outcome.Attempts.ShouldBe(1);
     outcome.Runs.ShouldBe(2);
-    File.Exists(Path.Combine(_outputDir, "2.gif")).ShouldBeFalse();
+    outcome.RecorderGifAbsolutePath.ShouldBeEmpty();
+    Directory.Exists(_outputDir).ShouldBeFalse();
   }
 
   [Test]
@@ -458,7 +495,7 @@ public class RecordingOrchestratorTest : TestClass
     _fake.OnStart = () => WriteRecordResult(frames: 0, success: false);
 
     var outcome = await CreateOrchestrator()
-      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), new RecordingConfig());
 
     outcome.Succeeded.ShouldBeFalse();
     outcome.Error.ShouldNotBeNull();
@@ -473,7 +510,7 @@ public class RecordingOrchestratorTest : TestClass
     _fake.OnStart = () => WriteRecordResult(cardName: "别的符卡");
 
     var outcome = await CreateOrchestrator()
-      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), new RecordingConfig());
 
     outcome.Succeeded.ShouldBeFalse();
     outcome.Error.ShouldNotBeNull();
@@ -488,7 +525,7 @@ public class RecordingOrchestratorTest : TestClass
     _fake.OnStart = () => WriteRecordResult(createGif: false);
 
     var outcome = await CreateOrchestrator()
-      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), new RecordingConfig());
 
     outcome.Succeeded.ShouldBeFalse();
     outcome.Error.ShouldNotBeNull();
@@ -510,7 +547,7 @@ public class RecordingOrchestratorTest : TestClass
     };
 
     var outcome = await CreateOrchestrator()
-      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), new RecordingConfig());
 
     outcome.Succeeded.ShouldBeFalse();
     outcome.Error.ShouldNotBeNull();
@@ -518,7 +555,8 @@ public class RecordingOrchestratorTest : TestClass
     outcome.Attempts.ShouldBe(2);
     // 首次 1 次 + 第二次失败重试 1 次 + 重试前各 1 次
     outcome.Runs.ShouldBe(3);
-    File.Exists(Path.Combine(_outputDir, "2.gif")).ShouldBeFalse();
+    outcome.RecorderGifAbsolutePath.ShouldBeEmpty();
+    Directory.Exists(_outputDir).ShouldBeFalse();
   }
 
   [Test]
@@ -533,7 +571,6 @@ public class RecordingOrchestratorTest : TestClass
         _engineDir,
         ModPackName,
         CreateCard(),
-        _outputDir,
         new RecordingConfig(),
         cts.Token,
         TimeSpan.FromSeconds(5)
@@ -558,7 +595,7 @@ public class RecordingOrchestratorTest : TestClass
     };
 
     var outcome = await CreateOrchestrator()
-      .RecordCardAsync(_engineDir, ModPackName, dialogue, _outputDir, new RecordingConfig());
+      .RecordCardAsync(_engineDir, ModPackName, dialogue, new RecordingConfig());
 
     outcome.Succeeded.ShouldBeFalse();
     outcome.Error.ShouldNotBeNull();
@@ -575,7 +612,6 @@ public class RecordingOrchestratorTest : TestClass
         Path.Combine(_root, "not_exists"),
         ModPackName,
         CreateCard(),
-        _outputDir,
         new RecordingConfig()
       );
 
@@ -583,5 +619,484 @@ public class RecordingOrchestratorTest : TestClass
     outcome.Error.ShouldNotBeNull();
     outcome.Error!.ShouldContain("引擎目录不可用");
     _fake.StartInfo.ShouldBeNull();
+  }
+
+  [Test]
+  public async Task RunAsync_TwoWorkers_RecordsEveryCardAndWritesReport()
+  {
+    var packPath = PrepareSandboxReadyEngine();
+    var cards = CreateCardTable();
+    var sandboxRoot = Path.Combine(_root, "sandboxes");
+
+    var result = await CreateBulkOrchestrator(SimulateEngine(cards))
+      .RunAsync(CreateRequest(packPath, sandboxRoot, parallelism: 2));
+
+    result.Succeeded.ShouldBeTrue();
+    result.Error.ShouldBeNull();
+    result.Warning.ShouldBeNull();
+    result.OutputDir.ShouldBe(_outputDir);
+
+    var report = result.Report;
+    report.ModPackName.ShouldBe(ModPackName);
+    report.BossName.ShouldBe("测试Boss");
+    report.BossClass.ShouldBe("sample_enm1");
+    report.Parallelism.ShouldBe(2);
+    report.WorkersStarted.ShouldBe(2);
+    report.Cancelled.ShouldBeFalse();
+    report.GeneratedAt.ShouldNotBeEmpty();
+    // 对话阶段不计数：4 张卡里只有 3 张是战斗阶段
+    report.TotalCombat.ShouldBe(3);
+    report.Succeeded.ShouldBe(3);
+    report.Failed.ShouldBe(0);
+
+    // 报告按卡表顺序，与「谁先录完」无关
+    report.Cards.Count.ShouldBe(3);
+    report.Cards.Select(card => card.CombatOrdinal).ShouldBe(new[] { 1, 2, 3 });
+    report
+      .Cards.Select(card => card.EntryName)
+      .ShouldBe(new[] { "普通攻击 1", "符卡·一", "符卡·二" });
+    report.Cards[0].AbsoluteIndex.ShouldBe(2);
+    report.Cards[0].Width.ShouldBe(640);
+    report.Cards[0].Height.ShouldBe(480);
+    report.Cards[0].Frames.ShouldBe(200);
+    report.Cards[0].Fps.ShouldBe(20, 0.001);
+    report.Cards[0].DurationSeconds.ShouldBe(10, 0.001);
+    report.Cards[0].Complete.ShouldBeTrue(); // 一遍过
+    foreach (var card in report.Cards)
+    {
+      card.Status.ShouldBe(RecordingCardStatus.Ok);
+      card.FileName.ShouldBe($"{card.CombatOrdinal}.gif");
+      card.Attempts.ShouldBe(1);
+      card.Runs.ShouldBe(1);
+      card.Error.ShouldBeNull();
+      File.Exists(Path.Combine(_outputDir, card.FileName)).ShouldBeTrue();
+    }
+
+    File.Exists(Path.Combine(_outputDir, RecordingOrchestrator.ReportFileName)).ShouldBeTrue();
+    File.ReadAllText(Path.Combine(_outputDir, RecordingOrchestrator.ReportFileName))
+      .ShouldContain("\"succeeded\": 3");
+
+    // 1 次枚举 + 3 次录制，没有多余的重录
+    _startedProcesses.ShouldBe(4);
+    // worker 1 复用枚举沙箱 → 2 个 worker 只占 2 份沙箱
+    _fakes.Select(fake => fake.StartInfo!.WorkingDirectory).Distinct().Count().ShouldBe(2);
+
+    // 真引擎目录全程只读：运行期目录与录制器目录都不该在源目录里出现
+    Directory.Exists(RecordingJobWriter.GetRuntimeDir(_engineDir)).ShouldBeFalse();
+    Directory.Exists(Path.Combine(_gameDir, GifSetBuilder.RecorderOutputDirName)).ShouldBeFalse();
+
+    SandboxDirs(sandboxRoot).ShouldBeEmpty();
+  }
+
+  [Test]
+  public async Task RunAsync_NoCombatCards_FailsWithoutRecording()
+  {
+    var packPath = PrepareSandboxReadyEngine();
+    var cards = new List<RecordingCardInfo>
+    {
+      new()
+      {
+        AbsoluteIndex = 1,
+        Name = string.Empty,
+        IsCombat = false,
+        T3Seconds = 15,
+      },
+    };
+    var sandboxRoot = Path.Combine(_root, "sandboxes");
+
+    var result = await CreateBulkOrchestrator(SimulateEngine(cards))
+      .RunAsync(CreateRequest(packPath, sandboxRoot, parallelism: 2));
+
+    result.Succeeded.ShouldBeFalse();
+    result.Error.ShouldNotBeNull();
+    result.Error!.ShouldContain("没有可录制的战斗阶段");
+    result.Report.TotalCombat.ShouldBe(0);
+    result.Report.Cards.ShouldBeEmpty();
+    _startedProcesses.ShouldBe(1); // 只起了枚举那一次
+    Directory.Exists(_outputDir).ShouldBeFalse();
+    SandboxDirs(sandboxRoot).ShouldBeEmpty();
+  }
+
+  [Test]
+  public async Task RunAsync_OneCardFails_OtherCardsStillCollected()
+  {
+    var packPath = PrepareSandboxReadyEngine();
+    var cards = CreateCardTable();
+    var sandboxRoot = Path.Combine(_root, "sandboxes");
+    // 只有序号 1（绝对下标 2 的「普通攻击 1」）回插件错误，其余照常录成
+    var simulate = SimulateEngine(
+      cards,
+      (card, jobId) =>
+        card.AbsoluteIndex == 2
+          ? new RecordingJobResult
+          {
+            JobId = jobId,
+            Status = RecordingJobStatus.Error,
+            Error = "boss_not_found",
+          }
+          : null
+    );
+
+    var result = await CreateBulkOrchestrator(simulate)
+      .RunAsync(CreateRequest(packPath, sandboxRoot, parallelism: 2));
+
+    result.Succeeded.ShouldBeTrue(); // 单卡失败不中断整轮
+    result.Report.TotalCombat.ShouldBe(3);
+    result.Report.Succeeded.ShouldBe(2);
+    result.Report.Failed.ShouldBe(1);
+
+    var failed = result.Report.Cards[0];
+    failed.Status.ShouldBe(RecordingCardStatus.Failed);
+    failed.Error.ShouldNotBeNull();
+    failed.Error!.ShouldContain("boss_not_found");
+    failed.FileName.ShouldBeEmpty();
+
+    // 失败卡不留产物，其余卡照常归集，报告仍落盘
+    File.Exists(Path.Combine(_outputDir, "1.gif")).ShouldBeFalse();
+    File.Exists(Path.Combine(_outputDir, "2.gif")).ShouldBeTrue();
+    File.Exists(Path.Combine(_outputDir, "3.gif")).ShouldBeTrue();
+    File.Exists(Path.Combine(_outputDir, RecordingOrchestrator.ReportFileName)).ShouldBeTrue();
+    SandboxDirs(sandboxRoot).ShouldBeEmpty();
+  }
+
+  [Test]
+  public async Task RunAsync_EnumerationFails_ReportsReasonWithEngineLogTail()
+  {
+    var packPath = PrepareSandboxReadyEngine();
+    var sandboxRoot = Path.Combine(_root, "sandboxes");
+
+    var result = await CreateBulkOrchestrator(
+        (_, startInfo, _) =>
+        {
+          var engineDir = Path.GetDirectoryName(startInfo.WorkingDirectory)!;
+          var spec = ReadNewestJob(engineDir);
+          File.WriteAllLines(
+            Path.Combine(startInfo.WorkingDirectory, GameProcessRunner.EngineLogFileName),
+            new[] { "engine line 1", "engine line 2" }
+          );
+          WriteJobResult(
+            engineDir,
+            spec,
+            new RecordingJobResult
+            {
+              JobId = spec.JobId,
+              Status = RecordingJobStatus.Error,
+              Error = "boss_not_found",
+            }
+          );
+        }
+      )
+      .RunAsync(CreateRequest(packPath, sandboxRoot, parallelism: 2));
+
+    result.Succeeded.ShouldBeFalse();
+    result.Error.ShouldNotBeNull();
+    result.Error!.ShouldContain("枚举卡表失败");
+    result.Error!.ShouldContain("boss_not_found");
+    // 失败原因要能连带 engine.log 尾部一起展示
+    result.EngineLogTail.ShouldNotBeNull();
+    result.EngineLogTail!.ShouldContain("engine line 2");
+    Directory.Exists(_outputDir).ShouldBeFalse();
+    SandboxDirs(sandboxRoot).ShouldBeEmpty();
+  }
+
+  [Test]
+  public async Task RunAsync_CancelledWhileRecording_KeepsCollectedWorkAndCleansSandboxes()
+  {
+    var packPath = PrepareSandboxReadyEngine();
+    var cards = CreateCardTable();
+    var sandboxRoot = Path.Combine(_root, "sandboxes");
+    using var cts = new CancellationTokenSource();
+
+    var running = CreateBulkOrchestrator(SimulateEngine(cards, hangOnRecord: true))
+      .RunAsync(CreateRequest(packPath, sandboxRoot, parallelism: 1), null, cts.Token);
+
+    // 等第一次录制真的起了进程再取消，保证取消落在「录制中」而不是领卡前
+    await WaitUntilAsync(() => _startedProcesses >= 2);
+    cts.Cancel();
+    var result = await running;
+
+    result.Succeeded.ShouldBeTrue();
+    result.Cancelled.ShouldBeTrue();
+    result.Report.Cancelled.ShouldBeTrue();
+    result.Report.TotalCombat.ShouldBe(3);
+    result.Report.Succeeded.ShouldBe(0);
+    result.Report.Failed.ShouldBe(0);
+    foreach (var card in result.Report.Cards)
+    {
+      // 没轮到与正在录的一律记「未录制」，失败数保持 0
+      card.Status.ShouldBe(RecordingCardStatus.Unrecorded);
+      card.Error.ShouldNotBeNull();
+    }
+
+    // 在跑的进程树被杀掉，沙箱清理干净，报告仍然落盘（但不该有产物）
+    _fakes.Sum(fake => fake.KillCount).ShouldBeGreaterThan(0);
+    SandboxDirs(sandboxRoot).ShouldBeEmpty();
+    File.Exists(Path.Combine(_outputDir, RecordingOrchestrator.ReportFileName)).ShouldBeTrue();
+    Directory.GetFiles(_outputDir, "*.gif").ShouldBeEmpty();
+  }
+
+  [Test]
+  public async Task RunAsync_CollectFails_ReportsCardFailureAndWarningOnly()
+  {
+    var packPath = PrepareSandboxReadyEngine();
+    var cards = new List<RecordingCardInfo>
+    {
+      new()
+      {
+        AbsoluteIndex = 1,
+        Name = "符卡·一",
+        IsSpellCard = true,
+        IsCombat = true,
+        T3Seconds = 30,
+      },
+    };
+    var sandboxRoot = Path.Combine(_root, "sandboxes");
+    // 把输出目录的位置先占成一个文件：归集与写报告都会失败，但整轮不算失败
+    File.WriteAllText(_outputDir, "occupied");
+
+    var result = await CreateBulkOrchestrator(SimulateEngine(cards))
+      .RunAsync(CreateRequest(packPath, sandboxRoot, parallelism: 1));
+
+    result.Succeeded.ShouldBeTrue();
+    result.Warning.ShouldNotBeNull();
+    result.Warning!.ShouldContain("写报告失败");
+    result.Report.Succeeded.ShouldBe(0);
+    result.Report.Failed.ShouldBe(1);
+    result.Report.Cards[0].Status.ShouldBe(RecordingCardStatus.Failed);
+    result.Report.Cards[0].Error.ShouldNotBeNull();
+    result.Report.Cards[0].Error!.ShouldContain("归集产物失败");
+    SandboxDirs(sandboxRoot).ShouldBeEmpty();
+  }
+
+  /// <summary>
+  /// 把引擎目录补齐成沙箱清单要求的最小骨架（插件、包、用户数据、启动文件与 exe）并放好工程包。
+  /// </summary>
+  /// <param name="packName">工程包名（不含扩展名）。</param>
+  /// <returns>工程包绝对路径。</returns>
+  /// <remarks>
+  /// RunAsync 全程在沙箱里跑，故源目录只需满足 <see cref="RecordingSandbox"/> 的清单校验：
+  /// 缺 <c>plugins/autocmex</c>、引擎 exe 或工程包都会在建沙箱时被拒。
+  /// </remarks>
+  private string PrepareSandboxReadyEngine(string packName = ModPackName)
+  {
+    WriteGameFile("packages/script/core.lua", "core");
+    WriteGameFile("plugins/plugins.json", "[]");
+    WriteGameFile("plugins/autocmex/main.lua", "autocmex");
+    WriteGameFile("plugins/danmaku_recorder_1.0.0/recorder.lua", "recorder");
+    WriteGameFile("userdata/setting.json", "{}");
+    File.WriteAllText(Path.Combine(_gameDir, "d3dcompiler_47.dll"), "dll");
+
+    var modDir = Path.Combine(_gameDir, "mod");
+    Directory.CreateDirectory(modDir);
+    _packPath = Path.Combine(modDir, $"{packName}.zip");
+    File.WriteAllText(_packPath, "zip");
+    return _packPath;
+  }
+
+  /// <summary>在引擎的 <c>game/</c> 下写一个文件（自动建目录）。</summary>
+  /// <param name="relativePath">相对 <c>game/</c> 的路径（正斜杠）。</param>
+  /// <param name="content">文件内容。</param>
+  private void WriteGameFile(string relativePath, string content)
+  {
+    var path = Path.Combine(_gameDir, relativePath.Replace('/', Path.DirectorySeparatorChar));
+    Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+    File.WriteAllText(path, content);
+  }
+
+  /// <summary>
+  /// 造一个批量录制用的编排器：每次启动进程都新建一个假进程（并行时不共享），并按启动顺序回调。
+  /// </summary>
+  /// <param name="onStart">启动回调：本次的假进程、启动信息、启动序号（1 基）。</param>
+  /// <returns>编排器。</returns>
+  private RecordingOrchestrator CreateBulkOrchestrator(
+    Action<FakeEngineProcess, ProcessStartInfo, int> onStart
+  ) =>
+    new(
+      _log.Object,
+      new GameProcessRunner(
+        _log.Object,
+        startInfo =>
+        {
+          var fake = new FakeEngineProcess { StartInfo = startInfo };
+          var index = Interlocked.Increment(ref _startedProcesses);
+          fake.OnStart = () => onStart(fake, startInfo, index);
+          lock (_fakes)
+          {
+            _fakes.Add(fake);
+          }
+          return fake;
+        }
+      )
+    );
+
+  /// <summary>
+  /// 造一个「照做」的假引擎：枚举阶段回卡表，录制阶段落结果并造出产物——一切都写在它自己的工作目录
+  /// （即它分到的那个沙箱）里，与真引擎的运行方式一致。
+  /// </summary>
+  /// <param name="cards">枚举阶段要回的卡表。</param>
+  /// <param name="recordResult">
+  /// 录制阶段的自定结果：参数为目标卡与本次任务号；返回 <c>null</c> 的卡按默认的「一遍录成」处理。
+  /// 不传则所有卡都按默认处理。
+  /// </param>
+  /// <param name="hangOnRecord">录制阶段是否永不退出（用于验证取消时杀进程树）。</param>
+  /// <returns>可直接交给 <see cref="CreateBulkOrchestrator"/> 的启动回调。</returns>
+  private static Action<FakeEngineProcess, ProcessStartInfo, int> SimulateEngine(
+    IReadOnlyList<RecordingCardInfo> cards,
+    Func<RecordingCardInfo, string, RecordingJobResult?>? recordResult = null,
+    bool hangOnRecord = false
+  ) =>
+    (fake, startInfo, _) =>
+    {
+      var gameDir = startInfo.WorkingDirectory;
+      var engineDir = Path.GetDirectoryName(gameDir)!;
+      var spec = ReadNewestJob(engineDir);
+      if (spec.Phase == RecordingJobPhase.Enumerate)
+      {
+        WriteJobResult(
+          engineDir,
+          spec,
+          new RecordingJobResult
+          {
+            JobId = spec.JobId,
+            Status = RecordingJobStatus.Ok,
+            BossName = "测试Boss",
+            BossClass = "sample_enm1",
+            Cards = cards.ToList(),
+          }
+        );
+        return;
+      }
+
+      if (hangOnRecord)
+      {
+        fake.ExitsImmediately = false;
+        return;
+      }
+
+      var card = cards.Single(info => info.AbsoluteIndex == spec.AbsoluteIndex);
+      var custom = recordResult?.Invoke(card, spec.JobId);
+      if (custom != null)
+      {
+        WriteJobResult(engineDir, spec, custom);
+        return;
+      }
+
+      var gifRelativePath = $"{GifSetBuilder.RecorderOutputDirName}/{spec.JobId}.gif";
+      var gifPath = GifSetBuilder.GetRecorderGifAbsolutePath(engineDir, gifRelativePath);
+      Directory.CreateDirectory(Path.GetDirectoryName(gifPath)!);
+      SyntheticGif.WriteFile(gifPath, 640, 480);
+      WriteJobResult(
+        engineDir,
+        spec,
+        new RecordingJobResult
+        {
+          JobId = spec.JobId,
+          Status = RecordingJobStatus.Ok,
+          AbsoluteIndex = card.AbsoluteIndex,
+          CardName = card.Name,
+          TaskName = spec.JobId,
+          GifPath = gifRelativePath,
+          Frames = 200,
+          Interval = spec.Interval ?? 3,
+          MaxFrame = spec.MaxFrame,
+          Complete = false, // 未录满：一遍过
+          Success = true,
+          Size = 1024,
+        }
+      );
+    };
+
+  /// <summary>造一张卡表：对话 + 非符 + 两张符卡（序号由绝对下标派生）。</summary>
+  /// <returns>卡表。</returns>
+  private static List<RecordingCardInfo> CreateCardTable() =>
+    new()
+    {
+      new()
+      {
+        AbsoluteIndex = 1,
+        Name = string.Empty,
+        IsCombat = false,
+        T3Seconds = 15,
+      },
+      new()
+      {
+        AbsoluteIndex = 2,
+        Name = string.Empty,
+        IsCombat = true,
+        T3Seconds = 20,
+      },
+      new()
+      {
+        AbsoluteIndex = 3,
+        Name = "符卡·一",
+        IsSpellCard = true,
+        IsCombat = true,
+        T3Seconds = 30,
+      },
+      new()
+      {
+        AbsoluteIndex = 4,
+        Name = "符卡·二",
+        IsSpellCard = true,
+        IsCombat = true,
+        T3Seconds = 40,
+      },
+    };
+
+  /// <summary>造一轮批量录制的输入。</summary>
+  /// <param name="packPath">工程包绝对路径。</param>
+  /// <param name="sandboxRoot">沙箱根目录。</param>
+  /// <param name="parallelism">并行度。</param>
+  /// <returns>本轮输入。</returns>
+  private RecordingRequest CreateRequest(string packPath, string sandboxRoot, int parallelism) =>
+    new(
+      _engineDir,
+      packPath,
+      _outputDir,
+      new RecordingConfig { Parallelism = new(parallelism), SandboxRoot = new(sandboxRoot) }
+    );
+
+  /// <summary>列沙箱根下现存的沙箱目录（根不存在时为空）。</summary>
+  /// <param name="sandboxRoot">沙箱根目录。</param>
+  /// <returns>沙箱目录路径数组。</returns>
+  private static string[] SandboxDirs(string sandboxRoot) =>
+    Directory.Exists(sandboxRoot) ? Directory.GetDirectories(sandboxRoot) : Array.Empty<string>();
+
+  /// <summary>读引擎目录里最近写出的任务描述（假引擎据此判断本次是枚举还是录制）。</summary>
+  /// <param name="engineDir">引擎根目录。</param>
+  /// <returns>任务描述。</returns>
+  private static RecordingJobSpec ReadNewestJob(string engineDir)
+  {
+    // 任务号内含毫秒时间戳，按文件名降序即「最新」
+    var jobFile = Directory
+      .GetFiles(RecordingJobWriter.GetJobsDir(engineDir), "*.json")
+      .OrderByDescending(file => file)
+      .First();
+    return JsonSerializer.Deserialize<RecordingJobSpec>(File.ReadAllText(jobFile))!;
+  }
+
+  /// <summary>按任务描述落一份结果，模拟游戏运行期写出结果文件。</summary>
+  /// <param name="engineDir">引擎根目录。</param>
+  /// <param name="spec">任务描述。</param>
+  /// <param name="result">结果内容。</param>
+  private static void WriteJobResult(
+    string engineDir,
+    RecordingJobSpec spec,
+    RecordingJobResult result
+  ) =>
+    File.WriteAllText(
+      RecordingJobWriter.GetResultAbsolutePath(engineDir, spec),
+      JsonSerializer.Serialize(result, new JsonSerializerOptions { WriteIndented = true })
+    );
+
+  /// <summary>等并发时序条件成立（最多等 5 秒），用于「录制中取消」这类需要中途介入的用例。</summary>
+  /// <param name="condition">条件。</param>
+  private static async Task WaitUntilAsync(Func<bool> condition)
+  {
+    for (var i = 0; i < 500 && !condition(); i++)
+    {
+      await Task.Delay(10);
+    }
+    condition().ShouldBeTrue("等待并发时序超时");
   }
 }

@@ -22,7 +22,7 @@ using Shouldly;
 /// </remarks>
 public class GameProcessRunnerTest : TestClass
 {
-  private const string ModPackName = "CMEX22_Qerfcxz";
+  private const string ModPackName = "sample_project";
 
   private string _root = string.Empty;
   private string _engineDir = string.Empty;
@@ -82,7 +82,7 @@ public class GameProcessRunnerTest : TestClass
       absoluteIndex: 11,
       interval: 3,
       maxFrame: 350,
-      bossClass: "cmex22_enm1"
+      bossClass: "sample_enm1"
     );
   }
 
@@ -235,7 +235,7 @@ public class GameProcessRunnerTest : TestClass
           "job_id": "{{spec.JobId}}",
           "status": "ok",
           "boss_name": "测试Boss",
-          "boss_class": "cmex22_enm1",
+          "boss_class": "sample_enm1",
           "absolute_index": 11,
           "card_name": "千萃返",
           "task_name": "1790332930",
