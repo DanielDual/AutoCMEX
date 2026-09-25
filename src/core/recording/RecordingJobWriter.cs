@@ -117,6 +117,7 @@ public static class RecordingJobWriter
   /// <param name="absoluteIndex">目标卡在 <c>cards</c> 中的绝对下标（1 基）。</param>
   /// <param name="interval">抽帧间隔（1..60）。</param>
   /// <param name="maxFrame">帧数上限（1..1000）。</param>
+  /// <param name="scale">产物放缩比（0.1..1.0）；插件据此调录制器的 <c>set_scale</c>。</param>
   /// <param name="bossClass">Boss 类名；为空则插件自动定位（多候选会报错）。</param>
   /// <returns>写出的任务描述（可继续用于取任务/结果文件路径）。</returns>
   /// <exception cref="IOException">任务文件写盘失败（如目录不可写）。</exception>
@@ -127,6 +128,7 @@ public static class RecordingJobWriter
     int absoluteIndex,
     int interval,
     int maxFrame,
+    double scale,
     string? bossClass = null
   )
   {
@@ -135,6 +137,7 @@ public static class RecordingJobWriter
     spec.AbsoluteIndex = absoluteIndex;
     spec.Interval = interval;
     spec.MaxFrame = maxFrame;
+    spec.Scale = scale;
     // 前一阶段即 60 帧入场移动，不含任何台词，故固定不演前序阶段。
     spec.IncludePrevious = false;
     Write(engineDir, spec);

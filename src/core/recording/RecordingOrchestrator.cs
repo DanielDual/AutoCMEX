@@ -74,7 +74,7 @@ public sealed record RecordingEnumerateOutcome(
 /// <param name="Frames">最终采用产物的帧数；失败时为 0。</param>
 /// <param name="Interval">最终采用产物的抽帧间隔（GIF 帧率 = 60 / 该值）；失败时为 0。</param>
 /// <param name="Complete">该卡是否完整录完，口径见 <see cref="RecordingOrchestrator.RecordCardAsync"/>。</param>
-/// <param name="Attempts">区间尝试次数（1 = 首次即录完；2 = 首次截断后重录）。</param>
+/// <param name="Attempts">区间尝试次数（1 = 首次即录完；2 = 首次截断或产物超限后换挡重录）。</param>
 /// <param name="Runs">实际启动引擎进程的次数（含失败重试）。</param>
 /// <param name="Cancelled">是否因取消而中止。</param>
 /// <param name="Process">最后一次进程结果，用于取 <c>engine.log</c> 尾部等诊断信息。</param>
@@ -126,7 +126,8 @@ public sealed record RecordingCardOutcome(
 /// </para>
 /// <para>
 /// <see cref="RecordCardAsync"/> 是「一张卡」的录制闭环（P2）：首次用 <c>FirstInterval</c>、
-/// 录满被截断就换 <c>SecondInterval</c> 重录并采用第二次产物、单次尝试内失败自动重试 1 次。
+/// 录满被截断或产物体积超过 QQ 上限就换 <c>SecondInterval</c> 重录并采用第二次产物、
+/// 单次尝试内失败自动重试 1 次。
 /// 它**只录不归集**——产物留在沙箱里，由 <see cref="RunAsync"/> 统一改名进集。
 /// </para>
 /// <para>
@@ -149,6 +150,18 @@ public sealed partial class RecordingOrchestrator
 
   /// <summary>单卡失败后的重试次数（方案 §6.3.5：失败自动重试 1 次）。</summary>
   private const int MaxRetriesPerAttempt = 1;
+
+  /// <summary>
+  /// 单张产物 GIF 的体积上限（字节）：QQ 发不出 <c>&gt;= 30MB</c> 的动图，
+  /// 故首次产物已达该体积时与「录满被截断」同样换挡重录一次。
+  /// </summary>
+  /// <remarks>
+  /// 30MB 按**十进制**取（1MB = 1,000,000 字节）：这是两种可能口径里**保守**的那个——若 QQ 实际按
+  /// 1024 进制（31,457,280 字节）限流，十进制阈值只会更早触发换挡、不会漏放；反之取 1024 进制则会
+  /// 放过 30,000,000..31,457,280 字节这一段，而真机上确有一张 30,291,854 字节的产物落在该带内。
+  /// 代价只是极少数卡白录一遍（几秒），比「拿到手才发现发不出去」划算。
+  /// </remarks>
+  private const long GifSizeLimitBytes = 30_000_000;
 
   private readonly ILog _log;
   private readonly GameProcessRunner _runner;
@@ -253,6 +266,11 @@ public sealed partial class RecordingOrchestrator
   /// 截断；故首次被截断即换 <c>interval=5</c>（12 fps）重录一次，并**采用第二次的产物**（方案 §6.3.4）。
   /// </para>
   /// <para>
+  /// 换挡还有第二条触发条件——**产物体积**：QQ 发不出 <c>&gt;= 30MB</c> 的动图（<c>GifSizeLimitBytes</c>，30MB 取十进制），
+  /// 故首次产物已达该体积时同样换 <c>SecondInterval</c> 重录一次（间隔更疏 ⇒ 帧更少 ⇒ 体积更小）。
+  /// 第二次若仍超限只留一条 <c>WARN</c> 日志、照常采用该产物：产物本身可用，发不发得出去由调用方判断。
+  /// </para>
+  /// <para>
   /// <see cref="RecordingCardOutcome.Complete"/> 取保守口径：凡触发重录的卡一律记 <c>false</c>，
   /// 实际帧数与帧率照实回传，调用方可据此判断。
   /// </para>
@@ -273,7 +291,9 @@ public sealed partial class RecordingOrchestrator
   /// 单次尝试的超时；传 <c>null</c> 用 <see cref="CardTimeout"/>。该预算按「一次尝试」计，
   /// 不随重试与第二次尝试叠加。
   /// </param>
-  /// <param name="onAttemptStarted">每次尝试开始前的回调（1 = 首次；2 = 截断后换挡重录），用于上报进度。</param>
+  /// <param name="onAttemptStarted">
+  /// 每次尝试开始前的回调（1 = 首次；2 = 截断或产物超限后换挡重录），用于上报进度。
+  /// </param>
   /// <returns>单卡录制结果；失败时 <see cref="RecordingCardOutcome.Error"/> 给出可展示的原因。</returns>
   /// <exception cref="ArgumentNullException"><paramref name="card"/> 或 <paramref name="config"/> 为 <c>null</c>。</exception>
   public async Task<RecordingCardOutcome> RecordCardAsync(
@@ -307,6 +327,8 @@ public sealed partial class RecordingOrchestrator
     }
 
     var adoptedInterval = config.FirstInterval.Value;
+    // 放缩比（产物分辨率）：两次尝试用同一个值，故不进换挡逻辑
+    var scale = RecordingConfig.ScaleFactorOf(config.ScalePercent.Value);
     onAttemptStarted?.Invoke(1);
     var first = await RunAttemptAsync(
       engineDir,
@@ -314,6 +336,7 @@ public sealed partial class RecordingOrchestrator
       card,
       adoptedInterval,
       maxFrame,
+      scale,
       timeout,
       cancellationToken
     );
@@ -340,11 +363,14 @@ public sealed partial class RecordingOrchestrator
     var runs = first.Runs;
     var complete = true;
 
-    if (first.Result!.Complete == true)
+    // 触发换挡重录的两种情形：录满被截断（换更疏的 interval 才录得完）、产物体积超 QQ 上限（发不出去）
+    var retryReason = DescribeSecondAttempt(engineDir, first);
+
+    if (retryReason != null)
     {
       adoptedInterval = config.SecondInterval.Value;
       _log.Print(
-        $"RecordingOrchestrator: 卡 {card.CombatOrdinal}（{card.EntryName}）录满 {first.Result.Frames} 帧被截断，"
+        $"RecordingOrchestrator: 卡 {card.CombatOrdinal}（{card.EntryName}）{retryReason.Detail}，"
           + $"改用 interval={adoptedInterval} 重录"
       );
 
@@ -355,6 +381,7 @@ public sealed partial class RecordingOrchestrator
         card,
         adoptedInterval,
         maxFrame,
+        scale,
         timeout,
         cancellationToken
       );
@@ -374,7 +401,7 @@ public sealed partial class RecordingOrchestrator
       if (second.Error != null)
       {
         return RecordingCardOutcome.Failed(
-          $"首次截断后重录失败：{second.Error}",
+          $"首次{retryReason.Label}后重录失败：{second.Error}",
           card,
           2,
           first.Runs + second.Runs,
@@ -391,11 +418,22 @@ public sealed partial class RecordingOrchestrator
     var result = adopted.Result!;
     var interval = result.Interval ?? adoptedInterval;
     var recorderGif = GifSetBuilder.GetRecorderGifAbsolutePath(engineDir, result.GifPath!);
+    var sizeBytes = GifSizeBytes(engineDir, result.GifPath!);
 
     _log.Print(
       $"RecordingOrchestrator: 卡 {card.CombatOrdinal}（{card.EntryName}）录成 {result.Frames} 帧，"
         + $"interval={interval}，尝试 {attempts} 次，产物 {Path.GetFileName(recorderGif)}"
+        + $"（{Mebibytes(sizeBytes):F1} MiB）"
     );
+
+    // 换挡后仍超限：不做第三次尝试，留一条 WARN 让真机一眼看到哪张卡发不出去
+    if (attempts > 1 && sizeBytes >= GifSizeLimitBytes)
+    {
+      _log.Print(
+        $"RecordingOrchestrator: 卡 {card.CombatOrdinal}（{card.EntryName}）换挡后产物仍有"
+          + $" {Mebibytes(sizeBytes):F1} MiB（≥ {GifSizeLimitBytes / 1_000_000}MB 上限），QQ 发不出去"
+      );
+    }
 
     return new RecordingCardOutcome(
       null,
@@ -463,6 +501,7 @@ public sealed partial class RecordingOrchestrator
   /// <param name="card">目标卡。</param>
   /// <param name="interval">本次尝试的抽帧间隔。</param>
   /// <param name="maxFrame">帧数上限。</param>
+  /// <param name="scale">产物放缩比（0.1..1.0），写进任务文件由插件调录制器的 <c>set_scale</c>。</param>
   /// <param name="timeout">单次进程超时；<c>null</c> 时按 <see cref="CardTimeout"/> 计算。</param>
   /// <param name="cancellationToken">取消令牌。</param>
   /// <returns>该次尝试的结论（成败、采用的结果、进程结果与启动次数）。</returns>
@@ -472,6 +511,7 @@ public sealed partial class RecordingOrchestrator
     RecordingCardOption card,
     int interval,
     int maxFrame,
+    double scale,
     TimeSpan? timeout,
     CancellationToken cancellationToken
   )
@@ -491,12 +531,13 @@ public sealed partial class RecordingOrchestrator
         RecordingJobWriter.NewJobId("rec"),
         card.AbsoluteIndex,
         interval,
-        maxFrame
+        maxFrame,
+        scale
       );
       RecordingJobWriter.DeleteResultIfExists(engineDir, spec);
       _log.Print(
         $"RecordingOrchestrator: 录卡 {card.CombatOrdinal}（{card.EntryName}）"
-          + $"第 {attempt + 1} 次进程 job={spec.JobId} interval={interval}"
+          + $"第 {attempt + 1} 次进程 job={spec.JobId} interval={interval} scale={scale:0.##}"
       );
 
       last = await _runner.RunAsync(engineDir, modPackName, spec, budget, cancellationToken);
@@ -593,6 +634,45 @@ public sealed partial class RecordingOrchestrator
       StringComparison.Ordinal
     );
 
+  /// <summary>判定一次**已成功**的尝试是否需要换 <c>SecondInterval</c> 重录，并给出可展示的原因。</summary>
+  /// <param name="engineDir">引擎根目录（用于读首次产物的体积）。</param>
+  /// <param name="attempt">首次尝试的结论（须已通过 <see cref="EvaluateAttempt"/>）。</param>
+  /// <returns>需要重录时的原因；一遍过时为 <c>null</c>。</returns>
+  private static SecondAttemptReason? DescribeSecondAttempt(string engineDir, CardAttempt attempt)
+  {
+    var result = attempt.Result!;
+
+    // 情形一：录满帧数上限被截断——换更疏的 interval 才录得完（方案 §6.3.4）
+    if (result.Complete == true)
+    {
+      return new SecondAttemptReason("截断", $"录满 {result.Frames} 帧被截断");
+    }
+
+    // 情形二：产物已达 QQ 的动图上限——换更疏的 interval 把体积压下来
+    var sizeBytes = GifSizeBytes(engineDir, result.GifPath!);
+    return sizeBytes >= GifSizeLimitBytes
+      ? new SecondAttemptReason(
+        "产物超限",
+        $"产物 {Mebibytes(sizeBytes):F1} MiB 已达 {GifSizeLimitBytes / 1_000_000}MB 上限"
+      )
+      : null;
+  }
+
+  /// <summary>读取产物 GIF 的字节数。</summary>
+  /// <param name="engineDir">引擎根目录。</param>
+  /// <param name="gifPath">结果文件里的 <c>gif_path</c>（相对引擎根）。</param>
+  /// <returns>文件字节数；文件不存在时为 0（产物落盘由 <see cref="EvaluateAttempt"/> 负责判定）。</returns>
+  private static long GifSizeBytes(string engineDir, string gifPath)
+  {
+    var info = new FileInfo(GifSetBuilder.GetRecorderGifAbsolutePath(engineDir, gifPath));
+    return info.Exists ? info.Length : 0;
+  }
+
+  /// <summary>把字节数换算成 MiB（1024 进制，与资源管理器显示的数一致），用于日志展示。</summary>
+  /// <param name="bytes">字节数。</param>
+  /// <returns>MiB 数。</returns>
+  private static double Mebibytes(long bytes) => bytes / (1024.0 * 1024.0);
+
   /// <summary>一次区间尝试的结论。</summary>
   /// <param name="Error">失败原因；成功为 <c>null</c>。</param>
   /// <param name="Result">成功时的结果文件内容。</param>
@@ -606,4 +686,9 @@ public sealed partial class RecordingOrchestrator
     int Runs,
     bool Cancelled
   );
+
+  /// <summary>需要换挡重录的原因。</summary>
+  /// <param name="Label">短语标签，用于「首次{标签}后重录失败」这类措辞（如「截断」「产物超限」）。</param>
+  /// <param name="Detail">完整描述，用于换挡日志（如「录满 350 帧被截断」）。</param>
+  private sealed record SecondAttemptReason(string Label, string Detail);
 }

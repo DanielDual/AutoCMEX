@@ -70,6 +70,13 @@ public sealed class RecordingJobSpec
   [JsonPropertyName("max_frame")]
   public int? MaxFrame { get; set; }
 
+  /// <summary>
+  /// 产物放缩比（录制阶段）：0.1..1.0，对应录制器 <c>set_scale</c>，0.5 即捕获区域的一半像素；
+  /// 为空时插件用默认值 0.5。
+  /// </summary>
+  [JsonPropertyName("scale")]
+  public double? Scale { get; set; }
+
   /// <summary>是否把目标卡的前一阶段一并演（默认 false：前一阶段即 60 帧入场移动）。</summary>
   [JsonPropertyName("include_previous")]
   public bool IncludePrevious { get; set; }

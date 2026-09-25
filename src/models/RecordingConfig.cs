@@ -28,8 +28,21 @@ public class RecordingConfig
   /// <summary>首次尝试的抽帧间隔（1..60）；GIF 帧率 = 60 / 该值，默认 3 即 20 fps。</summary>
   public AutoValue<int> FirstInterval { get; set; } = new(3);
 
-  /// <summary>首次录满被截断后重录所用的抽帧间隔，默认 5 即 12 fps。</summary>
+  /// <summary>
+  /// 换挡重录所用的抽帧间隔，默认 5 即 12 fps；首次录满被截断、或首次产物已达 30MB（QQ 发不出去）时启用。
+  /// </summary>
   public AutoValue<int> SecondInterval { get; set; } = new(5);
+
+  /// <summary>
+  /// 产物分辨率相对捕获区域的百分比（<see cref="MinScalePercent"/>..<see cref="MaxScalePercent"/>），
+  /// 默认 <see cref="DefaultScalePercent"/> 即录制器默认的 0.5。
+  /// </summary>
+  /// <remarks>
+  /// 对应录制器的 <c>set_scale</c>（放缩比 0.5 = 50%）：产物像素 = 捕获区域 × 屏幕放缩 × 该值，
+  /// 故它同时决定清晰度与产物体积。CMEX 侧以整数百分比暴露（设置面板是整数 SpinBox），
+  /// 写进任务文件时除以 100 还原成放缩比。
+  /// </remarks>
+  public AutoValue<int> ScalePercent { get; set; } = new(DefaultScalePercent);
 
   /// <summary>上次选择的输出目录，用作下次对话框的默认值。</summary>
   public AutoValue<string> LastOutputDir { get; set; } = new(string.Empty);
@@ -68,6 +81,26 @@ public class RecordingConfig
   /// <summary>抽帧间隔的上限（60 即 1 fps）。</summary>
   public const int MaxInterval = 60;
 
+  /// <summary>放缩比的默认值（%）：与录制器自身默认的 0.5 一致。</summary>
+  public const int DefaultScalePercent = 50;
+
+  /// <summary>放缩比的下限（%）：录制器自带菜单里的最小档 0.1。</summary>
+  public const int MinScalePercent = 10;
+
+  /// <summary>放缩比的上限（%）：录制器自带菜单里的最大档 1.0，即捕获区域原始像素。</summary>
+  public const int MaxScalePercent = 100;
+
+  /// <summary>把任意放缩比收敛到合法区间。</summary>
+  /// <param name="value">用户配置值（%）。</param>
+  /// <returns>收敛后的放缩比（%）。</returns>
+  public static int ClampScalePercent(int value) =>
+    Math.Clamp(value, MinScalePercent, MaxScalePercent);
+
+  /// <summary>把放缩比（%）换算成录制器要的倍率。</summary>
+  /// <param name="percent">放缩比（%）。</param>
+  /// <returns>放缩倍率（0.1..1.0）。</returns>
+  public static double ScaleFactorOf(int percent) => ClampScalePercent(percent) / 100.0;
+
   /// <summary>把任意并行度收敛到合法区间。</summary>
   /// <param name="value">用户配置值。</param>
   /// <returns>收敛后的并行度。</returns>
@@ -98,6 +131,7 @@ public class RecordingConfig
     MaxFrame ??= new(350);
     FirstInterval ??= new(3);
     SecondInterval ??= new(5);
+    ScalePercent ??= new(DefaultScalePercent);
     LastOutputDir ??= new(string.Empty);
     Parallelism ??= new(DefaultParallelism);
     SandboxRoot ??= new(string.Empty);

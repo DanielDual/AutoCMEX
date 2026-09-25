@@ -104,8 +104,11 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   /// <summary>首次抽帧间隔输入框。</summary>
   public SpinBox FirstIntervalBox { get; private set; } = default!;
 
-  /// <summary>截断后重录用抽帧间隔输入框。</summary>
+  /// <summary>换挡重录用抽帧间隔输入框。</summary>
   public SpinBox SecondIntervalBox { get; private set; } = default!;
+
+  /// <summary>产物放缩比（分辨率）输入框，单位为百分比。</summary>
+  public SpinBox ScalePercentBox { get; private set; } = default!;
 
   /// <summary>高级参数说明。</summary>
   public Label AdvancedHintLabel { get; private set; } = default!;
@@ -221,10 +224,15 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   public void ApplyFirstInterval(int value) =>
     ApplyInt(RecordingConfig.ClampInterval(value), _config.FirstInterval, FirstIntervalBox);
 
-  /// <summary>写入截断后重录用抽帧间隔（越界值收敛）。</summary>
+  /// <summary>写入换挡重录用抽帧间隔（越界值收敛）。</summary>
   /// <param name="value">用户输入值。</param>
   public void ApplySecondInterval(int value) =>
     ApplyInt(RecordingConfig.ClampInterval(value), _config.SecondInterval, SecondIntervalBox);
+
+  /// <summary>写入产物放缩比（越界值收敛）。</summary>
+  /// <param name="value">用户输入值（%）。</param>
+  public void ApplyScalePercent(int value) =>
+    ApplyInt(RecordingConfig.ClampScalePercent(value), _config.ScalePercent, ScalePercentBox);
 
   /// <summary>从整合板块配置的 Sharp 目录推断引擎目录（只作建议值，仍须通过校验）。</summary>
   public void InferEngineDir()
@@ -468,17 +476,27 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     );
     SecondIntervalBox = AddAdvancedSpinBox(
       advancedRow,
-      "截断后间隔",
+      "换挡后间隔",
       RecordingConfig.MinInterval,
       RecordingConfig.MaxInterval,
       ApplySecondInterval
+    );
+    ScalePercentBox = AddAdvancedSpinBox(
+      advancedRow,
+      "放缩比 (%)",
+      RecordingConfig.MinScalePercent,
+      RecordingConfig.MaxScalePercent,
+      ApplyScalePercent,
+      step: 5
     );
     SectionBody.AddChild(advancedRow);
 
     AdvancedHintLabel = new Label
     {
       Text =
-        "间隔 3 ≈ 20 fps、5 ≈ 12 fps；玩家不干预时长卡会在帧数上限处截断，属正常产物（报告里标 complete = false）。",
+        "间隔 3 ≈ 20 fps、5 ≈ 12 fps；玩家不干预时长卡会在帧数上限处截断，属正常产物（报告里标 complete = false）。"
+        + "产物达到 30MB 时 QQ 发不出去，同样会自动换第二档间隔重录一次。"
+        + "放缩比决定产物分辨率：50% 即捕获区域的一半像素（录制器默认），100% 为原始像素，越大越清晰、体积也越大。",
       AutowrapMode = TextServer.AutowrapMode.WordSmart,
     };
     SectionBody.AddChild(AdvancedHintLabel);
@@ -531,13 +549,15 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   /// <param name="min">下限。</param>
   /// <param name="max">上限。</param>
   /// <param name="apply">值变化时的写入动作（未展开同步时调用）。</param>
+  /// <param name="step">数值框步长。</param>
   /// <returns>建好的数值框。</returns>
   private SpinBox AddAdvancedSpinBox(
     HBoxContainer row,
     string label,
     int min,
     int max,
-    Action<int> apply
+    Action<int> apply,
+    int step = 1
   )
   {
     row.AddChild(new Label { Text = label });
@@ -545,7 +565,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     {
       MinValue = min,
       MaxValue = max,
-      Step = 1,
+      Step = step,
       Value = min,
       CustomMinimumSize = new Vector2(80, 0),
     };
@@ -593,6 +613,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
       SyncSpinBox(MaxFrameBox, RecordingConfig.ClampMaxFrame(_config.MaxFrame.Value));
       SyncSpinBox(FirstIntervalBox, RecordingConfig.ClampInterval(_config.FirstInterval.Value));
       SyncSpinBox(SecondIntervalBox, RecordingConfig.ClampInterval(_config.SecondInterval.Value));
+      SyncSpinBox(ScalePercentBox, RecordingConfig.ClampScalePercent(_config.ScalePercent.Value));
     }
     finally
     {

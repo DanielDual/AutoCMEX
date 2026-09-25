@@ -82,6 +82,7 @@ public class GameProcessRunnerTest : TestClass
       absoluteIndex: 11,
       interval: 3,
       maxFrame: 350,
+      scale: 0.5,
       bossClass: "sample_enm1"
     );
   }
