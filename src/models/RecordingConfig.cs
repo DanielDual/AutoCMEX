@@ -1,5 +1,6 @@
 namespace AutoCMEX.Models;
 
+using System;
 using Chickensoft.Sync.Primitives;
 
 /// <summary>
@@ -34,6 +35,34 @@ public class RecordingConfig
   public AutoValue<string> LastOutputDir { get; set; } = new(string.Empty);
 
   /// <summary>
+  /// 并行录制的引擎实例数（<see cref="MinParallelism"/>..<see cref="MaxParallelism"/>），默认 <see cref="DefaultParallelism"/>。
+  /// </summary>
+  /// <remarks>
+  /// 每个实例独占一份引擎目录副本（沙箱），故并行度只受机器资源限制；实际生效的 worker 数
+  /// 还会被战斗卡数压住（8 张卡最多 8 个 worker）。越界值由 <see cref="ClampParallelism"/> 收敛。
+  /// </remarks>
+  public AutoValue<int> Parallelism { get; set; } = new(DefaultParallelism);
+
+  /// <summary>沙箱根目录；为空表示用系统临时目录（<c>%TEMP%/AutoCMEX/recording</c>）。</summary>
+  /// <remarks>沙箱是引擎目录的一次性副本，一轮录制约 163 MB/worker，一轮结束即删。</remarks>
+  public AutoValue<string> SandboxRoot { get; set; } = new(string.Empty);
+
+  /// <summary>并行度默认值。</summary>
+  public const int DefaultParallelism = 16;
+
+  /// <summary>并行度下限。</summary>
+  public const int MinParallelism = 1;
+
+  /// <summary>并行度上限。</summary>
+  public const int MaxParallelism = 32;
+
+  /// <summary>把任意并行度收敛到合法区间。</summary>
+  /// <param name="value">用户配置值。</param>
+  /// <returns>收敛后的并行度。</returns>
+  public static int ClampParallelism(int value) =>
+    Math.Clamp(value, MinParallelism, MaxParallelism);
+
+  /// <summary>
   /// 恢复被 JSON 显式 <c>null</c> 覆盖的自动同步属性。
   /// </summary>
   /// <remarks>
@@ -48,5 +77,7 @@ public class RecordingConfig
     FirstInterval ??= new(3);
     SecondInterval ??= new(5);
     LastOutputDir ??= new(string.Empty);
+    Parallelism ??= new(DefaultParallelism);
+    SandboxRoot ??= new(string.Empty);
   }
 }

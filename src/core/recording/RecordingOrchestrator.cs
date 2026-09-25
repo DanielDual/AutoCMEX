@@ -67,9 +67,10 @@ public sealed record RecordingEnumerateOutcome(
 /// </summary>
 /// <param name="Error">失败原因；成功为 <c>null</c>。</param>
 /// <param name="Card">目标卡（含序号与清单名）。</param>
-/// <param name="GifFileName">集内文件名（如 <c>3.gif</c>）；失败时为空串。</param>
-/// <param name="Width">产物宽（像素）；失败时为 0。</param>
-/// <param name="Height">产物高（像素）；失败时为 0。</param>
+/// <param name="RecorderGifAbsolutePath">
+/// 采用产物在**沙箱**里的绝对路径（录制器自报的秒级文件名）；失败时为空串。
+/// 集内命名与宽高由编排层归集时定，见 <see cref="RecordingOrchestrator.RunAsync"/>。
+/// </param>
 /// <param name="Frames">最终采用产物的帧数；失败时为 0。</param>
 /// <param name="Interval">最终采用产物的抽帧间隔（GIF 帧率 = 60 / 该值）；失败时为 0。</param>
 /// <param name="Complete">该卡是否完整录完，口径见 <see cref="RecordingOrchestrator.RecordCardAsync"/>。</param>
@@ -80,9 +81,7 @@ public sealed record RecordingEnumerateOutcome(
 public sealed record RecordingCardOutcome(
   string? Error,
   RecordingCardOption Card,
-  string GifFileName,
-  int Width,
-  int Height,
+  string RecorderGifAbsolutePath,
   int Frames,
   int Interval,
   bool Complete,
@@ -92,7 +91,7 @@ public sealed record RecordingCardOutcome(
   GameProcessOutcome? Process
 )
 {
-  /// <summary>是否录制成功（产物已按序号落到输出目录）。</summary>
+  /// <summary>是否录制成功（产物已落在沙箱里，等待归集改名）。</summary>
   public bool Succeeded => Error == null;
 
   /// <summary>引擎日志尾部的拷贝，失败时用于展示原因。</summary>
@@ -113,24 +112,29 @@ public sealed record RecordingCardOutcome(
     int runs = 0,
     GameProcessOutcome? process = null,
     bool cancelled = false
-  ) => new(error, card, string.Empty, 0, 0, 0, 0, false, attempts, runs, cancelled, process);
+  ) => new(error, card, string.Empty, 0, 0, false, attempts, runs, cancelled, process);
 }
 
 /// <summary>
-/// 录制编排：引擎定位 → 枚举卡表 → 逐卡录制 → 归集产物。
+/// 录制编排：引擎定位 → 枚举卡表 → 并行逐卡录制 → 归集产物与报告。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 已实现**枚举阶段**（P1）与**单卡录制闭环**（P2）：后者见 <see cref="RecordCardAsync"/>，
-/// 一次调用即可把一张卡录成集内文件 <c>{序号}.gif</c>。逐卡串联、重试策略汇总、取消与
-/// 报告（P3）在同一入口下续接，调用方式不变。
+/// 一轮录制的入口是 <see cref="RunAsync"/>：它在**沙箱**（引擎目录副本，见 <see cref="RecordingSandbox"/>）
+/// 里跑枚举与录制，N 个 worker 并行，最后回主线程串行归集产物、写 <c>recording_report.json</c>、
+/// 删沙箱。真实引擎目录全程只读。
 /// </para>
 /// <para>
-/// 串行约束：同一 <paramref name="engineDir"/> 不得并发调用——录制器临时目录在启动时被
-/// 清空，产物名又是秒级时间戳，并发会互相破坏。
+/// <see cref="RecordCardAsync"/> 是「一张卡」的录制闭环（P2）：首次用 <c>FirstInterval</c>、
+/// 录满被截断就换 <c>SecondInterval</c> 重录并采用第二次产物、单次尝试内失败自动重试 1 次。
+/// 它**只录不归集**——产物留在沙箱里，由 <see cref="RunAsync"/> 统一改名进集。
+/// </para>
+/// <para>
+/// 并发约束：同一 <paramref name="engineDir"/> 不得被两个进程共用——录制器临时目录在启动时被
+/// 清空，产物名又是秒级时间戳。并行靠「一个 worker 一份沙箱」满足该约束，而不是靠串行化。
 /// </para>
 /// </remarks>
-public sealed class RecordingOrchestrator
+public sealed partial class RecordingOrchestrator
 {
   /// <summary>枚举阶段默认超时：冷启动 + 载包 + 定位 Boss，实测远低于该值。</summary>
   public static readonly TimeSpan EnumerateTimeout = TimeSpan.FromSeconds(60);
@@ -241,7 +245,7 @@ public sealed class RecordingOrchestrator
   }
 
   /// <summary>
-  /// 录制一张卡，产出集内文件 <c>{序号}.gif</c>。
+  /// 录制一张卡，产物留在该引擎目录的录制器输出目录里（不就地归集，归集见 <see cref="RunAsync"/>）。
   /// </summary>
   /// <remarks>
   /// <para>
@@ -258,32 +262,32 @@ public sealed class RecordingOrchestrator
   /// 第二次尝试彻底失败时**不**回退首次的截断产物——半截 GIF 混进集里比明确失败更难排查。
   /// </para>
   /// </remarks>
-  /// <param name="engineDir">已选定的引擎根目录。</param>
-  /// <param name="modPackName">工程包名（引擎 <c>mod/</c> 下的包名）。</param>
+  /// <param name="engineDir">
+  /// 引擎根目录；沙箱场景下即沙箱根（<see cref="RecordingSandbox.EngineDir"/>）。
+  /// </param>
+  /// <param name="modPackName">工程包名（该引擎目录 <c>mod/</c> 下的包名）。</param>
   /// <param name="card">目标卡（须为战斗阶段，序号已在枚举阶段派生）。</param>
-  /// <param name="outputDir">GIF 集输出目录（不存在时创建；同名产物会被覆盖）。</param>
   /// <param name="config">录制配置（帧数上限与两档抽帧间隔）。</param>
   /// <param name="cancellationToken">取消令牌，用于中止用户已放弃的录制。</param>
   /// <param name="timeout">
   /// 单次尝试的超时；传 <c>null</c> 用 <see cref="CardTimeout"/>。该预算按「一次尝试」计，
   /// 不随重试与第二次尝试叠加。
   /// </param>
+  /// <param name="onAttemptStarted">每次尝试开始前的回调（1 = 首次；2 = 截断后换挡重录），用于上报进度。</param>
   /// <returns>单卡录制结果；失败时 <see cref="RecordingCardOutcome.Error"/> 给出可展示的原因。</returns>
   /// <exception cref="ArgumentNullException"><paramref name="card"/> 或 <paramref name="config"/> 为 <c>null</c>。</exception>
-  /// <exception cref="ArgumentException"><paramref name="outputDir"/> 为空。</exception>
   public async Task<RecordingCardOutcome> RecordCardAsync(
     string engineDir,
     string modPackName,
     RecordingCardOption card,
-    string outputDir,
     RecordingConfig config,
     CancellationToken cancellationToken = default,
-    TimeSpan? timeout = null
+    TimeSpan? timeout = null,
+    Action<int>? onAttemptStarted = null
   )
   {
     ArgumentNullException.ThrowIfNull(card);
     ArgumentNullException.ThrowIfNull(config);
-    ArgumentException.ThrowIfNullOrWhiteSpace(outputDir);
 
     if (!card.IsCombat)
     {
@@ -303,6 +307,7 @@ public sealed class RecordingOrchestrator
     }
 
     var adoptedInterval = config.FirstInterval.Value;
+    onAttemptStarted?.Invoke(1);
     var first = await RunAttemptAsync(
       engineDir,
       modPackName,
@@ -343,6 +348,7 @@ public sealed class RecordingOrchestrator
           + $"改用 interval={adoptedInterval} 重录"
       );
 
+      onAttemptStarted?.Invoke(2);
       var second = await RunAttemptAsync(
         engineDir,
         modPackName,
@@ -384,47 +390,25 @@ public sealed class RecordingOrchestrator
 
     var result = adopted.Result!;
     var interval = result.Interval ?? adoptedInterval;
+    var recorderGif = GifSetBuilder.GetRecorderGifAbsolutePath(engineDir, result.GifPath!);
 
-    try
-    {
-      var target = GifSetBuilder.PlaceCardGif(
-        GifSetBuilder.GetRecorderGifAbsolutePath(engineDir, result.GifPath!),
-        outputDir,
-        card.CombatOrdinal
-      );
-      var (width, height) = GifSetBuilder.ReadGifSize(target);
+    _log.Print(
+      $"RecordingOrchestrator: 卡 {card.CombatOrdinal}（{card.EntryName}）录成 {result.Frames} 帧，"
+        + $"interval={interval}，尝试 {attempts} 次，产物 {Path.GetFileName(recorderGif)}"
+    );
 
-      _log.Print(
-        $"RecordingOrchestrator: 卡 {card.CombatOrdinal}（{card.EntryName}）完成 {width}×{height}，"
-          + $"{result.Frames} 帧，interval={interval}，尝试 {attempts} 次"
-      );
-
-      return new RecordingCardOutcome(
-        null,
-        card,
-        GifSetBuilder.EntryFileName(card.CombatOrdinal),
-        width,
-        height,
-        result.Frames ?? 0,
-        interval,
-        complete,
-        attempts,
-        runs,
-        false,
-        adopted.Process
-      );
-    }
-    catch (Exception ex)
-      when (ex is IOException or UnauthorizedAccessException or InvalidDataException)
-    {
-      return RecordingCardOutcome.Failed(
-        $"归集产物失败：{ex.Message}",
-        card,
-        attempts,
-        runs,
-        adopted.Process
-      );
-    }
+    return new RecordingCardOutcome(
+      null,
+      card,
+      recorderGif,
+      result.Frames ?? 0,
+      interval,
+      complete,
+      attempts,
+      runs,
+      false,
+      adopted.Process
+    );
   }
 
   /// <summary>统计战斗阶段数量（供日志与调用方预估录制时长）。</summary>
