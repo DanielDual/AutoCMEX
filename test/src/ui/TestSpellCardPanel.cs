@@ -271,7 +271,13 @@ public class TestSpellCardPanel : TestClass
     CardRow(1).IsChecked(2).ShouldBeTrue("新增的符卡也应跟着属性变化同步");
   }
 
-  /// <summary>切换 Boss 后旧 Boss 的符卡不应再影响当前树（订阅随切换释放并重挂）。</summary>
+  /// <summary>切换 Boss 后旧 Boss 不再牵动当前树（旧 Boss 的列表订阅须随切换释放）。</summary>
+  /// <remarks>
+  /// 判据用「行对象有没有被换掉」：旧 Boss 的**符卡列表**订阅若泄漏，给旧 Boss 加卡会触发一次
+  /// <c>RebindAndRefreshTree</c> 整树重建，当前 Boss 的行就会换成新对象。
+  /// 只靠复选框只能覆盖到这一层——泄漏的**符卡属性**订阅回调会按「符卡 → 行」映射查不到行而
+  /// 静默 no-op，从外部观察不到，故这里不冒充属性订阅的释放验证。
+  /// </remarks>
   [Test]
   public async Task SwitchingBoss_StopsWatchingPreviousBossCards()
   {
@@ -284,12 +290,59 @@ public class TestSpellCardPanel : TestClass
     await SettleAsync();
 
     CardRow(0).GetText(0).ShouldBe("符卡B1");
+    var rowBefore = CardRow(0);
 
+    bossA.SpellCards.Add(
+      new SpellCard
+      {
+        Name = new AutoValue<string>("符卡A2"),
+        Creator = new AutoValue<string>("作者A"),
+      }
+    );
     bossA.SpellCards[0].IsGuessedOut.Value = true;
     await SettleAsync();
 
     CardRow(0).GetText(0).ShouldBe("符卡B1");
     CardRow(0).IsChecked(2).ShouldBeFalse("切走 Boss 后不应再被旧 Boss 的符卡变化带动");
+    CardRow(0)
+      .ShouldBeSameAs(rowBefore, "旧 Boss 的列表订阅若未释放会触发整树重建，行对象就被换掉了");
+  }
+
+  /// <summary>只替换当前 Boss 的符卡列表实例（Boss 对象不变）时，新列表里的新符卡也要被纳管。</summary>
+  /// <remarks>
+  /// 覆盖「Boss 实例 + 符卡列表实例」双比对：只比 Boss 引用的话，替换列表之后逐卡属性订阅仍挂在
+  /// 旧列表的旧符卡上，新符卡怎么改都不会同步。
+  /// </remarks>
+  [Test]
+  public async Task ReplacingSpellCardListInstance_RebindsCardsOfNewList()
+  {
+    var boss = AddBoss(("符卡1", "作者A"));
+
+    // 先把绑定立起来：这一步必须做完，否则下面的替换会被首次绑定顺手带上，测不出差异
+    _panel.SelectBoss(0);
+    _panel.Refresh();
+    await SettleAsync();
+    CardRow(0).GetText(0).ShouldBe("符卡1");
+
+    // 换成持有全新符卡实例的列表，Boss 对象本身不变，再走一次面板刷新
+    var replacement = new AutoList<SpellCard>();
+    replacement.Add(
+      new SpellCard
+      {
+        Name = new AutoValue<string>("符卡X"),
+        Creator = new AutoValue<string>("作者X"),
+      }
+    );
+    boss.SpellCards = replacement;
+    _panel.Refresh();
+    await SettleAsync();
+
+    CardRow(0).GetText(0).ShouldBe("符卡X");
+
+    replacement[0].IsGuessedOut.Value = true;
+    await SettleAsync();
+
+    CardRow(0).IsChecked(2).ShouldBeTrue("换列表实例后，新列表里的符卡也要被纳管订阅");
   }
 
   // ==================== 测试辅助 ====================
