@@ -91,6 +91,20 @@ public class PluginDeployerTest : TestClass
   }
 
   [Test]
+  public void Inspect_WithoutPluginsDir_BlocksInstall()
+  {
+    Directory.Delete(_pluginsDir, recursive: true);
+
+    var inspection = PluginDeployer.Inspect(_engineDir);
+
+    // game/plugins 都不在，安装必然失败：那就不摆一个点了会报错的按钮
+    inspection.Autocmex.State.ShouldBe(RecordingPluginState.Missing);
+    inspection.Autocmex.CanInstall.ShouldBeFalse();
+    inspection.Autocmex.Detail.ShouldContain("plugins");
+    inspection.AllReady.ShouldBeFalse();
+  }
+
+  [Test]
   public void Inspect_WithoutManifestButWithPluginDirs_ReportsInstalledButNotLoaded()
   {
     WritePluginFile($"{PluginDeployer.AutocmexPluginDirName}/__init__.lua", "autocmex");
@@ -415,6 +429,25 @@ public class PluginDeployerTest : TestClass
   }
 
   [Test]
+  public void TryValidateForRecording_DisabledRecorder_ReportsEnableHint()
+  {
+    WritePluginFile($"{PluginDeployer.AutocmexPluginDirName}/__init__.lua", "autocmex");
+    WritePluginFile($"{RecorderDirName}/recorder.lua", "rec");
+    WriteManifest(
+      $$"""
+      [
+        { "name": "{{PluginDeployer.AutocmexPluginDirName}}", "enable": true },
+        { "path": "plugins/{{RecorderDirName}}/", "enable": false }
+      ]
+      """
+    );
+
+    PluginDeployer.TryValidateForRecording(_engineDir, out var reason).ShouldBeFalse();
+
+    reason.ShouldBe("弹幕录制器插件未启用，请先在设置页启用插件");
+  }
+
+  [Test]
   public void TryValidateForRecording_AllReady_ReturnsTrueWithoutReason()
   {
     WritePluginFile($"{PluginDeployer.AutocmexPluginDirName}/__init__.lua", "autocmex");
@@ -438,19 +471,38 @@ public class PluginDeployerTest : TestClass
   private List<JsonObject> ManifestEntries() =>
     ((JsonArray)JsonNode.Parse(File.ReadAllText(_manifestPath))!).OfType<JsonObject>().ToList();
 
-  /// <summary>按关键字取清单条目（与实现的匹配口径一致：<c>name</c> 或 <c>path</c> 命中）。</summary>
+  /// <summary>按关键字取清单条目（与实现的匹配口径一致：<c>name</c> 全等，或 <c>path</c> 最后一段命中）。</summary>
   /// <param name="keyword">插件目录名关键字。</param>
   /// <returns>命中的条目；未命中为 null。</returns>
-  private JsonObject? Entry(string keyword) =>
-    ManifestEntries().FirstOrDefault(e => Hit(e, "name", keyword) || Hit(e, "path", keyword));
+  private JsonObject? Entry(string keyword)
+  {
+    var entries = ManifestEntries();
+    return entries.FirstOrDefault(e =>
+        string.Equals(e["name"]?.GetValue<string>(), keyword, StringComparison.OrdinalIgnoreCase)
+      ) ?? entries.FirstOrDefault(e => PathHit(e, keyword));
+  }
 
-  /// <summary>判断条目的字段是否含关键字。</summary>
+  /// <summary>判断条目的 <c>path</c> 最后一段是否指向该插件目录（剥掉 <c>[pluginpackage]</c> 前缀，允许版本后缀）。</summary>
   /// <param name="entry">清单条目。</param>
-  /// <param name="field">字段名。</param>
   /// <param name="keyword">关键字。</param>
   /// <returns>命中返回 true。</returns>
-  private static bool Hit(JsonObject entry, string field, string keyword) =>
-    entry[field]?.GetValue<string>().Contains(keyword, StringComparison.OrdinalIgnoreCase) == true;
+  private static bool PathHit(JsonObject entry, string keyword)
+  {
+    var path = entry["path"]?.GetValue<string>();
+    if (string.IsNullOrEmpty(path))
+    {
+      return false;
+    }
+
+    var segment = path.TrimEnd('/', '\\');
+    segment = segment[(segment.LastIndexOfAny(new[] { '/', '\\' }) + 1)..];
+    var close = segment.IndexOf(']');
+    if (segment.StartsWith('[') && close >= 0)
+    {
+      segment = segment[(close + 1)..];
+    }
+    return segment.StartsWith(keyword, StringComparison.OrdinalIgnoreCase);
+  }
 
   /// <summary>记录目录树的相对路径、长度与修改时间，用于证明「只读检查真的没写盘」。</summary>
   /// <param name="root">根目录。</param>
