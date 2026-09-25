@@ -292,6 +292,8 @@ public static class PluginDeployer
   {
     var dir = Path.Combine(pluginsDir, AutocmexPluginDirName);
     var entryFile = Path.Combine(dir, AutocmexEntryFileName);
+    // 安装动作要把插件复制进 game/plugins，该目录不存在就必然失败：那就不摆出一个点了会报错的按钮
+    var installable = Directory.Exists(pluginsDir);
     if (!File.Exists(entryFile))
     {
       var reason = Directory.Exists(dir)
@@ -303,8 +305,11 @@ public static class PluginDeployer
         State = RecordingPluginState.Missing,
         Installed = false,
         Enabled = false,
-        CanInstall = true,
-        Detail = manifestExists ? reason : $"{reason}；{MissingManifestHint}",
+        CanInstall = installable,
+        Detail =
+          !installable ? $"引擎缺少 {PluginsDirName} 目录：{pluginsDir}"
+          : manifestExists ? reason
+          : $"{reason}；{MissingManifestHint}",
       };
     }
 

@@ -40,7 +40,7 @@ public sealed class RecordingPluginStatus
   /// <summary>是否可执行「一键安装」（仅自带插件；第三方插件永远为 false）。</summary>
   public bool CanInstall { get; init; }
 
-  /// <summary>是否可执行「一键启用」（仅「已安装但引擎不会加载」时为 true）。</summary>
+  /// <summary>是否可执行「一键启用」（仅在清单里存在该条目的前提下、条目被禁用时为 true）。</summary>
   public bool CanEnable { get; init; }
 }
 
