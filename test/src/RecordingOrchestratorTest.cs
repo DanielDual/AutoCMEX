@@ -6,6 +6,7 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoCMEX.Core.Recording;
+using AutoCMEX.Models;
 using AutoCMEX.Test.Drivers;
 using Chickensoft.GoDotTest;
 using Chickensoft.Log;
@@ -27,6 +28,7 @@ public class RecordingOrchestratorTest : TestClass
   private string _root = string.Empty;
   private string _engineDir = string.Empty;
   private string _gameDir = string.Empty;
+  private string _outputDir = string.Empty;
   private FakeEngineProcess _fake = new();
   private Mock<ILog> _log = new();
 
@@ -42,6 +44,7 @@ public class RecordingOrchestratorTest : TestClass
     );
     _engineDir = Path.Combine(_root, "LuaSTGSub");
     _gameDir = Path.Combine(_engineDir, EngineLocator.GameDirName);
+    _outputDir = Path.Combine(_root, "gifset");
     Directory.CreateDirectory(_gameDir);
     File.WriteAllText(Path.Combine(_gameDir, EngineLocator.LaunchFileName), string.Empty);
     File.WriteAllText(Path.Combine(_gameDir, "LuaSTGSub.exe"), string.Empty);
@@ -85,6 +88,90 @@ public class RecordingOrchestratorTest : TestClass
     File.WriteAllText(
       Path.Combine(RecordingJobWriter.GetResultsDir(_engineDir), $"{jobId}.json"),
       buildJson(jobId)
+    );
+  }
+
+  /// <summary>造一张战斗阶段的卡（默认取序号 2 的符卡）。</summary>
+  /// <param name="absoluteIndex">绝对下标。</param>
+  /// <param name="name">卡名（非符与对话阶段为空串）。</param>
+  /// <param name="t3">卡最长时长（秒）。</param>
+  /// <param name="combatOrdinal">战斗阶段序号。</param>
+  /// <returns>目标卡。</returns>
+  private static RecordingCardOption CreateCard(
+    int absoluteIndex = 3,
+    string name = "符卡·一",
+    double t3 = 30.0,
+    int combatOrdinal = 2
+  ) =>
+    new(
+      absoluteIndex,
+      name,
+      IsSpellCard: name.Length > 0,
+      IsCombat: true,
+      t3,
+      combatOrdinal,
+      0,
+      name
+    );
+
+  /// <summary>
+  /// 为最近一次写出的录制任务落一份结果，并按需造出录制器产物文件（模拟游戏运行期的产出）。
+  /// </summary>
+  /// <param name="frames">帧数。</param>
+  /// <param name="interval">抽帧间隔。</param>
+  /// <param name="complete">是否录满被截断。</param>
+  /// <param name="success">录制器是否自报成功。</param>
+  /// <param name="width">产物宽。</param>
+  /// <param name="height">产物高。</param>
+  /// <param name="cardName">结果里的卡名（用于名字核对）。</param>
+  /// <param name="taskName">录制器任务名（产物文件名）。</param>
+  /// <param name="createGif">是否真造出产物文件。</param>
+  private void WriteRecordResult(
+    int frames = 200,
+    int interval = 3,
+    bool complete = false,
+    bool success = true,
+    int width = 640,
+    int height = 480,
+    string cardName = "符卡·一",
+    string taskName = "task_unit",
+    bool createGif = true
+  )
+  {
+    var jobFile = Directory
+      .GetFiles(RecordingJobWriter.GetJobsDir(_engineDir), "*.json")
+      .OrderByDescending(file => file)
+      .First();
+    var jobId = Path.GetFileNameWithoutExtension(jobFile);
+    var gifRelativePath = $"{GifSetBuilder.RecorderOutputDirName}/{taskName}.gif";
+
+    if (createGif)
+    {
+      var recorderDir = Path.Combine(
+        _gameDir,
+        GifSetBuilder.RecorderOutputDirName.Replace('/', Path.DirectorySeparatorChar)
+      );
+      Directory.CreateDirectory(recorderDir);
+      SyntheticGif.WriteFile(Path.Combine(recorderDir, $"{taskName}.gif"), width, height);
+    }
+
+    File.WriteAllText(
+      Path.Combine(RecordingJobWriter.GetResultsDir(_engineDir), $"{jobId}.json"),
+      $$"""
+      {
+        "job_id": "{{jobId}}",
+        "status": "ok",
+        "absolute_index": 3,
+        "card_name": "{{cardName}}",
+        "task_name": "{{taskName}}",
+        "gif_path": "{{gifRelativePath}}",
+        "frames": {{frames}},
+        "interval": {{interval}},
+        "complete": {{(complete ? "true" : "false")}},
+        "success": {{(success ? "true" : "false")}},
+        "size": 1024
+      }
+      """
     );
   }
 
@@ -230,5 +317,271 @@ public class RecordingOrchestratorTest : TestClass
     outcome.Error.ShouldNotBeNull();
     outcome.Error!.ShouldContain("取消");
     _fake.KillCount.ShouldBe(1);
+  }
+
+  [Test]
+  public void CardTimeout_UsesSmallerOfCardLengthAndFrameSpan()
+  {
+    // min(60, 350×3/60 = 17.5) + 45 + 350×0.3 = 167.5 秒
+    RecordingOrchestrator
+      .CardTimeout(CreateCard(t3: 60), interval: 3, maxFrame: 350)
+      .TotalSeconds.ShouldBe(167.5, 0.001);
+
+    // 长卡也按「录满帧数」封顶，不会无限等
+    RecordingOrchestrator
+      .CardTimeout(CreateCard(t3: 600), interval: 3, maxFrame: 350)
+      .TotalSeconds.ShouldBe(167.5, 0.001);
+
+    // 短卡按卡长算：min(10, 17.5) + 45 + 105 = 160 秒
+    RecordingOrchestrator
+      .CardTimeout(CreateCard(t3: 10), interval: 3, maxFrame: 350)
+      .TotalSeconds.ShouldBe(160, 0.001);
+  }
+
+  [Test]
+  public async Task RecordCardAsync_FirstAttemptCompletes_PlacesGifUnderOrdinal()
+  {
+    _fake.OnStart = () => WriteRecordResult(frames: 200, interval: 3, complete: false);
+
+    var outcome = await CreateOrchestrator()
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+
+    outcome.Succeeded.ShouldBeTrue();
+    outcome.Error.ShouldBeNull();
+    outcome.GifFileName.ShouldBe("2.gif");
+    outcome.Width.ShouldBe(640);
+    outcome.Height.ShouldBe(480);
+    outcome.Frames.ShouldBe(200);
+    outcome.Interval.ShouldBe(3);
+    outcome.Complete.ShouldBeTrue();
+    outcome.Attempts.ShouldBe(1);
+    outcome.Runs.ShouldBe(1);
+    File.Exists(Path.Combine(_outputDir, "2.gif")).ShouldBeTrue();
+
+    // 任务先落盘再启动，阶段为录制且不演前序阶段
+    var jobFile = Directory.GetFiles(RecordingJobWriter.GetJobsDir(_engineDir), "*.json").Single();
+    var jobText = File.ReadAllText(jobFile);
+    jobText.ShouldContain("\"phase\": \"record\"");
+    jobText.ShouldContain("\"include_previous\": false");
+    _fake.StartInfo!.Arguments.ShouldContain($"setting.mod='{ModPackName}'");
+  }
+
+  [Test]
+  public async Task RecordCardAsync_FirstTruncated_ReRecordsAndAdoptsSecond()
+  {
+    var run = 0;
+    _fake.OnStart = () =>
+    {
+      run++;
+      if (run == 1)
+      {
+        WriteRecordResult(
+          frames: 350,
+          interval: 3,
+          complete: true,
+          width: 640,
+          height: 480,
+          taskName: "task_first"
+        );
+      }
+      else
+      {
+        WriteRecordResult(
+          frames: 210,
+          interval: 5,
+          complete: false,
+          width: 800,
+          height: 600,
+          taskName: "task_second"
+        );
+      }
+    };
+
+    var outcome = await CreateOrchestrator()
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+
+    run.ShouldBe(2);
+    outcome.Succeeded.ShouldBeTrue();
+    outcome.Attempts.ShouldBe(2);
+    outcome.Runs.ShouldBe(2);
+    outcome.Interval.ShouldBe(5);
+    outcome.Frames.ShouldBe(210);
+    // 方案 §6.3.4：凡触发重录的卡一律记 complete=false
+    outcome.Complete.ShouldBeFalse();
+    // 集里只留第二次的产物，首次的截断件不进集
+    var gifs = Directory.GetFiles(_outputDir);
+    gifs.Length.ShouldBe(1);
+    GifSetBuilder.ReadGifSize(gifs[0]).ShouldBe((800, 600));
+  }
+
+  [Test]
+  public async Task RecordCardAsync_BothAttemptsTruncated_AdoptsSecondAndMarksIncomplete()
+  {
+    var run = 0;
+    _fake.OnStart = () =>
+    {
+      run++;
+      WriteRecordResult(frames: 350, interval: run == 1 ? 3 : 5, complete: true);
+    };
+
+    var outcome = await CreateOrchestrator()
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+
+    run.ShouldBe(2);
+    outcome.Succeeded.ShouldBeTrue();
+    outcome.Attempts.ShouldBe(2);
+    outcome.Frames.ShouldBe(350);
+    outcome.Interval.ShouldBe(5);
+    outcome.Complete.ShouldBeFalse();
+  }
+
+  [Test]
+  public async Task RecordCardAsync_AttemptWithoutResult_RetriesOnceThenReportsError()
+  {
+    // 两次都不落结果文件（进程没跑起来或卡在跳卡）
+    _fake.OnStart = () => { };
+
+    var outcome = await CreateOrchestrator()
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+
+    outcome.Succeeded.ShouldBeFalse();
+    outcome.Error.ShouldNotBeNull();
+    outcome.Error!.ShouldContain("result_missing");
+    outcome.Attempts.ShouldBe(1);
+    outcome.Runs.ShouldBe(2);
+    File.Exists(Path.Combine(_outputDir, "2.gif")).ShouldBeFalse();
+  }
+
+  [Test]
+  public async Task RecordCardAsync_ProductUnusable_RetriesAndFails()
+  {
+    _fake.OnStart = () => WriteRecordResult(frames: 0, success: false);
+
+    var outcome = await CreateOrchestrator()
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+
+    outcome.Succeeded.ShouldBeFalse();
+    outcome.Error.ShouldNotBeNull();
+    outcome.Error!.ShouldContain("product_unusable");
+    outcome.Runs.ShouldBe(2);
+  }
+
+  [Test]
+  public async Task RecordCardAsync_CardNameMismatch_RetriesAndFails()
+  {
+    // 跳到邻卡：录制器回报的名字与目标卡不符，产物不能算这一张的
+    _fake.OnStart = () => WriteRecordResult(cardName: "别的符卡");
+
+    var outcome = await CreateOrchestrator()
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+
+    outcome.Succeeded.ShouldBeFalse();
+    outcome.Error.ShouldNotBeNull();
+    outcome.Error!.ShouldContain("card_name_mismatch");
+    outcome.Runs.ShouldBe(2);
+  }
+
+  [Test]
+  public async Task RecordCardAsync_GifNotOnDisk_RetriesAndFails()
+  {
+    // 录制器自报成功但产物没落下来
+    _fake.OnStart = () => WriteRecordResult(createGif: false);
+
+    var outcome = await CreateOrchestrator()
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+
+    outcome.Succeeded.ShouldBeFalse();
+    outcome.Error.ShouldNotBeNull();
+    outcome.Error!.ShouldContain("gif_missing");
+    outcome.Runs.ShouldBe(2);
+  }
+
+  [Test]
+  public async Task RecordCardAsync_SecondAttemptFails_ReportsErrorWithoutGif()
+  {
+    var run = 0;
+    _fake.OnStart = () =>
+    {
+      run++;
+      if (run == 1)
+      {
+        WriteRecordResult(frames: 350, complete: true);
+      }
+    };
+
+    var outcome = await CreateOrchestrator()
+      .RecordCardAsync(_engineDir, ModPackName, CreateCard(), _outputDir, new RecordingConfig());
+
+    outcome.Succeeded.ShouldBeFalse();
+    outcome.Error.ShouldNotBeNull();
+    outcome.Error!.ShouldContain("首次截断后重录失败");
+    outcome.Attempts.ShouldBe(2);
+    // 首次 1 次 + 第二次失败重试 1 次 + 重试前各 1 次
+    outcome.Runs.ShouldBe(3);
+    File.Exists(Path.Combine(_outputDir, "2.gif")).ShouldBeFalse();
+  }
+
+  [Test]
+  public async Task RecordCardAsync_TokenCancelled_ReportsCancelledAndKillsTree()
+  {
+    _fake.ExitsImmediately = false;
+    using var cts = new CancellationTokenSource();
+    cts.Cancel();
+
+    var outcome = await CreateOrchestrator()
+      .RecordCardAsync(
+        _engineDir,
+        ModPackName,
+        CreateCard(),
+        _outputDir,
+        new RecordingConfig(),
+        cts.Token,
+        TimeSpan.FromSeconds(5)
+      );
+
+    outcome.Succeeded.ShouldBeFalse();
+    outcome.Cancelled.ShouldBeTrue();
+    outcome.Error.ShouldNotBeNull();
+    outcome.Error!.ShouldContain("取消");
+    outcome.Runs.ShouldBe(1);
+    _fake.KillCount.ShouldBe(1);
+  }
+
+  [Test]
+  public async Task RecordCardAsync_NonCombatCard_RejectedWithoutStartingProcess()
+  {
+    var dialogue = CreateCard(combatOrdinal: 0) with
+    {
+      Name = string.Empty,
+      IsSpellCard = false,
+      IsCombat = false,
+    };
+
+    var outcome = await CreateOrchestrator()
+      .RecordCardAsync(_engineDir, ModPackName, dialogue, _outputDir, new RecordingConfig());
+
+    outcome.Succeeded.ShouldBeFalse();
+    outcome.Error.ShouldNotBeNull();
+    outcome.Error!.ShouldContain("不是战斗阶段");
+    outcome.Runs.ShouldBe(0);
+    _fake.StartInfo.ShouldBeNull();
+  }
+
+  [Test]
+  public async Task RecordCardAsync_InvalidEngineDir_RejectedWithoutStartingProcess()
+  {
+    var outcome = await CreateOrchestrator()
+      .RecordCardAsync(
+        Path.Combine(_root, "not_exists"),
+        ModPackName,
+        CreateCard(),
+        _outputDir,
+        new RecordingConfig()
+      );
+
+    outcome.Succeeded.ShouldBeFalse();
+    outcome.Error.ShouldNotBeNull();
+    outcome.Error!.ShouldContain("引擎目录不可用");
+    _fake.StartInfo.ShouldBeNull();
   }
 }
