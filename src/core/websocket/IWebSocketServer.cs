@@ -14,8 +14,18 @@ public interface IWebSocketServer
   /// <summary>停止服务器</summary>
   Task StopAsync();
 
-  /// <summary>服务器是否正在运行</summary>
+  /// <summary>服务器是否正在运行（已连接 / 已监听）；不代表本实例是否还在工作</summary>
   bool IsRunning { get; }
+
+  /// <summary>
+  /// 本实例是否持有活动链路：启动中、已连接、重连等待中均为 true。
+  /// </summary>
+  /// <remarks>
+  /// 用于启停按钮判定「该点是启动还是停止」：Client 模式下断线重连期间 <see cref="IsRunning"/>
+  /// 为 false 但实例仍在工作，若按 <see cref="IsRunning"/> 判定，用户此时点按钮只会再次「启动」（幂等后为空操作），
+  /// 无法停止重连。状态显示仍用 <see cref="IsRunning"/>，两者语义不要混用。
+  /// </remarks>
+  bool IsActive { get; }
 
   /// <summary>当前连接数</summary>
   int ConnectionCount { get; }

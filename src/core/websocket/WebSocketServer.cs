@@ -25,11 +25,16 @@ public class WebSocketServer : IWebSocketServer, IDisposable
   private readonly string _authToken;
   private HttpListener? _listener;
   private CancellationTokenSource? _cts;
+  private Task? _acceptLoopTask;
+  private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
   private bool _disposed;
   private string _lastError = string.Empty;
 
   /// <inheritdoc/>
   public bool IsRunning { get; private set; }
+
+  /// <inheritdoc/>
+  public bool IsActive { get; private set; }
 
   /// <inheritdoc/>
   public int ConnectionCount => _connectionManager.Count;
@@ -102,75 +107,159 @@ public class WebSocketServer : IWebSocketServer, IDisposable
   }
 
   /// <inheritdoc/>
-  public Task StartAsync()
+  /// <remarks>
+  /// 幂等判据是「接受循环是否还活着」，不是 <see cref="IsRunning"/>：
+  /// 监听器启动失败或已被停掉时 IsRunning 为 false，但循环/监听器可能仍在，按它判定会重复建监听器。
+  /// </remarks>
+  public async Task StartAsync()
   {
-    if (IsRunning)
-      return Task.CompletedTask;
-
+    await _lifecycleGate.WaitAsync();
     try
     {
-      _cts = new CancellationTokenSource();
-      _listener = new HttpListener();
-      _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
-      _listener.Start();
-      IsRunning = true;
-      _lastError = string.Empty;
-      _log.Print($"WebSocketServer started on port {_port}.");
+      if (_disposed || _acceptLoopTask is { IsCompleted: false })
+        return;
 
-      _ = Task.Run(() => AcceptConnectionsLoop(_cts.Token));
-    }
-    catch (HttpListenerException ex)
-    {
-      _lastError = $"端口 {_port} 监听失败：{ex.Message}";
-      _log.Err($"WebSocketServer failed to start on port {_port}: {ex.Message}");
-      IsRunning = false;
-    }
-    catch (Exception ex)
-    {
-      // 非 HttpListenerException 的启动失败（前缀非法等）此前会抛出并被 `_ = StartAsync()` 丢掉，
-      // 面板只剩「未运行」而没有任何原因；这里一律记下原因，避免同类静默。
-      _lastError = $"端口 {_port} 监听失败：{ex.GetType().Name}: {ex.Message}";
-      _log.Err(
-        $"WebSocketServer failed to start on port {_port}: {ex.GetType().Name}: {ex.Message}"
-      );
-      IsRunning = false;
-    }
-
-    return Task.CompletedTask;
-  }
-
-  /// <inheritdoc/>
-  public async Task StopAsync()
-  {
-    if (!IsRunning)
-      return;
-
-    IsRunning = false;
-    _cts?.Cancel();
-
-    // 关闭所有连接
-    foreach (var conn in _connectionManager.GetAllConnections())
-    {
+      HttpListener? listener = null;
       try
       {
-        if (conn.Socket.State == WebSocketState.Open)
-        {
-          await conn.Socket.CloseAsync(
-            WebSocketCloseStatus.NormalClosure,
-            "Server shutting down.",
-            CancellationToken.None
-          );
-        }
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        listener = new HttpListener();
+        listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
+        listener.Start();
+        _listener = listener;
+        IsRunning = true;
+        IsActive = true;
+        _lastError = string.Empty;
+        _log.Print($"WebSocketServer started on port {_port}.");
+
+        // 循环只认这个 listener 实例：端口变更后重建时不会被字段换新影响
+        _acceptLoopTask = Task.Run(() => AcceptConnectionsLoop(listener, token), token);
+      }
+      catch (HttpListenerException ex)
+      {
+        _lastError = $"端口 {_port} 监听失败：{ex.Message}";
+        _log.Err($"WebSocketServer failed to start on port {_port}: {ex.Message}");
+        CleanupFailedStart(listener);
       }
       catch (Exception ex)
       {
-        _log.Warn($"Error closing connection {conn.Id}: {ex.Message}");
+        // 非 HttpListenerException 的启动失败（前缀非法等）此前会抛出并被 `_ = StartAsync()` 丢掉，
+        // 面板只剩「未运行」而没有任何原因；这里一律记下原因，避免同类静默。
+        _lastError = $"端口 {_port} 监听失败：{ex.GetType().Name}: {ex.Message}";
+        _log.Err(
+          $"WebSocketServer failed to start on port {_port}: {ex.GetType().Name}: {ex.Message}"
+        );
+        CleanupFailedStart(listener);
       }
     }
+    finally
+    {
+      _lifecycleGate.Release();
+    }
+  }
 
-    _listener?.Stop();
-    _listener?.Close();
-    _log.Print($"WebSocketServer stopped on port {_port}.");
+  /// <inheritdoc/>
+  /// <remarks>
+  /// 不能按 <see cref="IsRunning"/> 提前返回：它只表示「监听器在跑」，而停止的真正工作是
+  /// 关掉监听器并等待接受循环退出；提前返回会留下仍占着端口的旧监听器（端口变更时表现为新端口启动失败）。
+  /// </remarks>
+  public async Task StopAsync()
+  {
+    await _lifecycleGate.WaitAsync();
+    try
+    {
+      if (_disposed)
+        return;
+
+      _cts?.Cancel();
+
+      // 关闭所有连接
+      foreach (var conn in _connectionManager.GetAllConnections())
+      {
+        try
+        {
+          if (conn.Socket.State == WebSocketState.Open)
+          {
+            await conn.Socket.CloseAsync(
+              WebSocketCloseStatus.NormalClosure,
+              "Server shutting down.",
+              CancellationToken.None
+            );
+          }
+        }
+        catch (Exception ex)
+        {
+          _log.Warn($"Error closing connection {conn.Id}: {ex.Message}");
+        }
+      }
+
+      // 先停监听器让 GetContextAsync 立刻失败，再等接受循环真正退出
+      var listener = _listener;
+      _listener = null;
+      try
+      {
+        listener?.Stop();
+        listener?.Close();
+      }
+      catch (Exception ex)
+      {
+        _log.Warn($"WebSocketServer: error closing listener on port {_port}: {ex.Message}");
+      }
+
+      var loop = _acceptLoopTask;
+      if (loop is not null)
+      {
+        try
+        {
+          await loop;
+        }
+        catch (OperationCanceledException)
+        {
+          // 取消是停止的正常路径
+        }
+        catch (Exception ex)
+        {
+          _log.Warn($"WebSocketServer: accept loop ended with error: {ex.Message}");
+        }
+      }
+
+      IsRunning = false;
+      IsActive = false;
+      _acceptLoopTask = null;
+      _cts?.Dispose();
+      _cts = null;
+      _log.Print($"WebSocketServer stopped on port {_port}.");
+    }
+    finally
+    {
+      _lifecycleGate.Release();
+    }
+  }
+
+  /// <summary>
+  /// 启动失败后的收尾：丢掉半成品监听器与令牌源，保证下一次启动能干净重试。
+  /// </summary>
+  /// <param name="listener">本次尝试创建的监听器（可能为 null 或已 Start 失败）。</param>
+  private void CleanupFailedStart(HttpListener? listener)
+  {
+    IsRunning = false;
+    IsActive = false;
+    _acceptLoopTask = null;
+    _listener = null;
+
+    try
+    {
+      listener?.Stop();
+      listener?.Close();
+    }
+    catch (Exception ex)
+    {
+      _log.Warn($"WebSocketServer: error closing listener after failed start: {ex.Message}");
+    }
+
+    _cts?.Dispose();
+    _cts = null;
   }
 
   /// <inheritdoc/>
@@ -207,17 +296,24 @@ public class WebSocketServer : IWebSocketServer, IDisposable
     _heartbeatService.OnHeartbeatTimeout -= HandleHeartbeatTimeout;
     _cts?.Cancel();
     _cts?.Dispose();
+    _acceptLoopTask = null;
     _listener?.Close();
+    IsActive = false;
     GC.SuppressFinalize(this);
   }
 
-  private async Task AcceptConnectionsLoop(CancellationToken token)
+  /// <summary>
+  /// 接受连接循环：只服务传入的 <paramref name="listener"/> 实例，直到被取消或监听器被关闭。
+  /// </summary>
+  /// <param name="listener">本次启动创建的监听器（不读字段，避免重启换实例时操作错对象）。</param>
+  /// <param name="token">取消令牌。</param>
+  private async Task AcceptConnectionsLoop(HttpListener listener, CancellationToken token)
   {
     while (!token.IsCancellationRequested)
     {
       try
       {
-        var context = await _listener!.GetContextAsync();
+        var context = await listener.GetContextAsync();
 
         if (context.Request.IsWebSocketRequest)
         {
@@ -238,8 +334,22 @@ public class WebSocketServer : IWebSocketServer, IDisposable
       {
         break;
       }
+      catch (ObjectDisposedException)
+      {
+        break;
+      }
+      catch (InvalidOperationException)
+      {
+        // 监听器已停止后 GetContextAsync 可能抛此异常，属停止的正常路径
+        break;
+      }
       catch (Exception ex)
       {
+        if (token.IsCancellationRequested)
+        {
+          break;
+        }
+
         _log.Err($"WebSocketServer.AcceptConnectionsLoop error: {ex.GetType().Name}: {ex.Message}");
         try
         {

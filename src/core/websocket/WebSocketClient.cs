@@ -23,11 +23,16 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   private readonly int _heartbeatIntervalMs;
   private ClientWebSocket? _ws;
   private CancellationTokenSource? _cts;
+  private Task? _loopTask;
+  private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
   private bool _disposed;
   private string _lastError = string.Empty;
 
   /// <inheritdoc/>
   public bool IsRunning { get; private set; }
+
+  /// <inheritdoc/>
+  public bool IsActive { get; private set; }
 
   /// <inheritdoc/>
   public int ConnectionCount => IsRunning ? 1 : 0;
@@ -95,56 +100,106 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   }
 
   /// <inheritdoc/>
-  public Task StartAsync()
+  /// <remarks>
+  /// 幂等判据是「连接循环是否还活着」，不是 <see cref="IsRunning"/>：断线重连期间
+  /// <see cref="IsRunning"/> 为 false 而循环仍在跑，按它判定会再起一条循环，
+  /// 同一实例产生两个并发客户端（对端「新连接踢旧连接」→ 互踢震荡）。
+  /// </remarks>
+  public async Task StartAsync()
   {
-    if (IsRunning)
-      return Task.CompletedTask;
-
-    // 未配置对端地址：既不连接、也不回退成 Server，直接失败并把原因留给面板/日志显示
-    if (string.IsNullOrWhiteSpace(_url))
+    await _lifecycleGate.WaitAsync();
+    try
     {
-      _lastError = "未配置 Koishi 地址";
-      _log.Err(
-        "WebSocketClient: 未配置 Koishi 地址，Client 模式未启动"
-          + "（请在 设置 → 群聊 填写 Koishi 地址）。"
-      );
-      return Task.CompletedTask;
-    }
+      if (_disposed || _loopTask is { IsCompleted: false })
+        return;
 
-    _lastError = string.Empty;
-    _cts = new CancellationTokenSource();
-    _ = Task.Run(() => ConnectLoop(_cts.Token));
-    return Task.CompletedTask;
+      // 未配置对端地址：既不连接、也不回退成 Server，直接失败并把原因留给面板/日志显示
+      if (string.IsNullOrWhiteSpace(_url))
+      {
+        _lastError = "未配置 Koishi 地址";
+        _log.Err(
+          "WebSocketClient: 未配置 Koishi 地址，Client 模式未启动"
+            + "（请在 设置 → 群聊 填写 Koishi 地址）。"
+        );
+        return;
+      }
+
+      _lastError = string.Empty;
+      _cts = new CancellationTokenSource();
+      var token = _cts.Token;
+      IsActive = true;
+      _loopTask = Task.Run(() => ConnectLoop(token), token);
+    }
+    finally
+    {
+      _lifecycleGate.Release();
+    }
   }
 
   /// <inheritdoc/>
+  /// <remarks>
+  /// 必须无条件取消并等待连接循环结束，不能用 <see cref="IsRunning"/> 提前返回：
+  /// 重连等待中它同样是 false，按它返回会留下仍在跑的循环，5 秒后自己连回来（「停不掉的客户端」）。
+  /// </remarks>
   public async Task StopAsync()
   {
-    if (!IsRunning)
-      return;
-
-    _cts?.Cancel();
-    IsRunning = false;
-
-    if (_ws?.State == WebSocketState.Open)
+    await _lifecycleGate.WaitAsync();
+    try
     {
-      try
-      {
-        await _ws.CloseAsync(
-          WebSocketCloseStatus.NormalClosure,
-          "Client stopping.",
-          CancellationToken.None
-        );
-      }
-      catch (Exception ex)
-      {
-        _log.Warn($"WebSocketClient: error closing connection: {ex.Message}");
-      }
-    }
+      if (_disposed)
+        return;
 
-    _ws?.Dispose();
-    _ws = null;
-    _log.Print("WebSocketClient stopped.");
+      _cts?.Cancel();
+
+      var loop = _loopTask;
+      if (loop is not null)
+      {
+        try
+        {
+          await loop;
+        }
+        catch (OperationCanceledException)
+        {
+          // 取消是停止的正常路径
+        }
+        catch (Exception ex)
+        {
+          _log.Warn($"WebSocketClient: connect loop ended with error: {ex.Message}");
+        }
+      }
+
+      IsRunning = false;
+      IsActive = false;
+      _loopTask = null;
+      _cts?.Dispose();
+      _cts = null;
+
+      // 循环已结束、socket 未被中止，这里补一次优雅关闭，让对端记「正常关闭」而不是 1006
+      if (_ws?.State == WebSocketState.Open)
+      {
+        try
+        {
+          using var closeTimeout = new CancellationTokenSource(TimeSpan.FromSeconds(3));
+          await _ws.CloseAsync(
+            WebSocketCloseStatus.NormalClosure,
+            "Client stopping.",
+            closeTimeout.Token
+          );
+        }
+        catch (Exception ex)
+        {
+          _log.Warn($"WebSocketClient: error closing connection: {ex.Message}");
+        }
+      }
+
+      _ws?.Dispose();
+      _ws = null;
+      _log.Print("WebSocketClient stopped.");
+    }
+    finally
+    {
+      _lifecycleGate.Release();
+    }
   }
 
   /// <inheritdoc/>
@@ -215,7 +270,9 @@ public class WebSocketClient : IWebSocketServer, IDisposable
     _disposed = true;
     _cts?.Cancel();
     _cts?.Dispose();
+    _loopTask = null;
     _ws?.Dispose();
+    IsActive = false;
     GC.SuppressFinalize(this);
   }
 
