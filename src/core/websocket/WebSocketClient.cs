@@ -24,12 +24,25 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   private ClientWebSocket? _ws;
   private CancellationTokenSource? _cts;
   private bool _disposed;
+  private string _lastError = string.Empty;
 
   /// <inheritdoc/>
   public bool IsRunning { get; private set; }
 
   /// <inheritdoc/>
   public int ConnectionCount => IsRunning ? 1 : 0;
+
+  /// <inheritdoc/>
+  public string Mode => "Client";
+
+  /// <inheritdoc/>
+  public int Port => 0;
+
+  /// <inheritdoc/>
+  public string Url => _url;
+
+  /// <inheritdoc/>
+  public string LastError => _lastError;
 
   /// <inheritdoc/>
   public event Action<string>? OnClientConnected;
@@ -87,6 +100,18 @@ public class WebSocketClient : IWebSocketServer, IDisposable
     if (IsRunning)
       return Task.CompletedTask;
 
+    // 未配置对端地址：既不连接、也不回退成 Server，直接失败并把原因留给面板/日志显示
+    if (string.IsNullOrWhiteSpace(_url))
+    {
+      _lastError = "未配置 Koishi 地址";
+      _log.Err(
+        "WebSocketClient: 未配置 Koishi 地址，Client 模式未启动"
+          + "（请在 设置 → 群聊 填写 Koishi 地址）。"
+      );
+      return Task.CompletedTask;
+    }
+
+    _lastError = string.Empty;
     _cts = new CancellationTokenSource();
     _ = Task.Run(() => ConnectLoop(_cts.Token));
     return Task.CompletedTask;
@@ -147,10 +172,18 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   /// 根据设置构建 Client 模式的 WebSocket URL（自动补全 ws:// 前缀和 Token）。
   /// </summary>
   /// <param name="settings">应用设置。</param>
-  /// <returns>完整的 WebSocket URL。</returns>
+  /// <returns>
+  /// 完整的 WebSocket URL；**未配置地址时返回空串**（不补出 <c>"ws://"</c> 这种半成品），
+  /// 由 <see cref="StartAsync"/> 拒绝启动并记录「未配置 Koishi 地址」。
+  /// </returns>
   public static string BuildClientUrl(AppSettings settings)
   {
     var url = settings.KoishiWebSocketUrl.Value.Trim();
+
+    if (url.Length == 0)
+    {
+      return string.Empty;
+    }
 
     // 自动补全 ws:// 前缀
     if (
@@ -198,6 +231,7 @@ public class WebSocketClient : IWebSocketServer, IDisposable
 
         await _ws.ConnectAsync(new Uri(_url), token);
         IsRunning = true;
+        _lastError = string.Empty;
         var connectionId = "koishi-client";
         _log.Print($"WebSocketClient: connected to {_url}.");
         OnClientConnected?.Invoke(connectionId);
@@ -214,6 +248,8 @@ public class WebSocketClient : IWebSocketServer, IDisposable
       }
       catch (Exception ex)
       {
+        // 记下失败原因：未连接时面板能直接显示「为什么没连上」，而不是只有一个「未连接」
+        _lastError = $"连接 {_url} 失败：{ex.Message}";
         _log.Warn($"WebSocketClient: connection failed: {ex.Message}");
       }
 

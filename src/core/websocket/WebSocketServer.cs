@@ -26,12 +26,25 @@ public class WebSocketServer : IWebSocketServer, IDisposable
   private HttpListener? _listener;
   private CancellationTokenSource? _cts;
   private bool _disposed;
+  private string _lastError = string.Empty;
 
   /// <inheritdoc/>
   public bool IsRunning { get; private set; }
 
   /// <inheritdoc/>
   public int ConnectionCount => _connectionManager.Count;
+
+  /// <inheritdoc/>
+  public string Mode => "Server";
+
+  /// <inheritdoc/>
+  public int Port => _port;
+
+  /// <inheritdoc/>
+  public string Url => string.Empty;
+
+  /// <inheritdoc/>
+  public string LastError => _lastError;
 
   /// <inheritdoc/>
   public event Action<string>? OnClientConnected;
@@ -101,13 +114,25 @@ public class WebSocketServer : IWebSocketServer, IDisposable
       _listener.Prefixes.Add($"http://127.0.0.1:{_port}/");
       _listener.Start();
       IsRunning = true;
+      _lastError = string.Empty;
       _log.Print($"WebSocketServer started on port {_port}.");
 
       _ = Task.Run(() => AcceptConnectionsLoop(_cts.Token));
     }
     catch (HttpListenerException ex)
     {
+      _lastError = $"端口 {_port} 监听失败：{ex.Message}";
       _log.Err($"WebSocketServer failed to start on port {_port}: {ex.Message}");
+      IsRunning = false;
+    }
+    catch (Exception ex)
+    {
+      // 非 HttpListenerException 的启动失败（前缀非法等）此前会抛出并被 `_ = StartAsync()` 丢掉，
+      // 面板只剩「未运行」而没有任何原因；这里一律记下原因，避免同类静默。
+      _lastError = $"端口 {_port} 监听失败：{ex.GetType().Name}: {ex.Message}";
+      _log.Err(
+        $"WebSocketServer failed to start on port {_port}: {ex.GetType().Name}: {ex.Message}"
+      );
       IsRunning = false;
     }
 

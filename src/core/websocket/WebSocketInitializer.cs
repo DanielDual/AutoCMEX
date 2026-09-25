@@ -64,8 +64,11 @@ public class WebSocketInitializer
       StringComparison.OrdinalIgnoreCase
     );
 
-    if (isClientMode && !string.IsNullOrEmpty(settings.KoishiWebSocketUrl.Value))
+    if (isClientMode)
     {
+      // 地址为空时**不再静默回退成 Server**：仍建 Client 实例，由它的 StartAsync 明确失败并把
+      // 「未配置 Koishi 地址」记进 LastError——否则设置写着 Client、实际却跑着 Server，面板与
+      // 设置页都显示 Client，用户看到的模式与真实行为不符。
       var clientUrl = WebSocketClient.BuildClientUrl(settings);
       return new WebSocketClient(
         clientUrl,

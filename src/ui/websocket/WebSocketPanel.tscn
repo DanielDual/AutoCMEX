@@ -68,6 +68,7 @@ text = "启动"
 layout_mode = 2
 
 [node name="ClientListLabel" type="Label" parent="MainContainer" unique_id=594023392]
+unique_name_in_owner = true
 layout_mode = 2
 text = "已连接客户端:"
 
@@ -75,6 +76,12 @@ text = "已连接客户端:"
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
+
+[node name="ErrorLabel" type="Label" parent="MainContainer" unique_id=1144203879]
+unique_name_in_owner = true
+modulate = Color(1, 0.4, 0.4, 1)
+layout_mode = 2
+autowrap_mode = 3
 
 [node name="RefreshTimer" type="Timer" parent="." unique_id=597801032]
 unique_name_in_owner = true

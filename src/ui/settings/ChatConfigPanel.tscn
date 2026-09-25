@@ -69,3 +69,9 @@ unique_name_in_owner = true
 
 [node name="PluginOkDialog" type="AcceptDialog" parent="." unique_id=1866114070]
 unique_name_in_owner = true
+
+[node name="PluginPathLabel" type="Label" parent="." unique_id=952866359]
+unique_name_in_owner = true
+layout_mode = 2
+text = "插件状态: 未安装"
+autowrap_mode = 3

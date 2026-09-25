@@ -250,10 +250,11 @@ public partial class MainWindow
     var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService, _infoEvents);
     _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
-    // 更新面板绑定：通过接口解耦，避免具体类型检查
+    // 更新面板绑定：通过接口解耦，避免具体类型检查。
+    // 不再把「设置里的模式」传进去——面板一律按实例自身的实际模式/端口/地址显示。
     if (WebSocketPanelNode is IWebSocketPanel panel)
     {
-      panel.UpdateServer(_webSocketServer, _dataManager.Settings.WebSocketMode.Value);
+      panel.UpdateServer(_webSocketServer);
     }
 
     await _webSocketServer.StartAsync();
