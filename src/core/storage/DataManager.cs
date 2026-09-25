@@ -27,6 +27,7 @@ public class DataManager : IDisposable
   private AutoList<CreatorPackage> _creatorPackages = new();
   private MergeConfig _mergeConfig = new();
   private InfoConfig _infoConfig = new();
+  private RecordingConfig _recordingConfig = new();
 
   private CancellationTokenSource? _saveCts;
   private readonly object _saveLock = new();
@@ -40,6 +41,7 @@ public class DataManager : IDisposable
   public AutoList<CreatorPackage> CreatorPackages => _creatorPackages;
   public MergeConfig MergeConfig => _mergeConfig;
   public InfoConfig InfoConfig => _infoConfig;
+  public RecordingConfig RecordingConfig => _recordingConfig;
 
   /// <summary>
   /// 数据目录绝对路径。
@@ -146,6 +148,10 @@ public class DataManager : IDisposable
     // 回填被 JSON 显式 null 覆盖的 AutoValue/AutoList 属性，保证同步绑定链路非空
     _infoConfig.EnsureIntegrity();
 
+    _recordingConfig = LoadJson<RecordingConfig>("recording_config.json") ?? new();
+    // 同上：录制配置也含 AutoValue 属性
+    _recordingConfig.EnsureIntegrity();
+
     _log.Print(
       $"DataManager.LoadAll: bosses={_bosses.Count}, aliases={_aliases.Count}, "
         + $"aiModels={_settings.AiModels.Count}, creatorPackages={_creatorPackages.Count}, "
@@ -230,6 +236,7 @@ public class DataManager : IDisposable
       SaveJson("creator_packages.json", new List<CreatorPackage>(_creatorPackages));
       SaveJson("merge_config.json", _mergeConfig);
       SaveJson("info_config.json", _infoConfig);
+      SaveJson("recording_config.json", _recordingConfig);
       _log.Print("DataManager: SaveAll succeeded.");
     }
     catch (Exception ex)
