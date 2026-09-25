@@ -74,7 +74,7 @@ public class PluginDeployerTest : TestClass
   }
 
   [Test]
-  public void Inspect_WithoutManifest_ReportsBrokenAndBlocksDeploy()
+  public void Inspect_WithoutManifest_TreatsItAsEmptyAndKeepsInstallAvailable()
   {
     File.Delete(_manifestPath);
 
@@ -82,11 +82,91 @@ public class PluginDeployerTest : TestClass
 
     inspection.EngineDirUsable.ShouldBeTrue();
     inspection.ManifestExists.ShouldBeFalse();
+    // 清单缺失不是损坏：全新引擎上必须还能一键安装（安装会新建清单），否则用户无从下手
+    inspection.Autocmex.State.ShouldBe(RecordingPluginState.Missing);
+    inspection.Autocmex.CanInstall.ShouldBeTrue();
+    inspection.Autocmex.Detail.ShouldContain("安装时会新建");
+    inspection.Recorder.State.ShouldBe(RecordingPluginState.Missing);
+    inspection.Recorder.CanEnable.ShouldBeFalse();
+  }
+
+  [Test]
+  public void Inspect_WithoutManifestButWithPluginDirs_ReportsInstalledButNotLoaded()
+  {
+    WritePluginFile($"{PluginDeployer.AutocmexPluginDirName}/__init__.lua", "autocmex");
+    WritePluginFile($"{RecorderDirName}/recorder.lua", "rec");
+    File.Delete(_manifestPath);
+
+    var inspection = PluginDeployer.Inspect(_engineDir);
+
+    // 插件文件在，但引擎不读这份缺失的清单：状态是「装了却没生效」，不是「已就绪」
+    inspection.Autocmex.State.ShouldBe(RecordingPluginState.InstalledDisabled);
+    inspection.Autocmex.CanInstall.ShouldBeTrue();
+    inspection.Autocmex.Detail.ShouldContain("插件清单不存在");
+    inspection.Recorder.State.ShouldBe(RecordingPluginState.InstalledDisabled);
+    // 「启用」要求清单里先有条目，这里没法凭空造，只能指路
+    inspection.Recorder.CanEnable.ShouldBeFalse();
+    inspection.Recorder.Detail.ShouldContain("安装并启用 autocmex");
+    inspection.AllReady.ShouldBeFalse();
+  }
+
+  [Test]
+  public void Inspect_BrokenManifest_ReportsBrokenAndBlocksDeploy()
+  {
+    WriteManifest("{ not json");
+
+    var inspection = PluginDeployer.Inspect(_engineDir);
+
+    inspection.ManifestExists.ShouldBeTrue();
     inspection.Autocmex.State.ShouldBe(RecordingPluginState.ManifestBroken);
     inspection.Recorder.State.ShouldBe(RecordingPluginState.ManifestBroken);
+    // 读不出来的清单不能拿去写：宁可不让用户动手，也不覆盖用户文件
     inspection.Autocmex.CanInstall.ShouldBeFalse();
     inspection.Recorder.CanEnable.ShouldBeFalse();
-    inspection.Autocmex.Detail.ShouldContain("文件不存在");
+    inspection.Autocmex.Detail.ShouldContain("插件清单无法解析");
+  }
+
+  [Test]
+  public void Inspect_EntryWithSimilarDirName_IsNotTreatedAsThePlugin()
+  {
+    WritePluginFile($"{PluginDeployer.AutocmexPluginDirName}/__init__.lua", "autocmex");
+    WriteManifest(
+      """
+      [
+        { "path": "plugins/autocmex_old/", "enable": false }
+      ]
+      """
+    );
+
+    var inspection = PluginDeployer.Inspect(_engineDir);
+
+    // autocmex_old 是另一个目录：不能拿它的 enable=false 把本插件判成「被禁用」
+    inspection.Autocmex.State.ShouldBe(RecordingPluginState.Ready);
+  }
+
+  [Test]
+  public void InstallAutocmex_AddsEntryWithoutTouchingSimilarlyNamedEntry()
+  {
+    WriteManifest(
+      """
+      [
+        { "path": "plugins/autocmex_old/", "enable": false }
+      ]
+      """
+    );
+
+    PluginDeployer.InstallAutocmex(_engineDir);
+
+    var entries = ManifestEntries();
+    entries.Count.ShouldBe(2);
+    entries.First(e => e["path"]!.GetValue<string>().Contains("autocmex_old"))["enable"]!
+      .GetValue<bool>()
+      .ShouldBeFalse();
+    entries.First(e => e["name"]?.GetValue<string>() == PluginDeployer.AutocmexPluginDirName)[
+      "enable"
+    ]!
+      .GetValue<bool>()
+      .ShouldBeTrue();
   }
 
   [Test]
@@ -288,12 +368,23 @@ public class PluginDeployerTest : TestClass
   }
 
   [Test]
+  public void TryValidateForRecording_WithoutManifest_ReportsMissingManifest()
+  {
+    File.Delete(_manifestPath);
+
+    PluginDeployer.TryValidateForRecording(_engineDir, out var reason).ShouldBeFalse();
+
+    // 能装 ≠ 能录：清单不存在时引擎不加载任何插件，起录必然拿到没有录制能力的进程
+    reason.ShouldBe($"引擎插件清单不存在：{_manifestPath}");
+  }
+
+  [Test]
   public void TryValidateForRecording_WithoutAutocmex_ReportsInstallHint()
   {
     PluginDeployer.TryValidateForRecording(_engineDir, out var reason).ShouldBeFalse();
 
-    reason.ShouldContain("录制插件未安装到引擎");
-    reason.ShouldContain("设置页");
+    // 板块里看到的就是这句话，逐字比对（曾因拼接检查细节而悄悄变味）
+    reason.ShouldBe("录制插件未安装到引擎，请先在设置页安装或启用插件");
   }
 
   [Test]
@@ -310,7 +401,7 @@ public class PluginDeployerTest : TestClass
 
     PluginDeployer.TryValidateForRecording(_engineDir, out var reason).ShouldBeFalse();
 
-    reason.ShouldContain("录制插件未启用");
+    reason.ShouldBe("录制插件未启用，请先在设置页启用插件");
   }
 
   [Test]
@@ -320,7 +411,7 @@ public class PluginDeployerTest : TestClass
 
     PluginDeployer.TryValidateForRecording(_engineDir, out var reason).ShouldBeFalse();
 
-    reason.ShouldContain("未找到弹幕录制器插件");
+    reason.ShouldBe("未找到弹幕录制器插件，请先在设置页安装或启用插件");
   }
 
   [Test]

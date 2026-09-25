@@ -185,6 +185,105 @@ public class RecordingSandboxTest : TestClass
   }
 
   [Test]
+  public async Task CreateAsync_MissingPluginEntryFile_ThrowsWithInstallHint()
+  {
+    File.Delete(Path.Combine(_gameDir, "plugins", "autocmex", "__init__.lua"));
+
+    var error = await Should.ThrowAsync<RecordingSandboxException>(() => CreateAsync());
+
+    // 目录在但入口文件不在：引擎加载不到插件，与「没装」同等处理，文案沿用设置页那句指引
+    error.Message.ShouldBe("录制插件未安装到引擎，请先在设置页安装或启用插件");
+    Directory.Exists(_sandboxRoot).ShouldBeFalse();
+  }
+
+  [Test]
+  public async Task CreateAsync_DisabledPlugin_ThrowsWithEnableHint()
+  {
+    WriteFile("plugins/plugins.json", """[{ "name": "autocmex", "enable": false }]""");
+
+    var error = await Should.ThrowAsync<RecordingSandboxException>(() => CreateAsync());
+
+    error.Message.ShouldBe("录制插件未启用，请先在设置页启用插件");
+    Directory.Exists(_sandboxRoot).ShouldBeFalse();
+  }
+
+  [Test]
+  public async Task CreateAsync_WithoutManifest_ThrowsBeforeTouchingDisk()
+  {
+    var manifestPath = Path.Combine(_gameDir, "plugins", "plugins.json");
+    File.Delete(manifestPath);
+
+    var error = await Should.ThrowAsync<RecordingSandboxException>(() => CreateAsync());
+
+    // 清单不在，引擎一个插件都不会加载：起录只会白跑一轮
+    error.Message.ShouldBe($"引擎插件清单不存在：{manifestPath}");
+    Directory.Exists(_sandboxRoot).ShouldBeFalse();
+  }
+
+  [Test]
+  public async Task CreateAsync_WithoutRecorder_ThrowsWithThirdPartyHint()
+  {
+    Directory.Delete(
+      Path.Combine(_gameDir, "plugins", "[pluginpackage]danmaku_recorder_1.0.1"),
+      recursive: true
+    );
+
+    var error = await Should.ThrowAsync<RecordingSandboxException>(() => CreateAsync());
+
+    error.Message.ShouldBe("未找到弹幕录制器插件，请先在设置页安装或启用插件");
+    Directory.Exists(_sandboxRoot).ShouldBeFalse();
+  }
+
+  [Test]
+  public void TryValidateRoot_WithEmptyConfig_FallsBackToDefaultDirAndCreatesIt()
+  {
+    var ok = RecordingSandbox.TryValidateRoot(null, out var root, out var reason);
+
+    ok.ShouldBeTrue();
+    reason.ShouldBeEmpty();
+    root.ShouldBe(RecordingSandbox.GetDefaultRootDir());
+    Directory.Exists(root).ShouldBeTrue();
+    // 探针只证明「能写」，不留文件
+    Directory.EnumerateFiles(root, ".autocmex-probe-*").ShouldBeEmpty();
+  }
+
+  [Test]
+  public void TryValidateRoot_WithMissingConfiguredDir_RejectsInsteadOfCreating()
+  {
+    var missing = Path.Combine(_root, "not-created-yet");
+
+    RecordingSandbox.TryValidateRoot(missing, out var root, out var reason).ShouldBeFalse();
+
+    root.ShouldBe(missing);
+    reason.ShouldContain("沙箱根目录不存在");
+    // 手选的目录必须已存在：路径很可能是用户打错的，不替他造
+    Directory.Exists(missing).ShouldBeFalse();
+  }
+
+  [Test]
+  public void TryValidateRoot_WithFileInsteadOfDir_Rejects()
+  {
+    var filePath = Path.Combine(_root, "picked-a-file.txt");
+    File.WriteAllText(filePath, "not a dir");
+
+    RecordingSandbox.TryValidateRoot(filePath, out _, out var reason).ShouldBeFalse();
+
+    reason.ShouldContain("沙箱根目录不存在");
+  }
+
+  [Test]
+  public void TryValidateRoot_WithWritableDir_AcceptsAndLeavesNoProbeFile()
+  {
+    Directory.CreateDirectory(_sandboxRoot);
+
+    RecordingSandbox.TryValidateRoot(_sandboxRoot, out var root, out var reason).ShouldBeTrue();
+
+    root.ShouldBe(_sandboxRoot);
+    reason.ShouldBeEmpty();
+    Directory.EnumerateFileSystemEntries(_sandboxRoot).ShouldBeEmpty();
+  }
+
+  [Test]
   public async Task CreateAsync_MissingEngineExe_Throws()
   {
     File.Delete(Path.Combine(_gameDir, ExeFileName));

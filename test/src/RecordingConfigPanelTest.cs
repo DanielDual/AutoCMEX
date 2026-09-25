@@ -335,6 +335,104 @@ public class RecordingConfigPanelTest : TestClass
     _panel.EngineStatusLabel.Text.ShouldContain("引擎目录可用");
   }
 
+  [Test]
+  public void InferEngineDir_WithSharpDirThatHasNoEngineAbove_KeepsConfigAndExplains()
+  {
+    // Sharp 目录在，但上溯不到 game/launch：推断失败不能写进配置
+    var sharpDir = Path.Combine(_root, "sharp-alone");
+    Directory.CreateDirectory(sharpDir);
+    _dm.MergeConfig.SharpEditorPath.Value = sharpDir;
+
+    _panel.Refresh();
+    _panel.InferEngineDirButton.Disabled.ShouldBeFalse();
+
+    _panel.InferEngineDir();
+
+    _dm.RecordingConfig.EngineDir.Value.ShouldBeEmpty();
+    _panel.EngineDirEdit.Text.ShouldBeEmpty();
+    _panel.ActionLabel.Text.ShouldContain("未从 Sharp 目录推断出引擎目录");
+  }
+
+  [Test]
+  public void RefreshStatuses_WithDisabledPlugins_ReportsReasonAndKeepsButtonsConsistent()
+  {
+    WriteManifest(
+      $$"""
+      [
+        { "name": "{{PluginDeployer.AutocmexPluginDirName}}", "enable": false },
+        { "path": "plugins/{{RecorderDirName}}/", "enable": false }
+      ]
+      """
+    );
+    _dm.RecordingConfig.EngineDir.Value = _engineDir;
+    var panel = NewPanel();
+
+    panel.RefreshStatuses();
+
+    panel.PluginStatusLabel.Text.ShouldContain("autocmex：已安装但被禁用（引擎不会加载）");
+    panel.PluginStatusLabel.Text.ShouldContain("danmaku_recorder：已安装但被禁用");
+    // 都被禁用：一个按钮是「重装」、一个是「启用」，且都不能当成就绪
+    panel.InstallPluginButton.Disabled.ShouldBeFalse();
+    panel.EnableRecorderButton.Disabled.ShouldBeFalse();
+  }
+
+  [Test]
+  public void RefreshStatuses_WithBrokenManifest_DisablesEveryDeployButton()
+  {
+    WriteManifest("{ not json");
+    _dm.RecordingConfig.EngineDir.Value = _engineDir;
+    var panel = NewPanel();
+
+    panel.RefreshStatuses();
+
+    panel.PluginStatusLabel.Text.ShouldContain("插件清单损坏，已停止一切部署动作");
+    // 坏清单不拿去写：两个部署按钮都要停
+    panel.InstallPluginButton.Disabled.ShouldBeTrue();
+    panel.EnableRecorderButton.Disabled.ShouldBeTrue();
+  }
+
+  [Test]
+  public void RefreshStatuses_WithoutManifest_KeepsInstallAvailableWithReason()
+  {
+    File.Delete(Path.Combine(_pluginsDir, PluginDeployer.ManifestFileName));
+    _dm.RecordingConfig.EngineDir.Value = _engineDir;
+    var panel = NewPanel();
+
+    panel.RefreshStatuses();
+
+    // 全新引擎（清单还没生成）上不能把安装也堵死，否则用户无从下手
+    panel.PluginStatusLabel.Text.ShouldContain("插件清单不存在");
+    panel.InstallPluginButton.Disabled.ShouldBeFalse();
+    // 「启用」要求清单里先有条目，这里没有，只能禁用按钮并在状态行指路
+    panel.EnableRecorderButton.Disabled.ShouldBeTrue();
+  }
+
+  [Test]
+  public void EnableRecorder_WithBrokenManifest_ReportsFailureAndKeepsManifestBytes()
+  {
+    var broken = "{ not json";
+    WriteManifest(broken);
+    _dm.RecordingConfig.EngineDir.Value = _engineDir;
+    var panel = NewPanel();
+
+    panel.EnableRecorder();
+
+    panel.ActionLabel.Text.ShouldContain("插件清单损坏");
+    File.ReadAllText(Path.Combine(_pluginsDir, PluginDeployer.ManifestFileName)).ShouldBe(broken);
+  }
+
+  [Test]
+  public void EnableRecorder_WithoutEntry_ReportsFailureInsteadOfSilentlyDoingNothing()
+  {
+    WriteManifest($$"""[{ "name": "{{PluginDeployer.AutocmexPluginDirName}}", "enable": true }]""");
+    _dm.RecordingConfig.EngineDir.Value = _engineDir;
+    var panel = NewPanel();
+
+    panel.EnableRecorder();
+
+    panel.ActionLabel.Text.ShouldContain("没有弹幕录制器条目");
+  }
+
   /// <summary>新建一个面板（同一 DataManager，便于验证「从配置回填」）。</summary>
   /// <returns>已建好的面板。</returns>
   private RecordingConfigPanel NewPanel()
