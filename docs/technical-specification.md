@@ -170,6 +170,7 @@ Koishi v4。
 | AI 模型配置       | 本地加密存储 | JSON，AES 加密 |
 | 群聊机器人配置    | 本地配置文件 | JSON           |
 | 应用设置          | 本地配置文件 | JSON           |
+| 录制配置          | 本地配置文件 | JSON           |
 
 ### 保存策略
 
@@ -181,6 +182,53 @@ Koishi v4。
 1. 敏感信息（API 密钥等）使用 AES 加密存储，密钥文件存放于用户目录。
 2. 不得将敏感信息写入日志。
 3. 配置文件导出时自动排除敏感字段。
+
+---
+
+## 符卡 GIF 录制模块
+
+由 CMEX 驱动 LuaSTG 引擎进程，自动逐张录制 Boss 的符卡与非符，产出与手工整理**同构**的 GIF 集（`manifest.json` + `序号.gif`），以复用信息板块既有的导入与展示链路。
+
+### 引擎侧启动契约
+
+启动参数是一个**单参数**，内容是 Lua 赋值代码（整串用双引号包裹，值内不得出现引号或换行）：
+
+```
+LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs/<任务号>.json'; setting.showcfg=false; start_game=true; cheat=true"
+```
+
+- `start_game=true` 必带，否则引擎会把 `setting.mod` 覆盖成启动器。
+- `cheat=true` 必带：`cheat` 是引擎全局无敌开关，不开则自机被弹幕撞死、卡提前结束、GIF 不完整。
+- **不覆盖** `setting.resx/resy`：分辨率归玩家 `userdata/setting.json` 所有，覆盖会改坏画面比例；GIF 尺寸因此随玩家设置浮动（实测玩家 1280×960 且录制器 `scale=0.5` 时产物为 640×480）。
+- `setting.autocmex_job` 这类裸赋值自定义键不会被引擎写回 `userdata/setting.json`，故插件可常驻 `game/plugins/autocmex/` 且不影响玩家正常启动。
+
+### 任务与结果契约
+
+任务由 CMEX 写、结果与诊断日志由插件写，目录固定为 `<引擎>/game/autocmex/{jobs,results,logs}/`（由 CMEX 预建）；任务内的路径一律用正斜杠、相对 `game/`（即引擎进程的工作目录）。
+
+| 阶段 | `phase`     | 任务关键字段                                                     | 结果关键字段                                                                               |
+| ---- | ----------- | ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| 枚举 | `enumerate` | —                                                                | `boss_name` / `boss_class` / `cards[]`（`absolute_index`/`name`/`is_sc`/`is_combat`/`t3`） |
+| 录制 | `record`    | `absolute_index` / `interval` / `max_frame` / `include_previous` | `task_name` / `gif_path` / `frames` / `complete` / `success` / `size`                      |
+
+- 结果必须回传同一 `job_id`，CMEX 据此拒绝上一轮遗留的结果文件。
+- 插件先写 `.tmp` 再改名，避免 CMEX 读到写了一半的 JSON。
+
+### 关键设计决策
+
+- **跳卡置 `lstg.var.sc_index = nil`**（而非沿用 `StageDebugView` 的 `-1`）：`UI.lua` 只判真值就直接索引 `_sc_table[sc_index][1]`，`-1` 会索引 nil 崩渲染。
+- **逐帧推进靠包装全局 `DoFrame`**：引擎每帧按名字取该函数；插件在 `afterTHlib` 事件后包装，并在原函数执行**完毕之后**判定当前卡（`b.current_card` 由 `DoFrame` 内部赋值）。
+- **收尾以录制器自报为准**：`get_last_record_info()` 的 `success`/`frame`/`task_name`/`size` 可直接读，无需轮询文件大小；录满 `max_frame` 时由录制器自行收尾，插件不得重复 `end_record`。
+- **同一引擎目录不可并发**：录制器产物名是秒级时间戳、临时目录在启动时被清空，并发会互相破坏，串行化由编排层保证。
+- **进程超时必须把编码耗时算进去**：`end_record` 同步编码，实测约 0.08–0.17 s/帧（350 帧约 36 s、702 帧约 58 s）。
+- **卡表口径**：`_editor_class[boss].cards` 含对话阶段，`_sc_table` 只含符卡，二者不同构；序号一律取 `cards` 中的**绝对下标**（1 基）。字段与引擎自身判定同源：`is_combat` 由 `spboss.lua:1433`（`c.is_combat = not (fake)`，对话卡按 `fake` 处理后为 `false`）置位，`is_sc` 由 `boss_card.lua:44`（`c.is_sc = (name ~= '')`）置位；`t3` 在引擎内是**帧**（`boss_card.lua:42` 的 `int(t3) * 60`），插件按 ÷60 换算成秒后写出。
+
+### 实施阶段
+
+P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环 → P3 编排/重试/取消/报告 → P4 配置与设置面板 → P5 归集、`manifest.json` 与自动导入 → P6 单测补齐与真机验收。
+
+- C# 侧（`src/core/recording/`）：`EngineLocator` 校验引擎目录并定位 exe；`RecordingJobWriter` 写任务文件并维护运行期目录；`GameProcessRunner` 构造参数串、启动进程、超时杀进程、校验并读回结果、回收 `engine.log` 尾部；`GifNaming` 承载序号与命名规则；`RecordingOrchestrator` 串起「校验引擎 → 写任务 → 启动进程 → 校验结果 → 派生序号」的枚举闭环（P1 范围内只开枚举阶段，逐卡录制与重试在同一入口下续接）。
+- 游戏侧插件（`src/plugin/luastg/autocmex/`）：`__init__` 入口（无任务时零副作用）、`job` 任务校验与结果写出、`cards` 卡表枚举、`record` 跳卡/起录/收尾/退出、`log` 诊断日志。
 
 ---
 
@@ -199,10 +247,13 @@ AutoCMEX/
 │   ├── core/               # 核心业务逻辑
 │   │   ├── guessing/       # 猜测处理引擎（策略模式）
 │   │   ├── info/           # 信息板块：两表推导、GIF 集导入、离屏出图、发布编排
+│   │   ├── recording/      # 符卡 GIF 录制：引擎定位、任务写出、进程运行、命名规则
 │   │   ├── ai/             # AI 模型调用（OpenAI / Anthropic）
 │   │   └── storage/        # 数据存储与 AES 加密
 │   └── plugin/             # 外部插件
-│       └── koishi/         # Koishi v4 插件代码
+│       ├── koishi/         # Koishi v4 插件代码
+│       └── luastg/         # LuaSTG 引擎侧插件
+│           └── autocmex/   # 符卡录制插件（随应用分发到 game/plugins/autocmex/）
 ├── docs/                   # 项目文档
 └── assets/                 # 静态资源（Logo 等）
 ```
@@ -213,12 +264,12 @@ AutoCMEX/
 
 ## 当前任务状态
 
-| 板块 | 状态     | 说明                    |
-| ---- | -------- | ----------------------- |
-| 整合 | 暂不开发 | 细节待补充              |
-| 猜测 | 已实现   | 核心板块，需求已明确    |
-| 信息 | 已实现   | 四栏展示 + 一键转发     |
-| 设置 | 部分实现 | AI 模型与群聊配置已实现 |
-| 帮助 | 待开发   | 内置 Markdown 渲染      |
+| 板块 | 状态     | 说明                                    |
+| ---- | -------- | --------------------------------------- |
+| 整合 | 暂不开发 | 细节待补充                              |
+| 猜测 | 已实现   | 核心板块，需求已明确                    |
+| 信息 | 已实现   | 四栏展示 + 一键转发；符卡录制模块实施中 |
+| 设置 | 部分实现 | AI 模型与群聊配置已实现                 |
+| 帮助 | 待开发   | 内置 Markdown 渲染                      |
 
-**当前阶段**：核心功能（猜测引擎、AI 模糊化、数据存储、WebSocket 服务）已实现，设置板块 AI 模型与群聊配置、信息板块四栏展示与发布已完成。
+**当前阶段**：核心功能（猜测引擎、AI 模糊化、数据存储、WebSocket 服务）已实现，设置板块 AI 模型与群聊配置、信息板块四栏展示与发布已完成；符卡 GIF 录制模块进行中，已完成引擎侧插件与枚举最小闭环（P1）。
