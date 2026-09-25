@@ -58,7 +58,7 @@ public class RecordingSandboxTest : TestClass
     WriteFile("packages/script/core.lua", "core");
     WriteFile("packages/script/deep/nested/leaf.lua", "leaf");
     WriteFile("plugins/plugins.json", "[]");
-    WriteFile("plugins/autocmex/main.lua", "autocmex");
+    WriteFile("plugins/autocmex/__init__.lua", "autocmex");
     WriteFile("plugins/[pluginpackage]danmaku_recorder_1.0.1/danmaku_recorder/recorder.lua", "rec");
     WriteFile("userdata/setting.json", "{\"volume\":1}");
 
@@ -117,7 +117,8 @@ public class RecordingSandboxTest : TestClass
     File.Exists(Path.Combine(sandbox.GameDir, "packages", "script", "deep", "nested", "leaf.lua"))
       .ShouldBeTrue();
     File.Exists(Path.Combine(sandbox.GameDir, "plugins", "plugins.json")).ShouldBeTrue();
-    File.Exists(Path.Combine(sandbox.GameDir, "plugins", "autocmex", "main.lua")).ShouldBeTrue();
+    File.Exists(Path.Combine(sandbox.GameDir, "plugins", "autocmex", "__init__.lua"))
+      .ShouldBeTrue();
     File.Exists(
         Path.Combine(
           sandbox.GameDir,
@@ -257,7 +258,7 @@ public class RecordingSandboxTest : TestClass
         Path.Combine(_gameDir, "packages", "script", "deep", "nested", "leaf.lua")
       ).Length
       + new FileInfo(Path.Combine(_gameDir, "plugins", "plugins.json")).Length
-      + new FileInfo(Path.Combine(_gameDir, "plugins", "autocmex", "main.lua")).Length
+      + new FileInfo(Path.Combine(_gameDir, "plugins", "autocmex", "__init__.lua")).Length
       + new FileInfo(
         Path.Combine(
           _gameDir,

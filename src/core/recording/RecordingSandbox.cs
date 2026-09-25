@@ -64,11 +64,11 @@ public sealed class RecordingSandbox
   /// <summary>镜像的 <c>game/</c> 根级通配文件（DLL 与引擎版本标记）。</summary>
   private static readonly string[] _mirroredRootPatterns = { "*.dll", "0.*" };
 
-  /// <summary>录制用到的本插件落地目录名。</summary>
-  public const string AutocmexPluginDirName = "autocmex";
+  /// <summary>录制用到的本插件落地目录名（判据与部署动作统一由 <see cref="PluginDeployer"/> 承载）。</summary>
+  public const string AutocmexPluginDirName = PluginDeployer.AutocmexPluginDirName;
 
   /// <summary>录制器的插件目录名关键字（实际为 <c>[pluginpackage]danmaku_recorder_x.y.z</c>）。</summary>
-  public const string RecorderPluginKeyword = "danmaku_recorder";
+  public const string RecorderPluginKeyword = PluginDeployer.RecorderPluginKeyword;
 
   /// <summary>沙箱清单里的待录制工程包目录名。</summary>
   public const string ModDirName = "mod";
@@ -105,13 +105,82 @@ public sealed class RecordingSandbox
   public static string ResolveRootDir(string? configuredRoot) =>
     string.IsNullOrWhiteSpace(configuredRoot) ? GetDefaultRootDir() : configuredRoot!;
 
+  /// <summary>校验沙箱根目录是否可用于起录（只做一次写入探针，不留文件）。</summary>
+  /// <param name="configuredRoot">配置里的沙箱根目录（可为空，空即用默认目录）。</param>
+  /// <param name="resolvedRoot">生效的沙箱根目录绝对路径。</param>
+  /// <param name="reason">不可用的原因（面向用户）；可用时为空串。</param>
+  /// <returns>可用返回 true。</returns>
+  /// <remarks>
+  /// 与配置校验的分工：本方法只判「能不能用来建沙箱」，不决定配置该不该保存。
+  /// 配置为空时允许就地创建默认目录（系统临时目录下），用户手选的目录则必须已存在——不替用户造目录。
+  /// </remarks>
+  public static bool TryValidateRoot(
+    string? configuredRoot,
+    out string resolvedRoot,
+    out string reason
+  )
+  {
+    resolvedRoot = ResolveRootDir(configuredRoot);
+    if (!Directory.Exists(resolvedRoot))
+    {
+      if (!string.IsNullOrWhiteSpace(configuredRoot))
+      {
+        reason = $"沙箱根目录不存在：{resolvedRoot}";
+        return false;
+      }
+
+      try
+      {
+        Directory.CreateDirectory(resolvedRoot);
+      }
+      catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+      {
+        reason = $"默认沙箱根目录无法创建：{resolvedRoot}（{ex.Message}）";
+        return false;
+      }
+    }
+
+    var probe = Path.Combine(resolvedRoot, $".autocmex-probe-{Guid.NewGuid():N}");
+    try
+    {
+      File.WriteAllText(probe, string.Empty);
+      File.Delete(probe);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+    {
+      reason = $"沙箱根目录不可写：{resolvedRoot}（{ex.Message}）";
+      return false;
+    }
+    finally
+    {
+      if (File.Exists(probe))
+      {
+        try
+        {
+          File.Delete(probe);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+          // 探针残留只影响观感，不改变校验结论
+        }
+      }
+    }
+
+    reason = string.Empty;
+    return true;
+  }
+
   /// <summary>
   /// 估算一个沙箱的字节数（= 将被复制的内容之和），用于起录前的磁盘空间预检。
   /// </summary>
   /// <param name="engineDir">引擎根目录。</param>
-  /// <param name="modPackZipPath">待录制工程包路径。</param>
+  /// <param name="modPackZipPath">待录制工程包路径；空串表示还没有包（设置页的事前估算），按 0 计。</param>
   /// <param name="engineExeFileName">引擎可执行文件名。</param>
   /// <returns>估算字节数；缺失项按 0 计。</returns>
+  /// <remarks>
+  /// 允许工程包缺省是给设置页用的：用户配上引擎目录时还没有选中工程包，此处的数字只用于
+  /// 「够不够」的量级提示，真正起录前的校验（文件是否存在、空间是否够）仍由沙箱创建负责。
+  /// </remarks>
   public static long EstimateFootprint(
     string engineDir,
     string modPackZipPath,
@@ -282,9 +351,9 @@ public sealed class RecordingSandbox
     CancellationToken cancellationToken
   )
   {
-    var sourceGame = EngineLocator.GetGameDir(engineDir);
-    ValidateSource(sourceGame, modPackZipPath, engineExeFileName);
+    ValidateSource(engineDir, modPackZipPath, engineExeFileName);
 
+    var sourceGame = EngineLocator.GetGameDir(engineDir);
     var stamp = DateTime.Now.ToString("yyyyMMdd_HHmmss_fff", CultureInfo.InvariantCulture);
     var sandboxDir = Path.Combine(
       rootDir,
@@ -340,12 +409,17 @@ public sealed class RecordingSandbox
   }
 
   /// <summary>校验源引擎目录具备沙箱清单所需的一切。</summary>
+  /// <param name="engineDir">真实引擎根目录。</param>
+  /// <param name="modPackZipPath">待录制工程包路径。</param>
+  /// <param name="engineExeFileName">引擎可执行文件名。</param>
+  /// <exception cref="RecordingSandboxException">缺任一必需项。</exception>
   private static void ValidateSource(
-    string sourceGame,
+    string engineDir,
     string modPackZipPath,
     string engineExeFileName
   )
   {
+    var sourceGame = EngineLocator.GetGameDir(engineDir);
     if (!Directory.Exists(sourceGame))
     {
       throw new RecordingSandboxException($"引擎目录不存在：{sourceGame}");
@@ -370,20 +444,11 @@ public sealed class RecordingSandbox
       }
     }
 
-    var pluginsDir = Path.Combine(sourceGame, "plugins");
-    if (!File.Exists(Path.Combine(pluginsDir, "plugins.json")))
+    // 插件可用性（清单存在性、两个插件是否安装并启用）与设置面板共用同一判据，
+    // 避免出现「面板显示就绪、起录却被拒」的两套口径
+    if (!PluginDeployer.TryValidateForRecording(engineDir, out var pluginReason))
     {
-      throw new RecordingSandboxException(
-        $"引擎插件清单不存在：{Path.Combine(pluginsDir, "plugins.json")}"
-      );
-    }
-    if (!Directory.Exists(Path.Combine(pluginsDir, AutocmexPluginDirName)))
-    {
-      throw new RecordingSandboxException("录制插件未安装到引擎，请先在设置页安装或启用插件");
-    }
-    if (!Directory.EnumerateDirectories(pluginsDir, $"*{RecorderPluginKeyword}*").Any())
-    {
-      throw new RecordingSandboxException("未找到弹幕录制器插件，请先在设置页安装或启用插件");
+      throw new RecordingSandboxException(pluginReason);
     }
     if (!File.Exists(modPackZipPath))
     {
@@ -461,9 +526,14 @@ public sealed class RecordingSandbox
     }
   }
 
-  /// <summary>取文件字节数（失败按 0 计）。</summary>
+  /// <summary>取文件字节数（路径为空、文件不存在或读取失败一律按 0 计）。</summary>
   private static long GetFileSize(string path)
   {
+    if (string.IsNullOrWhiteSpace(path))
+    {
+      return 0;
+    }
+
     try
     {
       var info = new FileInfo(path);

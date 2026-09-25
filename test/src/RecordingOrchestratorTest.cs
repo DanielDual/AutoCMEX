@@ -881,7 +881,7 @@ public class RecordingOrchestratorTest : TestClass
   {
     WriteGameFile("packages/script/core.lua", "core");
     WriteGameFile("plugins/plugins.json", "[]");
-    WriteGameFile("plugins/autocmex/main.lua", "autocmex");
+    WriteGameFile("plugins/autocmex/__init__.lua", "autocmex");
     WriteGameFile("plugins/danmaku_recorder_1.0.0/recorder.lua", "recorder");
     WriteGameFile("userdata/setting.json", "{}");
     File.WriteAllText(Path.Combine(_gameDir, "d3dcompiler_47.dll"), "dll");
