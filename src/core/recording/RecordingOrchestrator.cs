@@ -119,8 +119,7 @@ public sealed class RecordingOrchestrator
       return RecordingEnumerateOutcome.Failed($"引擎目录不可用：{reason}");
     }
 
-    var spec = RecordingJobWriter.CreateEnumerateJob(RecordingJobWriter.NewJobId("enum"));
-    RecordingJobWriter.Write(engineDir, spec);
+    var spec = RecordingJobWriter.WriteEnumerateJob(engineDir, RecordingJobWriter.NewJobId("enum"));
     _log.Print(
       $"RecordingOrchestrator: 开始枚举 engine={engineDir} mod={modPackName} job={spec.JobId}"
     );

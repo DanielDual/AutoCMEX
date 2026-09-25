@@ -231,7 +231,7 @@ public sealed class GameProcessRunner
   /// </summary>
   /// <param name="engineDir">引擎根目录。</param>
   /// <param name="modPackName">工程包名。</param>
-  /// <param name="spec">任务描述（须先由 <see cref="RecordingJobWriter.Write"/> 写盘）。</param>
+  /// <param name="spec">任务描述（须先由 <see cref="RecordingJobWriter.WriteEnumerateJob"/> 或 <see cref="RecordingJobWriter.WriteRecordJob"/> 写盘）。</param>
   /// <param name="timeout">进程总时长上限（须含录制器同步编码 GIF 的时间）。</param>
   /// <param name="cancellationToken">取消令牌；取消会杀掉进程树。</param>
   /// <returns>进程调用结果。</returns>

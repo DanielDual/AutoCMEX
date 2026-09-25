@@ -95,61 +95,50 @@ public static class RecordingJobWriter
   public static string NewJobId(string prefix) => $"{prefix}_{DateTime.Now:yyyyMMdd_HHmmss_fff}";
 
   /// <summary>
-  /// 构造枚举阶段的任务。
+  /// 构造并写出枚举阶段的任务。
   /// </summary>
+  /// <param name="engineDir">引擎根目录。</param>
   /// <param name="jobId">任务号，见 <see cref="NewJobId"/>。</param>
-  /// <returns>任务描述（尚未写盘）。</returns>
-  public static RecordingJobSpec CreateEnumerateJob(string jobId) =>
-    new()
-    {
-      JobId = jobId,
-      Phase = RecordingJobPhase.Enumerate,
-      ResultPath = $"{RuntimeDirName}/{ResultsDirName}/{jobId}.json",
-      LogPath = $"{RuntimeDirName}/{LogsDirName}/{jobId}.log",
-    };
+  /// <returns>写出的任务描述（可继续用于取任务/结果文件路径）。</returns>
+  /// <exception cref="IOException">任务文件写盘失败（如目录不可写）。</exception>
+  /// <exception cref="UnauthorizedAccessException">无写权限。</exception>
+  public static RecordingJobSpec WriteEnumerateJob(string engineDir, string jobId)
+  {
+    var spec = CreateSpec(jobId, RecordingJobPhase.Enumerate);
+    Write(engineDir, spec);
+    return spec;
+  }
 
   /// <summary>
-  /// 构造录制阶段的任务。
+  /// 构造并写出录制阶段的任务。
   /// </summary>
+  /// <param name="engineDir">引擎根目录。</param>
   /// <param name="jobId">任务号，见 <see cref="NewJobId"/>。</param>
   /// <param name="absoluteIndex">目标卡在 <c>cards</c> 中的绝对下标（1 基）。</param>
   /// <param name="interval">抽帧间隔（1..60）。</param>
   /// <param name="maxFrame">帧数上限（1..1000）。</param>
   /// <param name="bossClass">Boss 类名；为空则插件自动定位（多候选会报错）。</param>
-  /// <returns>任务描述（尚未写盘）。</returns>
-  public static RecordingJobSpec CreateRecordJob(
+  /// <returns>写出的任务描述（可继续用于取任务/结果文件路径）。</returns>
+  /// <exception cref="IOException">任务文件写盘失败（如目录不可写）。</exception>
+  /// <exception cref="UnauthorizedAccessException">无写权限。</exception>
+  public static RecordingJobSpec WriteRecordJob(
+    string engineDir,
     string jobId,
     int absoluteIndex,
     int interval,
     int maxFrame,
     string? bossClass = null
-  ) =>
-    new()
-    {
-      JobId = jobId,
-      Phase = RecordingJobPhase.Record,
-      ResultPath = $"{RuntimeDirName}/{ResultsDirName}/{jobId}.json",
-      LogPath = $"{RuntimeDirName}/{LogsDirName}/{jobId}.log",
-      BossClass = string.IsNullOrWhiteSpace(bossClass) ? null : bossClass,
-      AbsoluteIndex = absoluteIndex,
-      Interval = interval,
-      MaxFrame = maxFrame,
-      // 前一阶段即 60 帧入场移动，不含任何台词，故固定不演前序阶段。
-      IncludePrevious = false,
-    };
-
-  /// <summary>
-  /// 把任务写到 <c>&lt;引擎&gt;/game/autocmex/jobs/{jobId}.json</c>。
-  /// </summary>
-  /// <param name="engineDir">引擎根目录。</param>
-  /// <param name="spec">任务描述。</param>
-  /// <returns>写出的任务文件相对 <c>game/</c> 的路径（可直接用于启动参数）。</returns>
-  public static string Write(string engineDir, RecordingJobSpec spec)
+  )
   {
-    EnsureDirectories(engineDir);
-
-    File.WriteAllText(GetJobAbsolutePath(engineDir, spec), spec.ToJson());
-    return GetJobRelativePath(spec);
+    var spec = CreateSpec(jobId, RecordingJobPhase.Record);
+    spec.BossClass = string.IsNullOrWhiteSpace(bossClass) ? null : bossClass;
+    spec.AbsoluteIndex = absoluteIndex;
+    spec.Interval = interval;
+    spec.MaxFrame = maxFrame;
+    // 前一阶段即 60 帧入场移动，不含任何台词，故固定不演前序阶段。
+    spec.IncludePrevious = false;
+    Write(engineDir, spec);
+    return spec;
   }
 
   /// <summary>
@@ -181,6 +170,33 @@ public static class RecordingJobWriter
   /// <returns>结果文件绝对路径。</returns>
   public static string GetResultAbsolutePath(string engineDir, RecordingJobSpec spec) =>
     Path.Combine(EngineLocator.GetGameDir(engineDir), ToLocalPath(spec.ResultPath));
+
+  /// <summary>
+  /// 构造任务骨架（仅任务号与阶段，结果/日志路径按任务号派生）。
+  /// </summary>
+  /// <param name="jobId">任务号。</param>
+  /// <param name="phase">阶段，取 <see cref="RecordingJobPhase"/> 之一。</param>
+  /// <returns>任务描述（尚未写盘）。</returns>
+  private static RecordingJobSpec CreateSpec(string jobId, string phase) =>
+    new()
+    {
+      JobId = jobId,
+      Phase = phase,
+      ResultPath = $"{RuntimeDirName}/{ResultsDirName}/{jobId}.json",
+      LogPath = $"{RuntimeDirName}/{LogsDirName}/{jobId}.log",
+    };
+
+  /// <summary>
+  /// 把任务写到 <c>&lt;引擎&gt;/game/autocmex/jobs/{jobId}.json</c>。
+  /// </summary>
+  /// <param name="engineDir">引擎根目录。</param>
+  /// <param name="spec">任务描述。</param>
+  private static void Write(string engineDir, RecordingJobSpec spec)
+  {
+    EnsureDirectories(engineDir);
+
+    File.WriteAllText(GetJobAbsolutePath(engineDir, spec), spec.ToJson());
+  }
 
   /// <summary>把任务里的正斜杠相对路径转成本机路径分隔符。</summary>
   /// <param name="relativePath">正斜杠相对路径。</param>

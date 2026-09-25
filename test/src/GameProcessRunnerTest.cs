@@ -76,15 +76,14 @@ public class GameProcessRunnerTest : TestClass
   /// <returns>任务描述。</returns>
   private RecordingJobSpec PrepareJob(string jobId = "rec_unit")
   {
-    var spec = RecordingJobWriter.CreateRecordJob(
+    return RecordingJobWriter.WriteRecordJob(
+      _engineDir,
       jobId,
       absoluteIndex: 11,
       interval: 3,
       maxFrame: 350,
       bossClass: "cmex22_enm1"
     );
-    RecordingJobWriter.Write(_engineDir, spec);
-    return spec;
   }
 
   /// <summary>写出一份枚举任务。</summary>
@@ -92,9 +91,7 @@ public class GameProcessRunnerTest : TestClass
   /// <returns>任务描述。</returns>
   private RecordingJobSpec PrepareEnumerateJob(string jobId = "enum_unit")
   {
-    var spec = RecordingJobWriter.CreateEnumerateJob(jobId);
-    RecordingJobWriter.Write(_engineDir, spec);
-    return spec;
+    return RecordingJobWriter.WriteEnumerateJob(_engineDir, jobId);
   }
 
   /// <summary>跑一次任务（默认 5 秒超时，避免用例本身挂住）。</summary>
@@ -272,8 +269,9 @@ public class GameProcessRunnerTest : TestClass
   [Test]
   public async Task RunAsync_JobFileNotWritten_ReturnsStartupError()
   {
-    // 只造任务不写盘：插件会报含糊的 "job file not readable"，运行器须提前拦下
-    var spec = RecordingJobWriter.CreateEnumerateJob("enum_not_written");
+    // 写盘后删除以模拟任务文件缺失：插件只会报含糊的 "job file not readable"，运行器须提前拦下
+    var spec = RecordingJobWriter.WriteEnumerateJob(_engineDir, "enum_not_written");
+    File.Delete(RecordingJobWriter.GetJobAbsolutePath(_engineDir, spec));
 
     var outcome = await CreateRunner()
       .RunAsync(_engineDir, ModPackName, spec, TimeSpan.FromSeconds(1));
