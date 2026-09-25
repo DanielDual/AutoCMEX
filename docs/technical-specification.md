@@ -223,11 +223,23 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 - **进程超时必须把编码耗时算进去**：`end_record` 同步编码，实测约 0.08–0.17 s/帧（350 帧约 36 s、702 帧约 58 s）。
 - **卡表口径**：`_editor_class[boss].cards` 含对话阶段，`_sc_table` 只含符卡，二者不同构；序号一律取 `cards` 中的**绝对下标**（1 基）。字段与引擎自身判定同源：`is_combat` 由 `spboss.lua:1433`（`c.is_combat = not (fake)`，对话卡按 `fake` 处理后为 `false`）置位，`is_sc` 由 `boss_card.lua:44`（`c.is_sc = (name ~= '')`）置位；`t3` 在引擎内是**帧**（`boss_card.lua:42` 的 `int(t3) * 60`），插件按 ÷60 换算成秒后写出。
 
+### 单卡录制闭环（P2）
+
+`RecordingOrchestrator.RecordCardAsync(engineDir, modPackName, card, outputDir, config, token, timeout)` 把一张卡录成集内文件 `{序号}.gif`，产物命名与序号在归集时**重写**，与录制器自报的秒级时间戳产物名解耦。
+
+- **「录两遍」是常态而非补救**：`config.MaxFrame` 默认 350 帧，`interval=3`（20 fps）只覆盖 17.5 秒，长卡必然录满被截断；故首次 `result.complete == true` 即换 `config.SecondInterval`（默认 5，12 fps）重录一次，并**采用第二次的产物**，`RecordingCardOutcome.Attempts` 记为 2。
+- **截断即视为不完整**：凡触发重录的卡一律回 `Complete = false`（保守口径），实际帧数与间隔照实回传，由调用方决定是否接受。
+- **失败重试只发生在单次尝试内部**：超时 / 非零退出 / 结果缺失 / 产物缺失 / 卡名核对不符即自动重试 1 次；两次都失败则本卡判失败并返回原因。第二次尝试彻底失败时**不**回退首次的截断产物——半截 GIF 混进集里比明确失败更难排查。
+- **单次尝试的超时预算**：`min(card.t3, maxFrame × interval ÷ 60) + 45 秒启动余量 + maxFrame × 0.3 秒编码余量`（`CardTimeout`）；预算按「一次尝试」计，不随重试与第二次尝试叠加。
+- **归集**：`GifSetBuilder` 负责把录制器产物按 `{CombatOrdinal}.gif` 拷进输出目录（同名覆盖），并读 GIF 逻辑屏尺寸回填 `Width`/`Height`；产物无 GIF 魔数或头截断时抛 `InvalidDataException`，由编排层转成可展示的失败原因。
+
+真机验收（2026-09-25，`CMEX21_PreProject`）：枚举 8 张卡（4 对话 + 2 非符 + 2 符卡），取 `t3` 最短的「耐久符」（绝对下标 8 → 序号 4）→ 首次 `interval=3` 录满被截断 → 自动 `interval=5` 重录 → 采用第二次产物 `274 帧 / 12 fps / complete=false`，输出目录仅 `4.gif`（640×480），2 次尝试 = 2 次进程启动。
+
 ### 实施阶段
 
-P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环 → P3 编排/重试/取消/报告 → P4 配置与设置面板 → P5 归集、`manifest.json` 与自动导入 → P6 单测补齐与真机验收。
+P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完成）→ P3 编排/重试/取消/报告 → P4 配置与设置面板 → P5 归集、`manifest.json` 与自动导入 → P6 单测补齐与真机验收。
 
-- C# 侧（`src/core/recording/`）：`EngineLocator` 校验引擎目录并定位 exe；`RecordingJobWriter` 写任务文件并维护运行期目录；`GameProcessRunner` 构造参数串、启动进程、超时杀进程、校验并读回结果、回收 `engine.log` 尾部；`GifNaming` 承载序号与命名规则；`RecordingOrchestrator` 串起「校验引擎 → 写任务 → 启动进程 → 校验结果 → 派生序号」的枚举闭环（P1 范围内只开枚举阶段，逐卡录制与重试在同一入口下续接）。
+- C# 侧（`src/core/recording/`）：`EngineLocator` 校验引擎目录并定位 exe；`RecordingJobWriter` 写任务文件并维护运行期目录；`GameProcessRunner` 构造参数串、启动进程、超时杀进程、校验并读回结果、回收 `engine.log` 尾部；`GifNaming` 承载序号与命名规则；`GifSetBuilder` 归集产物（拷贝改名 + 读 GIF 头尺寸）；`RecordingOrchestrator` 串起「校验引擎 → 写任务 → 启动进程 → 校验结果 → 派生序号」的枚举闭环，并在此之上续接「截断换挡重录 → 归集产物」的单卡录制闭环。
 - 游戏侧插件（`src/plugin/luastg/autocmex/`）：`__init__` 入口（无任务时零副作用）、`job` 任务校验与结果写出、`cards` 卡表枚举、`record` 跳卡/起录/收尾/退出、`log` 诊断日志。
 
 ---
@@ -272,4 +284,4 @@ AutoCMEX/
 | 设置 | 部分实现 | AI 模型与群聊配置已实现                 |
 | 帮助 | 待开发   | 内置 Markdown 渲染                      |
 
-**当前阶段**：核心功能（猜测引擎、AI 模糊化、数据存储、WebSocket 服务）已实现，设置板块 AI 模型与群聊配置、信息板块四栏展示与发布已完成；符卡 GIF 录制模块进行中，已完成引擎侧插件与枚举最小闭环（P1）。
+**当前阶段**：核心功能（猜测引擎、AI 模糊化、数据存储、WebSocket 服务）已实现，设置板块 AI 模型与群聊配置、信息板块四栏展示与发布已完成；符卡 GIF 录制模块进行中，已完成引擎侧插件、枚举最小闭环（P1）与单卡录制闭环（P2）。
