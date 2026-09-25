@@ -104,6 +104,7 @@ public partial class MainWindow
   private GuessResponseHandler _guessResponseHandler = default!;
   private IGuessProcessingService _guessProcessingService = default!;
   private IWebSocketServer _webSocketServer = default!;
+  private WebSocketLifecycle _webSocketLifecycle = default!;
   private ILogService _logService = default!;
 
   /// <summary>
@@ -143,9 +144,11 @@ public partial class MainWindow
 
   public override void _ExitTree()
   {
+    // 先摘掉配置绑定，保证退出过程中不会再有新的重启请求进来
     _webSocketModeBinding?.Dispose();
     _webSocketPortBinding?.Dispose();
     _koishiWebSocketUrlBinding?.Dispose();
+    _webSocketLifecycle?.Dispose();
     _dataManager?.Dispose();
   }
 
@@ -172,10 +175,13 @@ public partial class MainWindow
         droppedGuessRepository
       );
 
-      // 初始化 WebSocket（Server 或 Client 模式）
+      // 初始化 WebSocket（Server 或 Client 模式）。实例的创建/启停/重启统一走 WebSocketLifecycle：
+      // 配置绑定的 OnValue 是「订阅即回调」，启动时三个绑定会连打三次重启，
+      // 必须由它串行化并跳过「配置其实没变」的重复重启，否则会留下继续连接却无人引用的孤儿实例。
       var wsLog = AppLogs.GetOrCreate().GetLogger("WebSocket");
       var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService, _infoEvents);
-      _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
+      _webSocketLifecycle = new WebSocketLifecycle(wsInitializer.CreateServer, wsLog);
+      _webSocketServer = _webSocketLifecycle.Create(_dataManager.Settings);
 
       // 初始化日志服务
       _logService = AppLogs.GetOrCreate();
@@ -232,33 +238,37 @@ public partial class MainWindow
 
     // 启动 WebSocket 服务器（测试模式下跳过，避免启动真实网络服务）
     if (!(this as IAutoInit).IsTesting)
-      _ = _webSocketServer.StartAsync();
+      _ = _webSocketLifecycle.StartAsync(_dataManager.Settings);
   }
 
   /// <summary>
   /// 重启 WebSocket 服务（切换模式或配置变更时调用）
   /// </summary>
+  /// <remarks>
+  /// <c>async void</c> 是信号/绑定回调直接调用的既定形态，异常必须在此收口（否则会被
+  /// Godot 的同步上下文吞掉）；重启本身由 <see cref="WebSocketLifecycle"/> 串行化，
+  /// 并在「配置其实没变」时原样返回现有实例，不重建不启停。
+  /// </remarks>
   public async void RestartWebSocket()
   {
-    var wsLog = AppLogs.GetOrCreate().GetLogger("WebSocket");
-    wsLog.Print("MainWindow: restarting WebSocket...");
-
-    // 停止旧实例
-    await _webSocketServer.StopAsync();
-
-    // 使用初始化器创建新实例
-    var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService, _infoEvents);
-    _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
-
-    // 更新面板绑定：通过接口解耦，避免具体类型检查。
-    // 不再把「设置里的模式」传进去——面板一律按实例自身的实际模式/端口/地址显示。
-    if (WebSocketPanelNode is IWebSocketPanel panel)
+    try
     {
-      panel.UpdateServer(_webSocketServer);
-    }
+      _webSocketServer = await _webSocketLifecycle.RestartAsync(_dataManager.Settings);
 
-    await _webSocketServer.StartAsync();
-    wsLog.Print("MainWindow: WebSocket restarted.");
+      // 更新面板绑定：通过接口解耦，避免具体类型检查。
+      // 不再把「设置里的模式」传进去——面板一律按实例自身的实际模式/端口/地址显示。
+      if (WebSocketPanelNode is IWebSocketPanel panel)
+      {
+        panel.UpdateServer(_webSocketServer);
+      }
+    }
+    catch (Exception ex)
+    {
+      AppLogs
+        .GetOrCreate()
+        .GetLogger("WebSocket")
+        .Err($"MainWindow: restart WebSocket failed: {ex.GetType().Name}: {ex.Message}");
+    }
   }
 
   /// <summary>

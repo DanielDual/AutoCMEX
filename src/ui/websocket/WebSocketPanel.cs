@@ -159,15 +159,28 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
     Callable.From(RefreshUI).CallDeferred();
   }
 
-  private void OnStartStopPressed()
+  /// <summary>
+  /// 启停按钮：按实例是否「在工作」（<see cref="IWebSocketServer.IsActive"/>）判定方向，
+  /// 而不是按「是否已连接」——Client 断线重连期间实例已在工作但未连接，按后者点下去只会再启动一次
+  /// （幂等后成空操作），用户反而停不掉正在重连的客户端。
+  /// </summary>
+  private async void OnStartStopPressed()
   {
     if (_server == null)
       return;
 
-    if (_server.IsRunning)
-      _ = _server.StopAsync();
-    else
-      _ = _server.StartAsync();
+    try
+    {
+      if (_server.IsActive)
+        await _server.StopAsync();
+      else
+        await _server.StartAsync();
+    }
+    catch (Exception ex)
+    {
+      // 实例自身的日志已记录细节，这里只保证异常不会被信号回调吞掉
+      GD.PrintErr($"WebSocketPanel: start/stop failed: {ex.GetType().Name}: {ex.Message}");
+    }
 
     RefreshUI();
   }
@@ -181,13 +194,16 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
 
     var isRunning = _server.IsRunning;
 
+    // 实例是否还在工作（Client 重连等待中为 true 而 IsRunning 为 false）
+    var isActive = _server.IsActive;
+
     // 模式取自实例本身，不取自设置：设置改了但实例还没重建时，面板显示的必须是**正在跑的东西**
     var isClient = string.Equals(_server.Mode, "Client", StringComparison.OrdinalIgnoreCase);
 
     ModeLabel.Text = isClient ? "模式: Client（主动连接）" : "模式: Server（等待连接）";
 
     var statusText = isClient
-      ? (isRunning ? "已连接" : "未连接")
+      ? (isRunning ? "已连接" : (isActive ? "未连接（重连中）" : "未连接"))
       : (isRunning ? "运行中" : "已停止");
     StatusLabel.Text = statusText;
     StatusLabel.Modulate = isRunning ? new Color(0, 1, 0) : new Color(1, 0, 0);
@@ -210,7 +226,7 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
     if (!string.IsNullOrEmpty(_lastEvent))
       EventLabel.Text = _lastEvent;
 
-    StartStopBtn.Text = isClient ? (isRunning ? "断开" : "连接") : (isRunning ? "停止" : "启动");
+    StartStopBtn.Text = isClient ? (isActive ? "断开" : "连接") : (isRunning ? "停止" : "启动");
   }
 
   /// <summary>把 socket 线程投递的连接变化并入本地列表（只在主线程调用）。</summary>
