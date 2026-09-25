@@ -269,15 +269,17 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 **插件部署**（`PluginDeployer`）：判定与动作收在一处，UI 与沙箱共用同一判据（`TryValidateForRecording`），避免出现「面板显示就绪、起录却被拒」的两套口径；`RecordingSandbox.ValidateSource` 不再自己判插件，只转述该判据的原因串（原异常文案逐字不变）。
 
-- 三态：`Ready`（目录在且启用）、`InstalledDisabled`（目录在、清单 `enable = false`）、`Missing`；清单缺失或不可解析另给 `ManifestBroken`，此时**一切部署动作关闭**——宁可不让用户动手，也不拿坏清单去写。
-- 清单兼容两种登记方式（新式 `name` + `path` 与 LuaSTG-CN 的 `[pluginpackage]danmaku_recorder_x.y.z` 路径），条目命中判据是 `name` 或 `path` 含插件目录名关键字。引擎目录未设置、清单损坏、缺第三方录制器三种情况各自给可执行的原因（缺录制器明说「第三方插件，需自行获取」）。
+- 三态：`Ready`（目录在且启用）、`InstalledDisabled`（目录在、清单 `enable = false` 或清单缺失导致引擎不会加载）、`Missing`；清单文件存在但不可解析时另给 `ManifestBroken`，此时**一切部署动作关闭**——宁可不让用户动手，也不拿坏清单去写。
+- **清单缺失不等于损坏**：文件不存在时按空清单继续判插件（`ManifestExists = false`），安装动作会把清单新建出来，故在全新引擎上不会出现「两个按钮全灰、用户无从下手」。判据只有一处差别：录制前的 `TryValidateForRecording` 把「清单缺失」直接判为不可录（引擎不读清单就等于不加载插件），能装 ≠ 能录。
+- 条目命中比的是**整段目录名**（先 `name` 精确匹配，再比 `path` 的最后一段；第三方插件允许版本后缀，并剥掉 `[pluginpackage]` 前缀），不按子串匹配——否则 `autocmex_old` 这类同名前缀目录会被误当成目标条目，安装会去改写别人的 `enable` 而不是新增一条。
+- 清单兼容两种登记方式（新式 `name` + `path` 与 LuaSTG-CN 的 `[pluginpackage]danmaku_recorder_x.y.z` 路径）。引擎目录未设置、清单损坏、缺第三方录制器三种情况各自给可执行的原因（缺录制器明说「第三方插件，需自行获取」）。
 - **一键安装**（自家插件）：先备份既有插件目录（`<目录名>.autocmex-bak`，已存在则不叠加）→ 复制自带插件 → 登记为启用；**幂等**，重复点击不产生第二份备份、不重复登记。清单损坏时抛 `PluginDeployException` 且不改盘。
 - **一键启用**（第三方弹幕录制器）：只把条目 `enable` 置 `true`，不动文件、不覆盖条目里的其它字段。
 - **写前必备份**：改 `plugins.json` 前先落 `plugins.json.autocmex-bak`，再以临时文件 + 原子替换写入，避免半截 JSON 让引擎读不到任何插件。
 - **零写入约束**：用户没点任何按钮时，面板只做只读检查（`Inspect`），不碰引擎目录。
 - 沙箱侧新增 `TryValidateRoot`（沙箱根存在性 + 一次性写入探针；配置为空时允许就地创建默认目录，用户手选的目录必须已存在）；`EstimateFootprint` 允许工程包路径为空（设置页刚配引擎时还没有包），缺失项按 0 计。
 
-验证：编译 0 错误，GoDotTest **567 通过 / 0 失败**（新增 `PluginDeployerTest`（三态判定、清单损坏、禁用条目、只读检查不写盘、安装幂等与备份、启用最小改动、缺件原因串）与 `RecordingConfigPanelTest`（配置回填、非法值不落盘、越界收敛、状态渲染、一键部署联动、无引擎目录时误点不改盘））。
+验证：编译 0 错误，GoDotTest **586 通过 / 0 失败**（带窗口运行；新增 `PluginDeployerTest`（三态判定、清单损坏、清单缺失、同名前缀目录不误命中、禁用条目、只读检查不写盘、安装幂等与备份、启用最小改动、缺件原因串逐字比对）、`RecordingConfigPanelTest`（配置回填、非法值不落盘、越界收敛、推断失败不写配置、状态渲染与按钮启停、一键部署联动与失败原因、无引擎目录时误点不改盘）与 `RecordingSandboxTest` 的 `TryValidateRoot` 与四种插件缺件拒绝建副本）。
 
 ### 实施阶段
 
