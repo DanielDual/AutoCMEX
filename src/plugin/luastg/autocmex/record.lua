@@ -199,6 +199,25 @@ local function start_record()
     local recorder = ctx.recorder
     ensure_capture_wired(recorder)
 
+    -- 抓帧区域固定取「世界矩形」（录制器的 world 模式）：ui 模式是整屏，会把分数/残机那一圈 HUD 一起录进产物。
+    -- 只能在此刻设：world→ui 换算读的是调用时刻的 `lstg.world`（练习关卡的矩形由 PracticeStart 加载舞台时才写入），
+    -- 而 `set_capture_area_*` 只在 status == "initialized" 时生效，start_record 之前正是最后一个合法时机。
+    local ok_area, err_area = pcall(function()
+        recorder:set_capture_area_world()
+    end)
+    if not ok_area then
+        -- 不退回 ui 模式：那只会静默产出一份带 HUD 的废产物
+        return finish_error("capture_area_world_failed: " .. tostring(err_area))
+    end
+    local area = recorder:get_capture_area()
+    log.write("capture area: l=%s t=%s r=%s b=%s (world l=%s t=%s r=%s b=%s, screen %sx%s)",
+        tostring(area.l), tostring(area.t), tostring(area.r), tostring(area.b),
+        tostring(lstg.world.l), tostring(lstg.world.t), tostring(lstg.world.r), tostring(lstg.world.b),
+        tostring(screen.width), tostring(screen.height))
+    if area.l == 0 and area.r == screen.width and area.b == 0 and area.t == screen.height then
+        log.write("WARN: capture area covers the whole screen, output will still contain HUD")
+    end
+
     local ok, err = pcall(function()
         recorder:start_record()
     end)
@@ -366,11 +385,11 @@ local function do_jump()
         return finish_error("card_index_out_of_range: " .. tostring(ctx.spec.absolute_index))
     end
 
-    -- 录制器参数只在 status == "initialized" 时生效，必须先设再 start_record
+    -- 录制器参数只在 status == "initialized" 时生效，必须先设再 start_record。
+    -- 抓帧区域不在这里设：world 矩形要等 PracticeStart 加载完舞台才写入 `lstg.world`（见 start_record）
     local ok, err = pcall(function()
         ctx.recorder:set_max_frame(ctx.max_frame)
         ctx.recorder:set_interval(ctx.interval)
-        ctx.recorder:set_capture_area_ui()
     end)
     if not ok then
         return finish_error("recorder_config_failed: " .. tostring(err))
