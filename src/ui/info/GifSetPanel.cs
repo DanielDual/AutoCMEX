@@ -131,7 +131,7 @@ public partial class GifSetPanel : VBoxContainer
     _gifSets = gifSets;
     _publish = publish;
 
-    // 录制本期不实现：以代码再确认一次禁用态，防止场景被误改后按钮"看似可用"
+    // 录制入口已接通：场景里该按钮仍是占位态（disabled + 过时 tooltip），故在这里点亮并换成可执行提示
     EnsureRecordDialogs();
     RecordButton.Disabled = false;
     RecordButton.TooltipText = "选工程包与输出目录后自动逐张录制，录完自动导入为本栏的集";
