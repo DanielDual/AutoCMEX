@@ -34,6 +34,9 @@ local record = {}
 
 local DEFAULT_INTERVAL = 3
 local DEFAULT_MAX_FRAME = 350
+local DEFAULT_SCALE = 0.5                 -- 录制器自身的默认放缩比（= 捕获区域的一半像素）
+local MIN_SCALE = 0.1                     -- 合法区间取录制器自带菜单的档位范围
+local MAX_SCALE = 1.0
 local READY_TIMEOUT_FRAMES = 60 * 60      -- 等 mod 产出 `_editor_class`
 local START_TIMEOUT_FRAMES = 60 * 60      -- 跳卡后等目标卡开始（含 30 帧舞台初始化与 60 帧入场移动）
 local RECORD_TAIL_FRAMES = 60 * 20        -- 录制收尾余量
@@ -72,6 +75,26 @@ end
 local function finish_error(message)
     log.write("ERROR: %s", tostring(message))
     finish({ status = "error", error = tostring(message) })
+end
+
+--------------------------------------------------------------------------
+--- 自机调试数据（`player_lib.debug_data`，与游戏内调试菜单里的开关是同一份）
+
+--- 强制自机调试数据：录制期不靠按键也持续射击，且无敌命中不再产生粒子 / 音效 / 消弹，
+--- 免得这些效果被录进产物。字段与取值由用户指定，勿改。
+--- 只在插件受 CMEX 驱动、job 合法的这一次运行里调用，正常游玩不受影响。
+---@return boolean 是否已应用（`player_lib` 还没产出时返回 false，调用方可稍后重试）
+local function apply_player_debug_data()
+    if type(player_lib) ~= "table" or type(player_lib.debug_data) ~= "table" then
+        return false
+    end
+
+    local data = player_lib.debug_data
+    data.keep_shooting = true
+    data.invincible_when_hit_fire_particles = false
+    data.invincible_when_hit_play_sound_effect = false
+    data.invincible_when_hit_delete_object = false
+    return true
 end
 
 --------------------------------------------------------------------------
@@ -199,6 +222,9 @@ local function start_record()
     local recorder = ctx.recorder
     ensure_capture_wired(recorder)
 
+    -- 起录前兜底再设一次：游戏内调试菜单可以在运行中翻这些开关，录制必须用用户指定的取值
+    apply_player_debug_data()
+
     -- 抓帧区域固定取「世界矩形」（录制器的 world 模式）：ui 模式是整屏，会把分数/残机那一圈 HUD 一起录进产物。
     -- 只能在此刻设：world→ui 换算读的是调用时刻的 `lstg.world`（练习关卡的矩形由 PracticeStart 加载舞台时才写入），
     -- 而 `set_capture_area_*` 只在 status == "initialized" 时生效，start_record 之前正是最后一个合法时机。
@@ -209,6 +235,15 @@ local function start_record()
         -- 不退回 ui 模式：那只会静默产出一份带 HUD 的废产物
         return finish_error("capture_area_world_failed: " .. tostring(err_area))
     end
+
+    -- 产物分辨率：录制器放缩比（`set_scale`）同样只在 status == "initialized" 时生效，故也在此刻设。
+    local ok_scale, err_scale = pcall(function()
+        recorder:set_scale(ctx.scale)
+    end)
+    if not ok_scale then
+        return finish_error("set_scale_failed: " .. tostring(err_scale))
+    end
+
     local area = recorder:get_capture_area()
     log.write("capture area: l=%s t=%s r=%s b=%s (world l=%s t=%s r=%s b=%s, screen %sx%s)",
         tostring(area.l), tostring(area.t), tostring(area.r), tostring(area.b),
@@ -217,6 +252,16 @@ local function start_record()
     if area.l == 0 and area.r == screen.width and area.b == 0 and area.t == screen.height then
         log.write("WARN: capture area covers the whole screen, output will still contain HUD")
     end
+
+    -- 产物分辨率 = 捕获区域 × 屏幕放缩 × 放缩比（与录制器 CreateRenderTarget 的算法一致），
+    -- 真机跑一次即可从日志核对分辨率是否按 CMEX 的配置生效。
+    local ui_scale = tonumber(screen.scale) or 1
+    -- `get_scale` 只用于日志自检，取不到不该让整卡失败，故单独 pcall
+    local ok_scale_get, reported = pcall(function() return recorder:get_scale() end)
+    log.write("record scale: %.3f (recorder reports %s), expected output %dx%d px",
+        ctx.scale, ok_scale_get and string.format("%.3f", reported) or "unknown",
+        math.floor((area.r - area.l) * ui_scale * ctx.scale + 0.5),
+        math.floor((area.t - area.b) * ui_scale * ctx.scale + 0.5))
 
     local ok, err = pcall(function()
         recorder:start_record()
@@ -231,8 +276,8 @@ local function start_record()
 
     ctx.stage = "recording"
     ctx.record_frames = 0
-    log.write("recording started (max_frame=%d interval=%d budget=%d frames)",
-        ctx.max_frame, ctx.interval, ctx.record_budget)
+    log.write("recording started (max_frame=%d interval=%d scale=%.3f budget=%d frames)",
+        ctx.max_frame, ctx.interval, ctx.scale, ctx.record_budget)
 end
 
 --------------------------------------------------------------------------
@@ -360,6 +405,11 @@ end
 --- 跳卡三件套 + `PracticeStart`（与 `StageDebugView:startBossScene` 同源）。
 --- `include_previous` 由 job 决定（CMEX 固定传 false：前一阶段为 60 帧入场移动，不会有台词）。
 local function do_jump()
+    -- 跳卡前就设好自机调试数据：自机在 PracticeStart 建场时就会读这些开关
+    if not apply_player_debug_data() then
+        log.write("WARN: player_lib not ready, player debug data will be applied right before recording")
+    end
+
     local class_name
     if type(ctx.spec.boss_class) == "string" and ctx.spec.boss_class ~= "" then
         if not cards.has_cards(ctx.spec.boss_class) then
@@ -503,6 +553,12 @@ function record.run(job_path)
 
     local interval = math.floor(tonumber(spec.interval) or DEFAULT_INTERVAL)
     local max_frame = math.floor(tonumber(spec.max_frame) or DEFAULT_MAX_FRAME)
+    -- 产物分辨率：录制器的放缩比（产物像素 = 捕获区域 × 屏幕放缩 × 该值）
+    local scale_in = tonumber(spec.scale)
+    local scale = math.max(MIN_SCALE, math.min(MAX_SCALE, scale_in or DEFAULT_SCALE))
+    if scale_in and math.abs(scale_in - scale) > 1e-6 then
+        log.write("WARN: scale %s out of range, clamped to %.3f", tostring(scale_in), scale)
+    end
     ctx = {
         spec = spec,
         phase = spec.phase,
@@ -513,6 +569,7 @@ function record.run(job_path)
         interval = math.max(1, math.min(60, interval)),
         max_frame = math.max(1, math.min(1000, max_frame)),
         include_previous = spec.include_previous == true,
+        scale = scale,
         done = false,
     }
     ctx.record_budget = ctx.max_frame * ctx.interval * 3 + RECORD_TAIL_FRAMES

@@ -2,7 +2,7 @@
 ---
 --- 字段契约见 `.codebuddy/plans/recording-module-solution.md` §7.2：
 ---   job:    `job_id` / `phase`(`enumerate`|`record`) / `result_path` / `log_path` / `boss_class`(可空=自动定位) /
----           `absolute_index` / `interval` / `max_frame` / `include_previous`
+---           `absolute_index` / `interval` / `max_frame` / `scale`(0.1..1.0，可空=0.5) / `include_previous`
 ---   result: `job_id` / `status`(`ok`|`error`) / `error` / `boss_name` / `boss_class` / `cards[]` /
 ---           `task_name` / `gif_path` / `frames` / `interval` / `complete` / `success`
 
