@@ -1,5 +1,6 @@
 // AutoCMEX Koishi v4 Plugin
-// 将此文件夹复制到 Koishi 的 plugins 目录即可安装
+// 安装：由 AutoCMEX 一键安装到 Koishi 工作区的 external/adapter-autocmex/，
+//       再在控制台「插件配置 → 右键 → 添加插件」里搜 adapter-autocmex（或看「适配器」分类）启用
 // 功能：将群聊消息通过 WebSocket 转发到 AutoCMEX，并返回处理结果
 // 协议：command / event / error / ack
 // 模式：client（连接 AutoCMEX）/ server（等待 AutoCMEX 连接）
@@ -68,7 +69,7 @@ function rememberRequest(ctx, requestId, session) {
     createdAt: Date.now(),
   });
   ctx.logger.info(
-    `[AutoCMEX] Stored pending request ${requestId} (total=${pendingRequests.size})`
+    `[AutoCMEX] Stored pending request ${requestId} (total=${pendingRequests.size})`,
   );
   cleanupExpiredRequests(ctx);
 }
@@ -78,7 +79,7 @@ function cleanupExpiredRequests(ctx) {
   for (const [requestId, entry] of pendingRequests.entries()) {
     if (!entry || now - entry.createdAt > REQUEST_TTL) {
       ctx.logger.info(
-        `[AutoCMEX] Expired pending request ${requestId} (age=${now - entry.createdAt}ms)`
+        `[AutoCMEX] Expired pending request ${requestId} (age=${now - entry.createdAt}ms)`,
       );
       pendingRequests.delete(requestId);
     }
@@ -95,7 +96,7 @@ async function replyToSession(ctx, session, replyText) {
       return;
     } catch (err) {
       ctx.logger.warn(
-        `[AutoCMEX] Quote reply failed, fallback to normal reply: ${err.message}`
+        `[AutoCMEX] Quote reply failed, fallback to normal reply: ${err.message}`,
       );
     }
   }
@@ -157,7 +158,11 @@ async function collectGroups(ctx) {
         list = await bot.getGuildList();
       }
 
-      if ((!list || list.length === 0) && bot.internal && typeof bot.internal.getGroupList === "function") {
+      if (
+        (!list || list.length === 0) &&
+        bot.internal &&
+        typeof bot.internal.getGroupList === "function"
+      ) {
         list = await bot.internal.getGroupList();
       }
     } catch (err) {
@@ -166,7 +171,9 @@ async function collectGroups(ctx) {
     }
 
     for (const item of list || []) {
-      const channelId = String(item.id || item.group_id || item.channelId || "");
+      const channelId = String(
+        item.id || item.group_id || item.channelId || "",
+      );
       if (!channelId || seen.has(channelId)) continue;
 
       seen.add(channelId);
@@ -240,7 +247,11 @@ async function handlePublishForward(ctx, payload, send) {
   }
 
   if (failedNodes.length > 0) {
-    report(false, `预检失败：${failedNodes.length} 个附件的图片不可读，未发送。`, failedNodes);
+    report(
+      false,
+      `预检失败：${failedNodes.length} 个附件的图片不可读，未发送。`,
+      failedNodes,
+    );
     return;
   }
 
@@ -254,7 +265,11 @@ async function handlePublishForward(ctx, payload, send) {
     const title = node?.text || node?.title || "";
     const content = [];
     if (title) content.push({ type: "text", data: { text: `${title}\n` } });
-    if (node?.imagePath) content.push({ type: "image", data: { file: toFileUrl(node.imagePath) } });
+    if (node?.imagePath)
+      content.push({
+        type: "image",
+        data: { file: toFileUrl(node.imagePath) },
+      });
 
     return {
       type: "node",
@@ -281,7 +296,7 @@ async function handlePublishForward(ctx, payload, send) {
   try {
     await internal.sendGroupForwardMsg(numericChannelId, forwardNodes);
     ctx.logger.info(
-      `[AutoCMEX] Published ${forwardNodes.length} node(s) to ${channelId} (kind=${kind}, requestId=${requestId})`
+      `[AutoCMEX] Published ${forwardNodes.length} node(s) to ${channelId} (kind=${kind}, requestId=${requestId})`,
     );
     report(true, "");
   } catch (err) {
@@ -296,7 +311,9 @@ async function handlePublishForward(ctx, payload, send) {
         },
       }));
       await internal.sendGroupForwardMsg(numericChannelId, legacyNodes);
-      ctx.logger.info(`[AutoCMEX] Published to ${channelId} with legacy node fields.`);
+      ctx.logger.info(
+        `[AutoCMEX] Published to ${channelId} with legacy node fields.`,
+      );
       report(true, "");
     } catch (retryErr) {
       ctx.logger.warn(`[AutoCMEX] Publish failed: ${retryErr.message}`);
@@ -311,22 +328,26 @@ async function handlePublishForward(ctx, payload, send) {
 module.exports.Config = Schema.object({
   mode: Schema.string()
     .default("client")
-    .description("运行模式：client（连接 AutoCMEX）/ server（等待 AutoCMEX 连接）"),
+    .description(
+      "运行模式：client（连接 AutoCMEX）/ server（等待 AutoCMEX 连接）",
+    ),
   host: Schema.string()
     .default(DEFAULT_HOST)
     .description("Client 模式：AutoCMEX 地址"),
   port: Schema.number()
     .default(DEFAULT_PORT)
-    .description("Client 模式：AutoCMEX 端口（Server 模式使用 Koishi 自身端口）"),
-  token: Schema.string()
-    .default("")
-    .description("鉴权 Token（留空不启用）"),
+    .description(
+      "Client 模式：AutoCMEX 端口（Server 模式使用 Koishi 自身端口）",
+    ),
+  token: Schema.string().default("").description("鉴权 Token（留空不启用）"),
 }).description("AutoCMEX 配置");
 
 /**
  * Koishi 插件入口
+ * 名称必须等于包短名（koishi-plugin-adapter-autocmex → adapter-autocmex）：
+ * 控制台按短名索引插件，这里写别的名字会出现「列表一套名、配置页另一套名」
  */
-module.exports.name = "auto-cmex";
+module.exports.name = "adapter-autocmex";
 
 module.exports.apply = (ctx, config) => {
   const mode = config.mode || "client";
@@ -351,12 +372,12 @@ module.exports.apply = (ctx, config) => {
       } else {
         messageQueue.push(message);
         ctx.logger.info(
-          `[AutoCMEX] Queued message ${message.id} (queue=${messageQueue.length})`
+          `[AutoCMEX] Queued message ${message.id} (queue=${messageQueue.length})`,
         );
         if (messageQueue.length > 1000) {
           const dropped = messageQueue.shift();
           ctx.logger.warn(
-            `[AutoCMEX] Queue full, dropped oldest message ${dropped?.id}`
+            `[AutoCMEX] Queue full, dropped oldest message ${dropped?.id}`,
           );
         }
       }
@@ -366,12 +387,12 @@ module.exports.apply = (ctx, config) => {
       } else {
         messageQueue.push(message);
         ctx.logger.info(
-          `[AutoCMEX] Queued message ${message.id} (queue=${messageQueue.length})`
+          `[AutoCMEX] Queued message ${message.id} (queue=${messageQueue.length})`,
         );
         if (messageQueue.length > 1000) {
           const dropped = messageQueue.shift();
           ctx.logger.warn(
-            `[AutoCMEX] Queue full, dropped oldest message ${dropped?.id}`
+            `[AutoCMEX] Queue full, dropped oldest message ${dropped?.id}`,
           );
         }
       }
@@ -423,12 +444,14 @@ function startClient(ctx, host, port, token) {
       if (heartbeatTimer) clearInterval(heartbeatTimer);
       heartbeatTimer = setInterval(() => {
         if (ws && ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({
-            id: generateId(),
-            type: "command",
-            timestamp: Date.now(),
-            payload: { action: "ping" },
-          }));
+          ws.send(
+            JSON.stringify({
+              id: generateId(),
+              type: "command",
+              timestamp: Date.now(),
+              payload: { action: "ping" },
+            }),
+          );
         }
       }, HEARTBEAT_INTERVAL);
     });
@@ -436,18 +459,23 @@ function startClient(ctx, host, port, token) {
     ws.on("message", (data) =>
       handleMessage(ctx, data, (message) => {
         if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(message));
-      })
+      }),
     );
 
     ws.on("close", () => {
       ctx.logger.warn("[AutoCMEX] Disconnected, reconnecting...");
-      if (heartbeatTimer) { clearInterval(heartbeatTimer); heartbeatTimer = null; }
+      if (heartbeatTimer) {
+        clearInterval(heartbeatTimer);
+        heartbeatTimer = null;
+      }
       if (!reconnectTimer) {
         reconnectTimer = setInterval(connect, RECONNECT_INTERVAL);
       }
     });
 
-    ws.on("error", (err) => ctx.logger.warn(`[AutoCMEX] Error: ${err.message}`));
+    ws.on("error", (err) =>
+      ctx.logger.warn(`[AutoCMEX] Error: ${err.message}`),
+    );
   }
 
   connect();
@@ -467,7 +495,7 @@ function startServer(ctx, token) {
     verifyClient: (info, cb) => {
       ctx.logger.info(
         `[AutoCMEX] Handshake from ${info.req.socket.remoteAddress}, ` +
-        `origin=${info.origin}, secure=${info.secure}`
+          `origin=${info.origin}, secure=${info.secure}`,
       );
       cb(true);
     },
@@ -476,7 +504,7 @@ function startServer(ctx, token) {
   ctx.logger.info(
     server
       ? `[AutoCMEX] Server mode: attached to Koishi HTTP server`
-      : `[AutoCMEX] Server mode: listening on port ${wsPort}`
+      : `[AutoCMEX] Server mode: listening on port ${wsPort}`,
   );
 
   wss.on("error", (err) => {
@@ -486,7 +514,7 @@ function startServer(ctx, token) {
   // 诊断：记录所有到达 HTTP 服务器的请求
   wss.on("headers", (headers, req) => {
     ctx.logger.info(
-      `[AutoCMEX] HTTP request: ${req.method} ${req.url} from ${req.socket.remoteAddress}`
+      `[AutoCMEX] HTTP request: ${req.method} ${req.url} from ${req.socket.remoteAddress}`,
     );
   });
 
@@ -508,7 +536,7 @@ function startServer(ctx, token) {
     }
     autoCmexClient = client;
     ctx.logger.info(
-      `[AutoCMEX] AutoCMEX client connected from ${req.socket.remoteAddress}`
+      `[AutoCMEX] AutoCMEX client connected from ${req.socket.remoteAddress}`,
     );
 
     // 发送缓存消息
@@ -524,19 +552,20 @@ function startServer(ctx, token) {
 
     client.on("message", (data) =>
       handleMessage(ctx, data, (message) => {
-        if (client.readyState === WebSocket.OPEN) client.send(JSON.stringify(message));
-      })
+        if (client.readyState === WebSocket.OPEN)
+          client.send(JSON.stringify(message));
+      }),
     );
 
     client.on("close", (code, reason) => {
       ctx.logger.warn(
-        `[AutoCMEX] Client disconnected: code=${code}, reason=${reason?.toString() || "none"}`
+        `[AutoCMEX] Client disconnected: code=${code}, reason=${reason?.toString() || "none"}`,
       );
       if (autoCmexClient === client) autoCmexClient = null;
     });
 
     client.on("error", (err) =>
-      ctx.logger.warn(`[AutoCMEX] Client error: ${err.message}`)
+      ctx.logger.warn(`[AutoCMEX] Client error: ${err.message}`),
     );
   });
 }
@@ -550,7 +579,7 @@ async function handleMessage(ctx, data, send) {
     switch (msg.type) {
       case "ack":
         ctx.logger.debug(
-          `[AutoCMEX] ACK: id=${msg.payload?.originalId}, status=${msg.payload?.status}`
+          `[AutoCMEX] ACK: id=${msg.payload?.originalId}, status=${msg.payload?.status}`,
         );
         break;
       case "event":
@@ -565,14 +594,16 @@ async function handleMessage(ctx, data, send) {
           }
 
           if (!pending || !pending.session) {
-            ctx.logger.warn(`[AutoCMEX] No pending session for request ${requestId}`);
+            ctx.logger.warn(
+              `[AutoCMEX] No pending session for request ${requestId}`,
+            );
             pendingRequests.delete(requestId);
             break;
           }
 
           if (!replyText) {
             ctx.logger.info(
-              `[AutoCMEX] guess_result for ${requestId} contains empty replyText, skipped`
+              `[AutoCMEX] guess_result for ${requestId} contains empty replyText, skipped`,
             );
             pendingRequests.delete(requestId);
             break;
@@ -598,7 +629,7 @@ async function handleMessage(ctx, data, send) {
         break;
       case "error":
         ctx.logger.warn(
-          `[AutoCMEX] Error: [${msg.payload?.code}] ${msg.payload?.message}`
+          `[AutoCMEX] Error: [${msg.payload?.code}] ${msg.payload?.message}`,
         );
         break;
       default:
