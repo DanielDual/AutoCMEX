@@ -17,7 +17,7 @@ public sealed partial class RecordingOrchestrator
   public const string ReportFileName = "recording_report.json";
 
   /// <summary>
-  /// 一轮批量录制：清扫残留沙箱 → 前置检查 → 枚举 → 并行逐卡录制 → 串行归集 → 写报告 → 删沙箱。
+  /// 一轮批量录制：清扫残留沙箱 → 前置检查 → 枚举 → 并行逐卡录制 → 串行归集 → 写报告与清单 → 删沙箱。
   /// </summary>
   /// <remarks>
   /// <para>
@@ -182,7 +182,7 @@ public sealed partial class RecordingOrchestrator
       }
       report.WorkersStarted = schedule.WorkersStarted;
 
-      // 阶段 3：串行归集、计数、写报告
+      // 阶段 3：串行归集、计数、写报告与 GIF 集清单
       hub.SetStage(RecordingStage.Collect);
       Collect(report, combatCards, outcomes, request.OutputDir);
       report.Cancelled = cancellationToken.IsCancellationRequested;
@@ -199,6 +199,7 @@ public sealed partial class RecordingOrchestrator
       }
 
       warnings.AddRange(WriteReport(report, request.OutputDir));
+      var manifestPath = TryWriteManifest(report, request.OutputDir, warnings);
       _log.Print(
         $"RecordingOrchestrator: 本轮结束 —— 成功 {report.Succeeded}，失败 {report.Failed}，"
           + $"未录制 {report.TotalCombat - report.Succeeded - report.Failed}，"
@@ -209,7 +210,9 @@ public sealed partial class RecordingOrchestrator
         null,
         report,
         request.OutputDir,
-        warnings.Count == 0 ? null : string.Join("；", warnings)
+        warnings.Count == 0 ? null : string.Join("；", warnings),
+        null,
+        manifestPath
       );
     }
     finally
@@ -438,6 +441,40 @@ public sealed partial class RecordingOrchestrator
     {
       return new[] { $"写报告失败：{ex.Message}" };
     }
+  }
+
+  /// <summary>
+  /// 把 GIF 集清单写进输出目录（无成功产物或写盘失败只作为提示回传，不中断本轮）。
+  /// </summary>
+  /// <remarks>
+  /// 清单是输出目录变成「可导入的 GIF 集」的关键：缺了它，报告与 GIF 仍完整，但导入必然被拒。
+  /// 故写失败要显式提示，而不是静默留下一堆导不进去的产物。
+  /// </remarks>
+  /// <param name="report">本轮报告。</param>
+  /// <param name="outputDir">GIF 集输出目录。</param>
+  /// <param name="warnings">提示收集器。</param>
+  /// <returns>清单的绝对路径；未写出时为 <c>null</c>。</returns>
+  private string? TryWriteManifest(RecordingReport report, string outputDir, List<string> warnings)
+  {
+    string? path;
+    try
+    {
+      path = GifSetManifestWriter.Write(outputDir, report);
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+    {
+      warnings.Add($"写 GIF 集清单失败：{ex.Message}");
+      return null;
+    }
+
+    if (path is null)
+    {
+      warnings.Add("本轮没有成功落盘的产物，未生成 GIF 集清单（无可导入内容）");
+      return null;
+    }
+
+    _log.Print($"RecordingOrchestrator: 已写出 GIF 集清单 '{path}'");
+    return path;
   }
 
   /// <summary>按剩余空间算最多能建几个沙箱（留 10% 余量，至少 1 个）。</summary>

@@ -56,12 +56,16 @@ public sealed record RecordingRequest(
 /// <param name="OutputDir">GIF 集输出目录。</param>
 /// <param name="Warning">非致命异常提示（如并行度因磁盘空间被压缩）；无则为 <c>null</c>。</param>
 /// <param name="EngineLogTail">前置失败时的 <c>engine.log</c> 尾部，用于展示原因。</param>
+/// <param name="ManifestPath">
+/// 本轮写出的 GIF 集清单路径；本轮无成功产物或清单写盘失败时为 <c>null</c>（此时无可导入内容）。
+/// </param>
 public sealed record RecordingRunResult(
   string? Error,
   RecordingReport Report,
   string OutputDir,
   string? Warning = null,
-  string? EngineLogTail = null
+  string? EngineLogTail = null,
+  string? ManifestPath = null
 )
 {
   /// <summary>本轮是否跑完（不等于每张卡都录成，逐卡结果看 <see cref="RecordingReport.Cards"/>）。</summary>
