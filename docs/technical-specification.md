@@ -122,7 +122,8 @@ Koishi v4。
 - 插件代码放在 `src/plugin/koishi/`。
 - 插件维护 `requestId → session` 映射，收到 `guess_result` 事件后优先引用回复，失败降级普通回复。
 - 插件离开本项目无法使用，不对外发布。
-- 一键安装：复制插件文件夹到 Koishi 的 plugins 目录。
+- 一键安装：复制插件文件夹到 Koishi 工作区的 `external/adapter-autocmex/`（目录名 = 包短名，与控制台的插件索引名一致；覆盖安装即命中工作区链接指向的目录）。
+- 插件包自检口径：`package.json` 的 `main` 直接指向真实入口 `src/index.js`（内容即 CommonJS，无需构建产物，`koishi dev` 与 `koishi start` 行为一致）；`koishi.category = "adapter"` 决定其在控制台「添加插件」里的分类；插件自报名必须等于包短名。
 
 ### 消息筛选
 

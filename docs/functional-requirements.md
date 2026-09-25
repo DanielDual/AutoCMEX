@@ -100,7 +100,7 @@
 - **前提**：需安装群聊机器人框架与服务。
 - **支持框架**：Koishi v4。
 - **实现方式**：通过 Koishi 插件实现框架与项目通信。插件仅做消息转发，所有处理在 AutoCMEX 完成。插件代码放在 `src/plugin/koishi/`。
-- **安装方式**：一键复制插件文件夹到 Koishi 的 plugins 目录。
+- **安装方式**：一键复制插件文件夹到 Koishi 工作区的 `external/adapter-autocmex/`（目录名 = 包短名，与工作区链接同名，覆盖安装即生效），再在控制台「插件配置 → 右键 → 添加插件」搜 `adapter-autocmex`（或看「适配器」分类）启用。
 - **托管猜测流程**：Koishi 发送 `command: guess` → AutoCMEX 统一判定/处理 → 返回 `ack` + `event: guess_result` → Koishi 回复原消息。
 - **Koishi 回复规则**：优先引用原消息回复，失败时降级为普通回复；非猜测文本不回复。
 - **连接解耦**：Koishi 未连接时，手动猜测流程仍可正常运作，不受托管链路影响。
@@ -222,7 +222,8 @@
 - **说明**：大部分配置在群聊机器人框架中完成，与本项目无关。
 - **连接参数**：WebSocket 端口、模式（Server / Client）、Koishi 地址（Client 模式连接的对端，自动补全 `ws://` 前缀并附 Token）。端口改动即时写回；Koishi 地址在**回车提交或输入框失焦**时写回。
 - **模式与实际一致**：Client 模式但 Koishi 地址为空时**不回落成 Server**，启动失败并在 WebSocket 状态面板显式显示「未配置 Koishi 地址」。
-- **功能**：支持一键将插件安装到 Koishi 框架中（复制到 plugins 目录）；已安装的落点路径在设置页回显，重启后仍可见。
+- **功能**：支持一键将插件安装到 Koishi 工作区（复制到应用根目录下 `external/adapter-autocmex/`）；已安装的落点路径在设置页回显，重启后仍可见。安装完成后弹窗给出控制台启用路径与检索关键词；缺少工作区链接时提示先跑一次包管理器安装；检测到旧版落点目录 `auto-cmex` 残留时提示移走。
+- **可检测性**：控制台的插件检索按**包短名**做子串匹配（短名 = 包名去掉 `koishi-plugin-` 前缀），分类标签取 `koishi.category`。因此插件包名（`koishi-plugin-adapter-autocmex`）、安装目录名、插件自报名三者同为短名 `adapter-autocmex`，并声明 `koishi.category = "adapter"`，保证「添加插件」里搜 `adapter-autocmex` 或直接看「适配器」分类都能找到。
 - **支持框架**：目前仅支持 Koishi v4。
 
 ---
