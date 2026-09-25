@@ -3,7 +3,10 @@ namespace AutoCMEX.UI.Info;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using AutoCMEX.Core.Info;
+using AutoCMEX.Core.Recording;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.AutoInject;
@@ -25,7 +28,8 @@ using Godot;
 /// <see cref="GifPlaybackCoordinator"/>），滑出视野立即释放帧缓存；发布时从磁盘直接取原图。
 /// </para>
 /// <para>
-/// 录制按钮本期占位禁用（场景中已置 <c>disabled</c>），后续版本提供录制产出同构清单后可直接复用本栏。
+/// 录制按钮为本栏的录制入口：前置检查通过后依次手选工程包与输出目录，自动逐张录制并在结束时
+/// 自动导入为本栏的集（选中该集）；详见 <see cref="RecordingRunPanel"/>。
 /// </para>
 /// </remarks>
 [Meta(typeof(IAutoNode))]
@@ -73,7 +77,14 @@ public partial class GifSetPanel : VBoxContainer
 
   private FileDialog? _folderDialog;
   private FileDialog? _zipDialog;
+  private FileDialog? _recordZipDialog;
+  private FileDialog? _recordOutputDirDialog;
   private AcceptDialog? _messageDialog;
+
+  private RecordingRunPanel? _runPanel;
+
+  /// <summary>已手选、等待接着选输出目录的工程包；两步选择之间的中间态。</summary>
+  private string? _pendingModPackZip;
 
   /// <summary>一次性状态提示（如导入成功）；由下一次 <see cref="RebuildCards"/> 渲染后清空。</summary>
   private string? _pendingStatus;
@@ -94,6 +105,9 @@ public partial class GifSetPanel : VBoxContainer
 
     _activeSetIdBinding?.Dispose();
     _activeSetIdBinding = null;
+
+    // 本栏退出后不该还有引擎在后台跑；取消语义会保留已归集的产物与报告
+    _runPanel?.Cancel();
 
     ReleaseCards();
   }
@@ -118,13 +132,15 @@ public partial class GifSetPanel : VBoxContainer
     _publish = publish;
 
     // 录制本期不实现：以代码再确认一次禁用态，防止场景被误改后按钮"看似可用"
-    RecordButton.Disabled = true;
-    RecordButton.TooltipText = "本期不实现录制，后续版本提供";
+    EnsureRecordDialogs();
+    RecordButton.Disabled = false;
+    RecordButton.TooltipText = "选工程包与输出目录后自动逐张录制，录完自动导入为本栏的集";
 
     ImportFolderButton.Pressed += OnImportFolderPressed;
     ImportZipButton.Pressed += OnImportZipPressed;
     SetSelector.ItemSelected += OnSetSelected;
     PublishButton.Pressed += OnPublishPressed;
+    RecordButton.Pressed += OnRecordPressed;
     CardScroll.GetVScrollBar().ValueChanged += OnCardScrollValueChanged;
 
     _setsBinding = _config.GifSets.Bind().OnModify(OnSetsChanged);
@@ -378,10 +394,13 @@ public partial class GifSetPanel : VBoxContainer
 
   private void OnImportZipSelected(string path) => Import(() => _gifSets!.ImportZip(path));
 
-  private void Import(Func<GifSetImportResult> import)
+  /// <summary>执行一次导入：成功则选中该集并留提示，失败则展示明细。</summary>
+  /// <param name="import">导入动作。</param>
+  /// <returns>导入结果；服务未就绪时为 <c>null</c>。</returns>
+  private GifSetImportResult? Import(Func<GifSetImportResult> import)
   {
     if (_gifSets is null)
-      return;
+      return null;
 
     GifSetImportResult result;
     try
@@ -404,7 +423,7 @@ public partial class GifSetPanel : VBoxContainer
       SetInfoLabel.Text = _pendingStatus;
 
       _gifSets.SetActiveSet(result.Set.Id.Value);
-      return;
+      return result;
     }
 
     // 失败结果覆盖上一次的成功提示，避免两条状态并排留下误导
@@ -412,6 +431,196 @@ public partial class GifSetPanel : VBoxContainer
     SetInfoLabel.Text = result.ToDisplayText();
     GD.PushWarning($"GifSetPanel: 导入失败：{result.ToDisplayText()}");
     ShowMessage("导入失败", result.ToDisplayText());
+    return result;
+  }
+
+  /// <summary>录制入口：前置检查通过后依次手选工程包与输出目录。</summary>
+  private void OnRecordPressed()
+  {
+    // 已有轮次在跑：把进度窗拉回前台即可，不起第二轮（同一引擎目录不能并发）
+    if (_runPanel is { IsRunning: true })
+    {
+      _runPanel.PopupCentered(new Vector2I(760, 460));
+      return;
+    }
+
+    var blocker = DescribeRecordBlocker();
+    if (blocker is not null)
+    {
+      ShowMessage("暂时无法录制", blocker);
+      return;
+    }
+
+    _pendingModPackZip = null;
+    EnsureRecordDialogs();
+    _recordZipDialog!.PopupCentered(new Vector2I(760, 520));
+  }
+
+  /// <summary>创建录制用的两个选择器（只建一次、信号只连一次，避免重复起录）。</summary>
+  private void EnsureRecordDialogs()
+  {
+    if (_recordZipDialog is null)
+    {
+      _recordZipDialog = CreateFileDialog(
+        "选择要录制的工程包（zip）",
+        FileDialog.FileModeEnum.OpenFile,
+        new[] { "*.zip" }
+      );
+      // 与导入用的两个同模式，故给出可辨识的节点名（排查与单测都靠它区分）
+      _recordZipDialog.Name = "RecordZipDialog";
+      _recordZipDialog.FileSelected += OnRecordZipSelected;
+    }
+
+    if (_recordOutputDirDialog is null)
+    {
+      _recordOutputDirDialog = CreateFileDialog(
+        "选择录制产物的输出目录",
+        FileDialog.FileModeEnum.OpenDir,
+        Array.Empty<string>()
+      );
+      _recordOutputDirDialog.Name = "RecordOutputDirDialog";
+      _recordOutputDirDialog.DirSelected += OnRecordOutputDirSelected;
+    }
+  }
+
+  /// <summary>选定工程包后接着选输出目录。</summary>
+  /// <param name="path">工程包路径。</param>
+  private void OnRecordZipSelected(string path)
+  {
+    _pendingModPackZip = path;
+    EnsureRecordDialogs();
+    _recordOutputDirDialog!.PopupCentered(new Vector2I(760, 520));
+  }
+
+  /// <summary>选定输出目录后起录。</summary>
+  /// <param name="path">输出目录。</param>
+  private void OnRecordOutputDirSelected(string path) => StartRecording(path);
+
+  /// <summary>拼出不可起录的原因。</summary>
+  /// <returns>原因（沿用各层原文，已含下一步指引）；可起录时为 <c>null</c>。</returns>
+  private string? DescribeRecordBlocker()
+  {
+    if (_dataManager is null || _gifSets is null)
+      return "信息面板尚未装配完成，请稍候再试。";
+
+    var config = _dataManager.RecordingConfig;
+    var engineDir = config.EngineDir.Value;
+    if (!EngineLocator.TryValidate(engineDir, out var reason))
+      return reason;
+
+    // 与设置页同一套判据，区别在「清单缺失」：能装 ≠ 能录（引擎不会加载插件）
+    if (!PluginDeployer.TryValidateForRecording(engineDir, out reason))
+      return reason;
+
+    return !RecordingSandbox.TryValidateRoot(config.SandboxRoot.Value, out _, out reason)
+      ? reason
+      : null;
+  }
+
+  /// <summary>起录一轮（输出目录由用户手选，不默认挟带整合导出产物）。</summary>
+  /// <param name="outputDir">输出目录。</param>
+  private void StartRecording(string outputDir)
+  {
+    if (_dataManager is null || _gifSets is null || string.IsNullOrEmpty(_pendingModPackZip))
+      return;
+
+    var config = _dataManager.RecordingConfig;
+    var request = new RecordingRequest(
+      config.EngineDir.Value,
+      _pendingModPackZip!,
+      outputDir,
+      config
+    );
+    _pendingModPackZip = null;
+
+    if (_runPanel is null || !GodotObject.IsInstanceValid(_runPanel))
+    {
+      _runPanel = new RecordingRunPanel(RunRecordingAsync);
+      _runPanel.Finished += OnRecordingFinished;
+      AddChild(_runPanel);
+    }
+
+    _pendingStatus = null;
+    SetInfoLabel.Text = $"录制中：成功产物将写入 {outputDir}";
+    _runPanel.Start(request);
+  }
+
+  /// <summary>跑一轮录制的默认实现（UI 侧唯一入口）。</summary>
+  /// <param name="request">本轮输入。</param>
+  /// <param name="progress">进度回调。</param>
+  /// <param name="cancellationToken">取消令牌。</param>
+  /// <returns>本轮结果。</returns>
+  private static Task<RecordingRunResult> RunRecordingAsync(
+    RecordingRequest request,
+    IProgress<RecordingProgress>? progress,
+    CancellationToken cancellationToken
+  ) =>
+    new RecordingOrchestrator(AppLogs.GetOrCreate().GetLogger("Recording")).RunAsync(
+      request,
+      progress,
+      cancellationToken
+    );
+
+  /// <summary>本轮结束：记下输出目录、自动导入为该集，并把汇总回填到进度窗。</summary>
+  /// <param name="result">本轮结果。</param>
+  private void OnRecordingFinished(RecordingRunResult result)
+  {
+    var summary = new List<string> { DescribeRun(result) };
+
+    if (result.Error is null)
+    {
+      _dataManager!.RecordingConfig.LastOutputDir.Value = result.OutputDir;
+      _dataManager.TriggerAutoSave();
+
+      if (result.ManifestPath is null)
+      {
+        // 无成功产物时不写出清单（清单里没有条目会被集内校验判为空集），导入没有意义
+        summary.Add("本轮没有成功落盘的产物，跳过导入。");
+      }
+      else
+      {
+        var imported = Import(() => _gifSets!.ImportFolder(result.OutputDir));
+        summary.Add(
+          imported is { IsSuccess: true }
+            ? $"已自动导入为集：{imported.Set?.SetName.Value}"
+            : "自动导入未完成，明细见导入提示框。"
+        );
+      }
+    }
+
+    if (!string.IsNullOrEmpty(result.EngineLogTail))
+      summary.Add(result.EngineLogTail!);
+
+    var text = string.Join("\n", summary);
+    _runPanel?.AppendSummary(text);
+
+    if (result.Error is not null)
+    {
+      _pendingStatus = null;
+      SetInfoLabel.Text = result.Error;
+      ShowMessage("录制失败", text);
+    }
+  }
+
+  /// <summary>把本轮结果拼成一行计数说明。</summary>
+  /// <param name="result">本轮结果。</param>
+  /// <returns>汇总文本。</returns>
+  private static string DescribeRun(RecordingRunResult result)
+  {
+    var report = result.Report;
+    var parts = new List<string>
+    {
+      $"本轮录制：成功 {report.Succeeded}　失败 {report.Failed}"
+        + $"　未录制 {report.TotalCombat - report.Succeeded - report.Failed}　共 {report.TotalCombat} 张",
+    };
+
+    if (result.Cancelled)
+      parts.Add("已取消（已归集的产物与报告保留）");
+
+    if (!string.IsNullOrEmpty(result.Warning))
+      parts.Add($"提示：{result.Warning}");
+
+    return string.Join("\n", parts);
   }
 
   private void ShowMessage(string title, string text)
