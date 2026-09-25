@@ -257,9 +257,31 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 真机验收（2026-09-25，`sample_pre_project`，4 张战斗卡）：2 worker 并行跑通全流程——沙箱各自独立、产物按序号归集 4 个、报告落盘、临时目录无残留沙箱；`t3` 封顶的「耐久符」与串行轮的产物帧数/帧率一致（274 帧 / 12 fps，抽样比对内容近似度 84~85%）。按既定裁定「截断属正常产物」：玩家不干预时 45~60 秒的长卡在 350 帧预算下两档都会截断并标 `complete = false`。
 
+### 配置与插件部署（P4）
+
+设置板块「信息」类别页底部挂一组「符卡 GIF 录制设置」（`RecordingConfigPanel`，默认折叠）：引擎目录、并行度、沙箱根、插件状态、高级参数五段。该类别页没有独立场景（节点直接写在 `SettingsPanel.tscn` 里），故分组按本页既有的「C# 构建行」范式在依赖解析后创建（`InfoConfigPanel.EnsureRecordingSection`），并在该页每次被切显时刷新一次状态（`VisibilityChanged`）。
+
+配置项一律复用 `DataManager.RecordingConfig` 的既有字段（引擎目录 / 并行度 / 沙箱根 / 帧数上限 / 两个抽帧间隔 / 上次输出目录），**不新增持久化字段**，写入走既有防抖自动保存。写回纪律：
+
+- **非法值不落盘**：引擎目录经 `EngineLocator.TryValidate`、沙箱根经 `RecordingSandbox.TryValidateRoot` 校验，不通过则保留原值、只把原因写在状态行上——提示与配置分离，避免「面板提示已改、实际没改」的错觉。
+- **越界收敛**：并行度 1~32、帧数上限 1~1000、抽帧间隔 1~60，由 `RecordingConfig.ClampParallelism`/`ClampMaxFrame`/`ClampInterval` 收敛后写回。
+- **推断只作建议**：「从 Sharp 目录推断」复用 `EngineLocator.TryInferFromSharpDir`（沿「整合」板块的 Editor Sharp 目录上溯找 `game/launch`），结果仍走同一套校验，不隐式改写用户配置。
+
+**插件部署**（`PluginDeployer`）：判定与动作收在一处，UI 与沙箱共用同一判据（`TryValidateForRecording`），避免出现「面板显示就绪、起录却被拒」的两套口径；`RecordingSandbox.ValidateSource` 不再自己判插件，只转述该判据的原因串（原异常文案逐字不变）。
+
+- 三态：`Ready`（目录在且启用）、`InstalledDisabled`（目录在、清单 `enable = false`）、`Missing`；清单缺失或不可解析另给 `ManifestBroken`，此时**一切部署动作关闭**——宁可不让用户动手，也不拿坏清单去写。
+- 清单兼容两种登记方式（新式 `name` + `path` 与 LuaSTG-CN 的 `[pluginpackage]danmaku_recorder_x.y.z` 路径），条目命中判据是 `name` 或 `path` 含插件目录名关键字。引擎目录未设置、清单损坏、缺第三方录制器三种情况各自给可执行的原因（缺录制器明说「第三方插件，需自行获取」）。
+- **一键安装**（自家插件）：先备份既有插件目录（`<目录名>.autocmex-bak`，已存在则不叠加）→ 复制自带插件 → 登记为启用；**幂等**，重复点击不产生第二份备份、不重复登记。清单损坏时抛 `PluginDeployException` 且不改盘。
+- **一键启用**（第三方弹幕录制器）：只把条目 `enable` 置 `true`，不动文件、不覆盖条目里的其它字段。
+- **写前必备份**：改 `plugins.json` 前先落 `plugins.json.autocmex-bak`，再以临时文件 + 原子替换写入，避免半截 JSON 让引擎读不到任何插件。
+- **零写入约束**：用户没点任何按钮时，面板只做只读检查（`Inspect`），不碰引擎目录。
+- 沙箱侧新增 `TryValidateRoot`（沙箱根存在性 + 一次性写入探针；配置为空时允许就地创建默认目录，用户手选的目录必须已存在）；`EstimateFootprint` 允许工程包路径为空（设置页刚配引擎时还没有包），缺失项按 0 计。
+
+验证：编译 0 错误，GoDotTest **567 通过 / 0 失败**（新增 `PluginDeployerTest`（三态判定、清单损坏、禁用条目、只读检查不写盘、安装幂等与备份、启用最小改动、缺件原因串）与 `RecordingConfigPanelTest`（配置回填、非法值不落盘、越界收敛、状态渲染、一键部署联动、无引擎目录时误点不改盘））。
+
 ### 实施阶段
 
-P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完成）→ P3 批量并行录制 + 沙箱隔离（已完成）→ P4 配置与设置面板 → P5 归集、`manifest.json` 与自动导入 → P6 单测补齐与真机验收。
+P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完成）→ P3 批量并行录制 + 沙箱隔离（已完成）→ P4 配置与设置面板（已完成）→ P5 归集、`manifest.json` 与自动导入 → P6 单测补齐与真机验收。
 
 - C# 侧（`src/core/recording/`）：`EngineLocator` 校验引擎目录并定位 exe；`RecordingJobWriter` 写任务文件并维护运行期目录；`GameProcessRunner` 构造参数串、启动进程、超时杀进程、校验并读回结果、回收 `engine.log` 尾部；`GifNaming` 承载序号与命名规则；`GifSetBuilder` 归集产物（拷贝改名 + 读 GIF 头尺寸）；`RecordingSandbox` 造/清沙箱并清扫残留；`RecordingScheduler` 分配 worker 与抢卡；`RecordingOrchestrator` 串起「校验引擎 → 写任务 → 启动进程 → 校验结果 → 派生序号」的枚举闭环与「截断换挡重录 → 归集产物」的单卡录制闭环，并在 `RunAsync` 里编排整轮（并行录制 → 串行归集 → 写报告）。
 - 游戏侧插件（`src/plugin/luastg/autocmex/`）：`__init__` 入口（无任务时零副作用）、`job` 任务校验与结果写出、`cards` 卡表枚举、`record` 跳卡/起录/收尾/退出、`log` 诊断日志。
@@ -281,7 +303,7 @@ AutoCMEX/
 │   ├── core/               # 核心业务逻辑
 │   │   ├── guessing/       # 猜测处理引擎（策略模式）
 │   │   ├── info/           # 信息板块：两表推导、GIF 集导入、离屏出图、发布编排
-│   │   ├── recording/      # 符卡 GIF 录制：引擎定位、沙箱隔离、并行调度、进程运行、归集与报告
+│   │   ├── recording/      # 符卡 GIF 录制：引擎定位、插件部署、沙箱隔离、并行调度、进程运行、归集与报告
 │   │   ├── ai/             # AI 模型调用（OpenAI / Anthropic）
 │   │   └── storage/        # 数据存储与 AES 加密
 │   └── plugin/             # 外部插件
@@ -298,12 +320,12 @@ AutoCMEX/
 
 ## 当前任务状态
 
-| 板块 | 状态     | 说明                                                               |
-| ---- | -------- | ------------------------------------------------------------------ |
-| 整合 | 暂不开发 | 细节待补充                                                         |
-| 猜测 | 已实现   | 核心板块，需求已明确                                               |
-| 信息 | 已实现   | 四栏展示 + 一键转发；符卡录制模块已到 P3（批量并行录制），余 P4~P6 |
-| 设置 | 部分实现 | AI 模型与群聊配置已实现                                            |
-| 帮助 | 待开发   | 内置 Markdown 渲染                                                 |
+| 板块 | 状态     | 说明                                                                 |
+| ---- | -------- | -------------------------------------------------------------------- |
+| 整合 | 暂不开发 | 细节待补充                                                           |
+| 猜测 | 已实现   | 核心板块，需求已明确                                                 |
+| 信息 | 已实现   | 四栏展示 + 一键转发；符卡录制模块已到 P4（配置与插件部署），余 P5~P6 |
+| 设置 | 部分实现 | AI 模型与群聊配置已实现；「信息」类别页含目标群与录制设置            |
+| 帮助 | 待开发   | 内置 Markdown 渲染                                                   |
 
 **当前阶段**：核心功能（猜测引擎、AI 模糊化、数据存储、WebSocket 服务）已实现，设置板块 AI 模型与群聊配置、信息板块四栏展示与发布已完成；符卡 GIF 录制模块进行中，已完成引擎侧插件、枚举最小闭环（P1）、单卡录制闭环（P2）与批量并行录制（P3）。
