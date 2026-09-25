@@ -83,7 +83,7 @@ public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
     // 配置预置对话框
     PluginFileDialog.FileMode = FileDialog.FileModeEnum.OpenDir;
     PluginFileDialog.Access = FileDialog.AccessEnum.Filesystem;
-    PluginFileDialog.Title = "选择 Koishi plugins 目录";
+    PluginFileDialog.Title = SelectDirectoryHint;
     PluginFileDialog.DirSelected += OnPluginDirSelected;
 
     PluginOkDialog.Title = "安装完成";
@@ -211,11 +211,14 @@ public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
     }
   }
 
+  /// <summary>文件对话框标题：说明该选 Koishi 的哪一层目录（应用根目录或它的 external）。</summary>
+  private static string SelectDirectoryHint =>
+    $"选择 Koishi 应用根目录（含 {KoishiPluginSpec.AppManifestFileName}）"
+    + $"或它的 {KoishiPluginSpec.ExternalDirName} 目录";
+
   private void OnInstallPlugin()
   {
-    PluginFileDialog.Title =
-      $"选择 Koishi 应用根目录（含 {KoishiPluginSpec.AppManifestFileName}）"
-      + $"或它的 {KoishiPluginSpec.ExternalDirName} 目录";
+    PluginFileDialog.Title = SelectDirectoryHint;
     PluginFileDialog.PopupCentered();
   }
 
