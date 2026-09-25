@@ -58,14 +58,24 @@ public static class PluginDeployer
   /// <summary>本插件在应用资源里的源目录（复制到引擎目录的源头）。</summary>
   public const string AutocmexSourceDir = "res://src/plugin/luastg/autocmex/";
 
+  /// <summary>清单缺失时追加给用户的说明（缺失不是损坏，部署动作照做）。</summary>
+  private const string MissingManifestHint =
+    $"插件清单 {ManifestFileName} 不存在，安装时会新建一份";
+
   private static readonly JsonSerializerOptions _writeOptions = new() { WriteIndented = true };
 
   /// <summary>只读检查两个插件在引擎目录里的部署状态（不写盘）。</summary>
   /// <param name="engineDir">引擎根目录（可为空）。</param>
   /// <returns>汇总状态。</returns>
   /// <remarks>
-  /// 引擎目录无效或清单损坏时不猜状态：前者整体标为未就绪，后者标为 <see cref="RecordingPluginState.ManifestBroken"/>
-  /// 并禁用一切部署动作（避免覆盖用户文件）。
+  /// <para>
+  /// 引擎目录无效时不猜状态：整体标为未就绪，原因沿用引擎目录校验的原文；清单文件存在却读不出来时标为
+  /// <see cref="RecordingPluginState.ManifestBroken"/> 并禁用一切部署动作（避免拿坏清单去覆盖用户文件）。
+  /// </para>
+  /// <para>
+  /// 清单<b>缺失</b>不算损坏：按空清单继续判插件，两个动作都仍然可做——安装会新建一份并登记条目
+  /// （LuaSTG 引擎自己启动时也会生成清单），此处若一并禁用，用户会在全新引擎上无从下手。
+  /// </para>
   /// </remarks>
   public static RecordingPluginInspection Inspect(string? engineDir)
   {
@@ -84,7 +94,16 @@ public static class PluginDeployer
     var pluginsDir = Path.Combine(EngineLocator.GetGameDir(engine), PluginsDirName);
     var manifestPath = Path.Combine(pluginsDir, ManifestFileName);
     var manifestExists = File.Exists(manifestPath);
-    var manifest = TryLoadManifest(manifestPath, manifestExists, out var brokenReason);
+    JsonArray? manifest = null;
+    var brokenReason = string.Empty;
+    if (manifestExists)
+    {
+      manifest = TryLoadManifest(manifestPath, out brokenReason);
+    }
+    else
+    {
+      manifest = new JsonArray();
+    }
 
     if (manifest is null)
     {
@@ -105,8 +124,8 @@ public static class PluginDeployer
       EngineDir = engine,
       ManifestPath = manifestPath,
       ManifestExists = manifestExists,
-      Autocmex = InspectAutocmex(pluginsDir, manifest),
-      Recorder = InspectRecorder(pluginsDir, manifest),
+      Autocmex = InspectAutocmex(pluginsDir, manifest, manifestExists),
+      Recorder = InspectRecorder(pluginsDir, manifest, manifestExists),
     };
   }
 
@@ -114,6 +133,11 @@ public static class PluginDeployer
   /// <param name="engineDir">引擎根目录。</param>
   /// <param name="reason">不满足时的原因（面向用户，含「请先在设置页…」指引）。</param>
   /// <returns>两个插件都可用返回 true。</returns>
+  /// <remarks>
+  /// 与 <see cref="Inspect"/> 同一套判据，区别只在「清单缺失」的处理：能装 ≠ 能录。
+  /// 清单不存在时引擎根本不会加载插件，起录必然拿到没有录制能力的进程，所以这里直接判不满足；
+  /// 而设置页那边仍允许安装（安装会新建清单）。
+  /// </remarks>
   public static bool TryValidateForRecording(string engineDir, out string reason)
   {
     // 引擎目录本身的有效性由调用方先行校验，这里只判插件，便于把原因文案聚合在插件这一层
@@ -126,18 +150,17 @@ public static class PluginDeployer
       return false;
     }
 
-    if (TryLoadManifest(manifestPath, exists: true, out var brokenReason) is not { } manifest)
+    if (TryLoadManifest(manifestPath, out var brokenReason) is not { } manifest)
     {
       reason = $"插件清单损坏，未做任何改动：{manifestPath}（{brokenReason}）";
       return false;
     }
 
-    var autocmex = InspectAutocmex(pluginsDir, manifest);
+    // 原因串是用户在板块里看到的原话：只按状态给固定文案，不掺进检查细节（细节留在设置页的状态行）
+    var autocmex = InspectAutocmex(pluginsDir, manifest, manifestExists: true);
     reason = autocmex.State switch
     {
-      RecordingPluginState.Missing => string.IsNullOrEmpty(autocmex.Detail)
-        ? "录制插件未安装到引擎，请先在设置页安装或启用插件"
-        : $"录制插件未安装到引擎（{autocmex.Detail}），请先在设置页安装或启用插件",
+      RecordingPluginState.Missing => "录制插件未安装到引擎，请先在设置页安装或启用插件",
       RecordingPluginState.InstalledDisabled => "录制插件未启用，请先在设置页启用插件",
       _ => string.Empty,
     };
@@ -146,7 +169,7 @@ public static class PluginDeployer
       return false;
     }
 
-    var recorder = InspectRecorder(pluginsDir, manifest);
+    var recorder = InspectRecorder(pluginsDir, manifest, manifestExists: true);
     reason = recorder.State switch
     {
       RecordingPluginState.Missing => "未找到弹幕录制器插件，请先在设置页安装或启用插件",
@@ -196,7 +219,7 @@ public static class PluginDeployer
       );
     }
 
-    var entry = FindEntry(manifest, AutocmexPluginDirName);
+    var entry = FindEntry(manifest, AutocmexPluginDirName, allowSuffix: false);
     if (entry is null)
     {
       manifest.Add(
@@ -230,7 +253,7 @@ public static class PluginDeployer
     var manifestPath = Path.Combine(pluginsDir, ManifestFileName);
     var manifest = LoadManifestForWrite(manifestPath, allowMissing: false);
     var entry =
-      FindEntry(manifest, RecorderPluginKeyword)
+      FindEntry(manifest, RecorderPluginKeyword, allowSuffix: true)
       ?? throw new PluginDeployException($"插件清单里没有弹幕录制器条目：{manifestPath}");
     entry["enable"] = true;
     SaveManifest(manifestPath, manifest);
@@ -258,14 +281,22 @@ public static class PluginDeployer
 
   /// <summary>判定本插件的状态。</summary>
   /// <param name="pluginsDir">引擎的 <c>game/plugins</c> 目录。</param>
-  /// <param name="manifest">已解析的插件清单。</param>
+  /// <param name="manifest">已解析的插件清单（清单缺失时是空数组）。</param>
+  /// <param name="manifestExists">清单文件是否存在（缺失时引擎不会加载任何插件）。</param>
   /// <returns>本插件状态。</returns>
-  private static RecordingPluginStatus InspectAutocmex(string pluginsDir, JsonArray manifest)
+  private static RecordingPluginStatus InspectAutocmex(
+    string pluginsDir,
+    JsonArray manifest,
+    bool manifestExists
+  )
   {
     var dir = Path.Combine(pluginsDir, AutocmexPluginDirName);
     var entryFile = Path.Combine(dir, AutocmexEntryFileName);
     if (!File.Exists(entryFile))
     {
+      var reason = Directory.Exists(dir)
+        ? $"目录存在但缺少入口文件 {AutocmexEntryFileName}"
+        : $"未安装到引擎目录：{dir}";
       return new RecordingPluginStatus
       {
         Name = AutocmexPluginDirName,
@@ -273,13 +304,27 @@ public static class PluginDeployer
         Installed = false,
         Enabled = false,
         CanInstall = true,
-        Detail = Directory.Exists(dir)
-          ? $"目录存在但缺少入口文件 {AutocmexEntryFileName}"
-          : $"未安装到引擎目录：{dir}",
+        Detail = manifestExists ? reason : $"{reason}；{MissingManifestHint}",
       };
     }
 
-    var entry = FindEntry(manifest, AutocmexPluginDirName);
+    if (!manifestExists)
+    {
+      // 目录在、清单不在：引擎不会加载，但点「安装并启用」会新建清单并登记，故仍算「可动手」
+      return new RecordingPluginStatus
+      {
+        Name = AutocmexPluginDirName,
+        State = RecordingPluginState.InstalledDisabled,
+        Installed = true,
+        Enabled = false,
+        CanInstall = true,
+        CanEnable = true,
+        Detail =
+          $"插件清单不存在（引擎不会加载）；点「安装并启用」会新建 {ManifestFileName} 并登记该插件",
+      };
+    }
+
+    var entry = FindEntry(manifest, AutocmexPluginDirName, allowSuffix: false);
     var enabled = EntryEnabled(entry);
     return new RecordingPluginStatus
     {
@@ -300,9 +345,14 @@ public static class PluginDeployer
 
   /// <summary>判定第三方弹幕录制器的状态（按目录关键字匹配，第三方插件不提供一键安装）。</summary>
   /// <param name="pluginsDir">引擎的 <c>game/plugins</c> 目录。</param>
-  /// <param name="manifest">已解析的插件清单。</param>
+  /// <param name="manifest">已解析的插件清单（清单缺失时是空数组）。</param>
+  /// <param name="manifestExists">清单文件是否存在（缺失时引擎不会加载任何插件）。</param>
   /// <returns>录制器状态。</returns>
-  private static RecordingPluginStatus InspectRecorder(string pluginsDir, JsonArray manifest)
+  private static RecordingPluginStatus InspectRecorder(
+    string pluginsDir,
+    JsonArray manifest,
+    bool manifestExists
+  )
   {
     var installed =
       Directory.Exists(pluginsDir)
@@ -320,7 +370,23 @@ public static class PluginDeployer
       };
     }
 
-    var entry = FindEntry(manifest, RecorderPluginKeyword);
+    if (!manifestExists)
+    {
+      // 目录在、清单不在：引擎不会加载它，「启用」需要先有清单条目，故这里只指路不给按钮
+      return new RecordingPluginStatus
+      {
+        Name = RecorderPluginKeyword,
+        State = RecordingPluginState.InstalledDisabled,
+        Installed = true,
+        Enabled = false,
+        CanEnable = false,
+        Detail =
+          $"插件清单不存在（引擎不会加载）；先「安装并启用 autocmex」会新建 {ManifestFileName}，"
+          + "之后启动一次引擎，引擎会自行登记该插件",
+      };
+    }
+
+    var entry = FindEntry(manifest, RecorderPluginKeyword, allowSuffix: true);
     var enabled = EntryEnabled(entry);
     return new RecordingPluginStatus
     {
@@ -370,20 +436,14 @@ public static class PluginDeployer
       Detail = $"插件清单无法解析（{reason}），未做任何改动：{manifestPath}",
     };
 
-  /// <summary>只读解析清单：不存在、内容不是数组或读取失败都返回 <c>null</c>。</summary>
-  /// <param name="manifestPath">清单路径。</param>
-  /// <param name="exists">清单是否已确认存在。</param>
+  /// <summary>只读解析清单：内容不是数组或读取失败都返回 <c>null</c>。</summary>
+  /// <param name="manifestPath">清单路径（调用方保证文件存在）。</param>
   /// <param name="reason">失败原因（成功时为空串）。</param>
   /// <returns>清单数组；无法解析时为 <c>null</c>。</returns>
-  private static JsonArray? TryLoadManifest(string manifestPath, bool exists, out string reason)
+  /// <remarks>文件不存在由调用方各自处理：只读检查按空清单继续，写盘动作按需新建，两者语义不同。</remarks>
+  private static JsonArray? TryLoadManifest(string manifestPath, out string reason)
   {
     reason = string.Empty;
-    if (!exists)
-    {
-      reason = "文件不存在";
-      return null;
-    }
-
     try
     {
       if (JsonNode.Parse(File.ReadAllText(manifestPath)) is JsonArray array)
@@ -410,21 +470,20 @@ public static class PluginDeployer
   /// <exception cref="PluginDeployException">清单缺失且不允许新建，或清单损坏。</exception>
   private static JsonArray LoadManifestForWrite(string manifestPath, bool allowMissing)
   {
-    var exists = File.Exists(manifestPath);
-    if (!exists && !allowMissing)
+    if (!File.Exists(manifestPath))
     {
-      throw new PluginDeployException($"插件清单不存在：{manifestPath}");
+      return allowMissing
+        ? new JsonArray()
+        : throw new PluginDeployException($"插件清单不存在：{manifestPath}");
     }
 
-    if (TryLoadManifest(manifestPath, exists, out var reason) is { } manifest)
+    if (TryLoadManifest(manifestPath, out var reason) is { } manifest)
     {
       return manifest;
     }
 
-    // 文件不存在（允许新建）与内容损坏要分开处理，后者必须拦住
-    return exists
-      ? throw new PluginDeployException($"插件清单损坏，未做任何改动：{manifestPath}（{reason}）")
-      : new JsonArray();
+    // 内容损坏必须拦住：宁可不动手，也不拿一份读不出来的清单去覆盖用户文件
+    throw new PluginDeployException($"插件清单损坏，未做任何改动：{manifestPath}（{reason}）");
   }
 
   /// <summary>备份并原子替换清单文件。</summary>
@@ -470,27 +529,63 @@ public static class PluginDeployer
     }
   }
 
-  /// <summary>按关键字找清单条目（<c>name</c> 或 <c>path</c> 命中即算）。</summary>
+  /// <summary>按关键字找清单条目。</summary>
   /// <param name="manifest">清单数组。</param>
   /// <param name="keyword">插件目录名关键字。</param>
+  /// <param name="allowSuffix">目录名是否允许带后缀（第三方插件按 <c>目录名_版本</c> 命名）。</param>
   /// <returns>命中的条目；未命中为 <c>null</c>。</returns>
-  private static JsonObject? FindEntry(JsonArray manifest, string keyword) =>
-    manifest
-      .OfType<JsonObject>()
-      .FirstOrDefault(entry =>
-        FieldContains(entry, "name", keyword) || FieldContains(entry, "path", keyword)
-      );
+  /// <remarks>
+  /// 先按 <c>name</c> 精确匹配，再按 <c>path</c> 的最后一段匹配；匹配的是**整段目录名**而不是子串，
+  /// 否则同名前缀的目录（例如 <c>autocmex_old</c>）会被误当成目标条目——那会让「安装」去改写别人的
+  /// 条目而不是新增一条。
+  /// </remarks>
+  private static JsonObject? FindEntry(JsonArray manifest, string keyword, bool allowSuffix)
+  {
+    var entries = manifest.OfType<JsonObject>().ToList();
+    return entries.FirstOrDefault(entry => FieldEquals(entry, "name", keyword))
+      ?? entries.FirstOrDefault(entry => PathMatches(entry, keyword, allowSuffix));
+  }
 
-  /// <summary>判断条目的某个字符串字段是否含关键字（忽略大小写）。</summary>
+  /// <summary>判断条目的 <c>path</c> 是否指向该插件目录（只比最后一段，忽略大小写）。</summary>
+  /// <param name="entry">清单条目。</param>
+  /// <param name="keyword">插件目录名关键字。</param>
+  /// <param name="allowSuffix">目录名是否允许带后缀。</param>
+  /// <returns>命中返回 true。</returns>
+  private static bool PathMatches(JsonObject entry, string keyword, bool allowSuffix)
+  {
+    if (
+      entry["path"] is not JsonValue value
+      || !value.TryGetValue(out string? path)
+      || path is null
+    )
+    {
+      return false;
+    }
+
+    var segment = path.TrimEnd('/', '\\');
+    segment = segment[(segment.LastIndexOfAny(new[] { '/', '\\' }) + 1)..];
+    // LuaSTG-CN 的第三方插件目录名形如 [pluginpackage]danmaku_recorder_1.0.1，前缀不属于目录名
+    var close = segment.IndexOf(']');
+    if (segment.StartsWith('[') && close >= 0)
+    {
+      segment = segment[(close + 1)..];
+    }
+
+    return allowSuffix
+      ? segment.StartsWith(keyword, StringComparison.OrdinalIgnoreCase)
+      : string.Equals(segment, keyword, StringComparison.OrdinalIgnoreCase);
+  }
+
+  /// <summary>判断条目的某个字符串字段是否与关键字完全相等（忽略大小写）。</summary>
   /// <param name="entry">清单条目。</param>
   /// <param name="field">字段名。</param>
   /// <param name="keyword">关键字。</param>
   /// <returns>命中返回 true。</returns>
-  private static bool FieldContains(JsonObject entry, string field, string keyword) =>
+  private static bool FieldEquals(JsonObject entry, string field, string keyword) =>
     entry[field] is JsonValue value
     && value.TryGetValue(out string? text)
     && text is not null
-    && text.Contains(keyword, StringComparison.OrdinalIgnoreCase);
+    && string.Equals(text, keyword, StringComparison.OrdinalIgnoreCase);
 
   /// <summary>取条目的启用状态：无条目或字段缺失都按引擎默认（启用）处理。</summary>
   /// <param name="entry">清单条目（可为 <c>null</c>）。</param>
