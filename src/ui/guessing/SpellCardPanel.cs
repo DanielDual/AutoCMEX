@@ -66,6 +66,9 @@ public partial class SpellCardPanel : VBoxContainer
   // 当前绑定的 Boss（用于切换其符卡列表的绑定）
   private Boss? _currentBoss;
 
+  // 当前绑定的符卡列表实例（与 Boss 一起比对，与 BossDataWatcher 同一范式）
+  private AutoList<SpellCard>? _currentSpellCards;
+
   private AutoList<Boss>.Binding? _bossesBinding;
 
   // 选中下标绑定（单一数据源：AppSettings.SelectedBossIndex，与猜测流程共享）
@@ -240,10 +243,12 @@ public partial class SpellCardPanel : VBoxContainer
     if (index >= 0 && BossSelect.Selected != index)
       BossSelect.Select(index);
 
-    // 切换 Boss 时才重建其符卡列表绑定与逐卡属性订阅
-    if (currentBoss != _currentBoss)
+    // 切换 Boss（或只替换了符卡列表实例）时才重建列表绑定与逐卡属性订阅
+    var currentSpellCards = currentBoss?.SpellCards;
+    if (currentBoss != _currentBoss || !ReferenceEquals(currentSpellCards, _currentSpellCards))
     {
       _currentBoss = currentBoss;
+      _currentSpellCards = currentSpellCards;
       BindSpellCardList(currentBoss);
       BindSpellCardValues(currentBoss);
     }
@@ -318,12 +323,15 @@ public partial class SpellCardPanel : VBoxContainer
       _spellCardsBinding = boss.SpellCards.Bind().OnModify(OnSpellCardListChanged);
   }
 
-  /// <summary>符卡列表增删（或列表实例被替换）：重新纳管订阅并重建树。</summary>
+  /// <summary>符卡列表增删：重新纳管订阅并重建树。</summary>
   private void OnSpellCardListChanged() => CallDeferred(nameof(RebindAndRefreshTree));
 
+  /// <summary>重挂当前 Boss 的列表与逐卡订阅，并整树重建。</summary>
   /// <remarks>
-  /// 列表本身也要重挂：换盘时可能只替换 <c>SpellCards</c> 实例而 Boss 对象不变，
-  /// 此时旧列表的订阅必须释放，否则会继续按已废弃的列表重建树。
+  /// 列表本身也要重挂，是为了让「只替换 <c>SpellCards</c> 实例而 Boss 对象不变」这种路径一旦出现
+  /// 也能被纳管（旧订阅释放、新列表订阅）；当前生产代码里没有这种写入（换盘是整套重建
+  /// <c>Bosses</c>），此处的列表实例比对与 <c>BossDataWatcher</c> 保持同一范式。
+  /// 本路径重建整棵树而非局部改行：它只在行集可能变化时进入，局部改行会漏掉新增/删除的行。
   /// </remarks>
   private void RebindAndRefreshTree()
   {
@@ -366,6 +374,7 @@ public partial class SpellCardPanel : VBoxContainer
     item.SetChecked(2, card.IsGuessedOut.Value);
   }
 
+  /// <summary>释放当前 Boss 全部符卡的属性绑定。</summary>
   private void DisposeCardBindings()
   {
     foreach (var binding in _cardBindings)
