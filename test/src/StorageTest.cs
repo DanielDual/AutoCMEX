@@ -229,7 +229,7 @@ public class StorageTest : TestClass
     // 模拟真实数据：app_settings.json 内含显式 null 字段（如 "activeAiModelId": null）。
     // System.Text.Json 反序列化会把对应 AutoValue/AutoList 属性覆盖为 null，
     // 此前导致 GuessingPanel.OnResolved 调用 .Bind() 时抛 NullReferenceException。
-    // 此处把 EnsureIntegrity 回填的全部 14 个属性都显式置 null，
+    // 此处把 EnsureIntegrity 回填的全部 15 个属性都显式置 null，
     // 确保测试真正覆盖遍历回填逻辑，避免个别属性回填失效但测试不报。
     var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
     var encryptor = new AesEncryptor(keyPath);
@@ -241,7 +241,7 @@ public class StorageTest : TestClass
         + "\"webSocketEnableAuth\": null, \"webSocketAuthToken\": null, "
         + "\"webSocketMaxConnections\": null, \"webSocketHeartbeatIntervalMs\": null, "
         + "\"webSocketHeartbeatTimeoutMs\": null, \"webSocketMode\": null, "
-        + "\"koishiWebSocketUrl\": null, \"selectedBossIndex\": null}"
+        + "\"koishiWebSocketUrl\": null, \"selectedBossIndex\": null, \"targetGroups\": null}"
     );
 
     var dm = new DataManager(_tempDir, encryptor);
@@ -262,6 +262,95 @@ public class StorageTest : TestClass
     dm.Settings.WebSocketMode.ShouldNotBeNull();
     dm.Settings.KoishiWebSocketUrl.ShouldNotBeNull();
     dm.Settings.SelectedBossIndex.ShouldNotBeNull();
+    dm.Settings.TargetGroups.ShouldNotBeNull();
+  }
+
+  [Test]
+  public void DataManager_InfoConfig_NullFieldsBackfilledAndRoundTrips()
+  {
+    var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
+    var encryptor = new AesEncryptor(keyPath);
+    var jsonPath = Path.Combine(_tempDir, "info_config.json");
+
+    // 整份配置与集记录内部全部显式 null：加载后都必须回填，否则 UI 绑定即崩
+    File.WriteAllText(
+      jsonPath,
+      "{\"activityRule\": null, \"gifSets\": null, \"activeGifSetId\": null}"
+    );
+
+    var dm = new DataManager(_tempDir, encryptor);
+    dm.LoadAll();
+
+    dm.InfoConfig.ActivityRule.ShouldNotBeNull();
+    dm.InfoConfig.GifSets.ShouldNotBeNull();
+    dm.InfoConfig.ActiveGifSetId.ShouldNotBeNull();
+
+    File.WriteAllText(
+      jsonPath,
+      "{\"activityRule\": \"规则正文\", \"activeGifSetId\": null, \"gifSets\": ["
+        + "{\"id\": null, \"setName\": null, \"rootPath\": null, \"importedAt\": null, "
+        + "\"entryCount\": null, \"manifest\": null}]}"
+    );
+
+    var dm2 = new DataManager(_tempDir, encryptor);
+    dm2.LoadAll();
+
+    dm2.InfoConfig.ActivityRule.Value.ShouldBe("规则正文");
+
+    var record = dm2.InfoConfig.GifSets[0];
+    record.Id.ShouldNotBeNull();
+    record.SetName.ShouldNotBeNull();
+    record.RootPath.ShouldNotBeNull();
+    record.ImportedAt.ShouldNotBeNull();
+    record.EntryCount.ShouldNotBeNull();
+    record.Manifest.ShouldNotBeNull();
+    record.Manifest.Entries.ShouldNotBeNull();
+
+    // 写回真实值 → 重载：集注册表（含清单快照）与目标群列表必须原样回来
+    record.Id.Value = "set-1";
+    record.SetName.Value = "SamplePkg";
+    record.EntryCount.Value = 1;
+    record.Manifest.SetName = "SamplePkg";
+    record.Manifest.Entries.Add(
+      new GifSetEntry
+      {
+        Index = 1,
+        SpellCardName = "符卡 1",
+        FileName = "sample_1.gif",
+        Width = 8,
+        Height = 8,
+      }
+    );
+    dm2.InfoConfig.ActiveGifSetId.Value = "set-1";
+    dm2.Settings.TargetGroups.Add(
+      new TargetGroup
+      {
+        ChannelId = { Value = "10001" },
+        GuildId = { Value = "9001" },
+        DisplayName = { Value = "示例群" },
+        Enabled = { Value = true },
+      }
+    );
+    dm2.SaveAll();
+
+    var dm3 = new DataManager(_tempDir, encryptor);
+    dm3.LoadAll();
+
+    dm3.InfoConfig.ActiveGifSetId.Value.ShouldBe("set-1");
+    var reloaded = dm3.InfoConfig.GifSets[0];
+    reloaded.Id.Value.ShouldBe("set-1");
+    reloaded.SetName.Value.ShouldBe("SamplePkg");
+    reloaded.EntryCount.Value.ShouldBe(1);
+    reloaded.Manifest.Entries.Count.ShouldBe(1);
+    reloaded.Manifest.Entries[0].FileName.ShouldBe("sample_1.gif");
+    reloaded.Manifest.Entries[0].SpellCardName.ShouldBe("符卡 1");
+    reloaded.Manifest.Entries[0].Height.ShouldBe(8);
+
+    dm3.Settings.TargetGroups.Count.ShouldBe(1);
+    dm3.Settings.TargetGroups[0].ChannelId.Value.ShouldBe("10001");
+    dm3.Settings.TargetGroups[0].GuildId.Value.ShouldBe("9001");
+    dm3.Settings.TargetGroups[0].DisplayName.Value.ShouldBe("示例群");
+    dm3.Settings.TargetGroups[0].Enabled.Value.ShouldBeTrue();
   }
 
   [Test]

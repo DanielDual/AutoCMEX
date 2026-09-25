@@ -19,6 +19,7 @@ public class SettingsPanelTest : TestClass
   private SettingsPanel _panel = default!;
   private DataManager _dm = default!;
   private Mock<IItemList> _categoryList = default!;
+  private InfoConfigPanel _infoConfigPanel = default!;
   private readonly List<Node> _toCleanup = new();
 
   public SettingsPanelTest(Node testScene)
@@ -54,6 +55,9 @@ public class SettingsPanelTest : TestClass
     // 配置子面板使用真实实例直接赋给 [Node] 属性（已赋值属性会被 AutoConnect 跳过）。
     _panel.AiModelConfigPanel = new AiModelConfigPanel();
     _panel.ChatConfigPanel = new ChatConfigPanel();
+    _infoConfigPanel = new InfoConfigPanel();
+    _panel.InfoConfigPanel = _infoConfigPanel;
+    _toCleanup.Add(_infoConfigPanel);
 
     _panel.FakeDependency<DataManager>(_dm);
     _panel._Notification((int)Node.NotificationEnterTree);
@@ -116,5 +120,27 @@ public class SettingsPanelTest : TestClass
   {
     _panel.ChatConfigPanel.ShouldNotBeNull();
     _panel.ChatConfigPanel.ShouldBeAssignableTo<IChatConfigPanel>();
+  }
+
+  [Test]
+  public void SettingsPanel_InfoConfigPanel_IsInterface()
+  {
+    _panel.InfoConfigPanel.ShouldNotBeNull();
+    _panel.InfoConfigPanel.ShouldBeAssignableTo<IInfoConfigPanel>();
+  }
+
+  [Test]
+  public void SettingsPanel_InfoCategory_ShowsInfoConfigPanelOnly()
+  {
+    // 「信息」是 _categories 的第 5 项（下标 4）
+    _infoConfigPanel.Visible.ShouldBeFalse();
+
+    _categoryList.Raise(m => m.ItemSelected += null, 4L);
+    _infoConfigPanel.Visible.ShouldBeTrue();
+    ((Control)_panel.AiModelConfigPanel).Visible.ShouldBeFalse();
+
+    // 切回「AI模型」应重新隐藏「信息」页
+    _categoryList.Raise(m => m.ItemSelected += null, 0L);
+    _infoConfigPanel.Visible.ShouldBeFalse();
   }
 }

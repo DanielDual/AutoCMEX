@@ -2,6 +2,7 @@ namespace AutoCMEX;
 
 using System.Collections.Generic;
 using AutoCMEX.UI.Guessing;
+using AutoCMEX.UI.Info;
 using AutoCMEX.UI.Logging;
 using AutoCMEX.UI.Main;
 using AutoCMEX.UI.Merge;
@@ -25,7 +26,7 @@ public class MainWindowTest : TestClass
   // 脚本面板：使用真实面板实例（实现各自接口）。无脚本面板：使用原生 Control。
   private MergePanel _mergePanel = default!;
   private GuessingPanel _guessingPanel = default!;
-  private Control _infoPanel = default!;
+  private InfoPanel _infoPanel = default!;
   private SettingsPanel _settingsPanel = default!;
   private Control _helpPanel = default!;
   private LogPanel _logPanel = default!;
@@ -64,7 +65,7 @@ public class MainWindowTest : TestClass
     // 原生（无脚本）面板：属性类型为 IControl，经 Adapt 得到 IControl 适配器，TargetObj 指向真实 Control。
     _mergePanel = new MergePanel();
     _guessingPanel = new GuessingPanel();
-    _infoPanel = new Control();
+    _infoPanel = new InfoPanel();
     _settingsPanel = new SettingsPanel();
     _helpPanel = new Control();
     _logPanel = new LogPanel();

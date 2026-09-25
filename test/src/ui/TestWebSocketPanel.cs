@@ -126,4 +126,13 @@ public class MockWebSocketServer : IWebSocketServer
     IsRunning = false;
     return Task.CompletedTask;
   }
+
+  public Task BroadcastAsync(WebSocketMessage message)
+  {
+    BroadcastedMessages.Add(message);
+    return Task.CompletedTask;
+  }
+
+  /// <summary>已推送的出站消息（供断言用）。</summary>
+  public List<WebSocketMessage> BroadcastedMessages { get; } = new();
 }
