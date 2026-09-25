@@ -1,11 +1,13 @@
 namespace AutoCMEX.UI.Guessing;
 
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using AutoCMEX;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Helpers;
@@ -20,6 +22,8 @@ using Godot;
 /// 符卡表面板 — 独立场景，管理符卡表的展示、编辑和 CRUD。
 /// UI 由 Sync 绑定驱动（AutoList/AutoValue 的 Bind() 自动推送变更），
 /// 事件处理器只写数据模型，不做手动刷新。
+/// 符卡列表增删重建整棵树；符卡自身的属性（符卡名 / 创作者 / 是否已猜出）
+/// 变化只改写对应行，不打断滚动位置与选中项。
 /// </summary>
 [Meta(typeof(IAutoNode))]
 public partial class SpellCardPanel : VBoxContainer
@@ -68,6 +72,18 @@ public partial class SpellCardPanel : VBoxContainer
   private AutoValue<int>.Binding? _selectedIndexBinding;
 
   private AutoList<SpellCard>.Binding? _spellCardsBinding;
+
+  /// <summary>当前 Boss 每张符卡的属性绑定（符卡名 / 创作者 / 是否已猜出）。</summary>
+  private readonly List<IDisposable> _cardBindings = new();
+
+  /// <summary>当前树中每张符卡对应的行；属性变化时只改写这一行，不整树重建。</summary>
+  private readonly Dictionary<SpellCard, TreeItem> _cardItems = new();
+
+  /// <summary>待改写的符卡行。属性回调可能来自数据层线程，用它把「哪张符卡变了」交给主线程。</summary>
+  private readonly ConcurrentQueue<SpellCard> _changedCards = new();
+
+  /// <summary>是否已排队一次延迟刷新（0/1，用 <see cref="Interlocked"/> 保护）。</summary>
+  private int _flushScheduled;
 
   /// <summary>
   /// 获取当前使用的 DataManager 实例（供测试使用）
@@ -124,6 +140,8 @@ public partial class SpellCardPanel : VBoxContainer
     _bossesBinding?.Dispose();
     _selectedIndexBinding?.Dispose();
     _spellCardsBinding?.Dispose();
+    DisposeCardBindings();
+    _cardItems.Clear();
   }
 
   public void OnReady()
@@ -222,27 +240,27 @@ public partial class SpellCardPanel : VBoxContainer
     if (index >= 0 && BossSelect.Selected != index)
       BossSelect.Select(index);
 
-    // 切换 Boss 时才重建其符卡列表绑定
+    // 切换 Boss 时才重建其符卡列表绑定与逐卡属性订阅
     if (currentBoss != _currentBoss)
     {
-      _spellCardsBinding?.Dispose();
-      _spellCardsBinding = null;
       _currentBoss = currentBoss;
-      if (currentBoss != null)
-      {
-        _spellCardsBinding = currentBoss
-          .SpellCards.Bind()
-          .OnModify(() => CallDeferred(nameof(ReconcileSelection)));
-      }
+      BindSpellCardList(currentBoss);
+      BindSpellCardValues(currentBoss);
     }
 
     RefreshSpellCardTree();
   }
 
+  /// <summary>按当前 Boss 重建整棵树，并登记每张符卡对应的行。</summary>
+  /// <remarks>
+  /// 重建必然读到最新值，所以待改写的行随旧行一起作废（否则会往已释放的 <see cref="TreeItem"/> 上写）。
+  /// </remarks>
   private void RefreshSpellCardTree()
   {
     if (_dm == null)
       return;
+    _changedCards.Clear();
+    _cardItems.Clear();
     SpellCardTree.Clear();
     var currentBoss = GetCurrentBoss();
     if (currentBoss == null)
@@ -257,18 +275,103 @@ public partial class SpellCardPanel : VBoxContainer
     {
       var card = currentBoss.SpellCards[i];
       var cardItem = SpellCardTree.CreateItem(bossItem);
-      cardItem.SetText(0, card.Name.Value);
-      cardItem.SetText(
-        1,
-        string.IsNullOrEmpty(card.Creator.Value) ? "(未揭晓)" : card.Creator.Value
-      );
       cardItem.SetCellMode(2, TreeItem.TreeCellMode.Check);
-      cardItem.SetChecked(2, card.IsGuessedOut.Value);
+      ApplyCardValues(cardItem, card);
       cardItem.SetEditable(0, true);
       cardItem.SetEditable(1, true);
       cardItem.SetEditable(2, true);
       cardItem.SetMetadata(0, i);
+      _cardItems[card] = cardItem;
     }
+  }
+
+  // ==================== 符卡属性变化 → 主线程局部刷新 ====================
+
+  /// <summary>重挂当前 Boss 全部符卡的属性订阅（符卡名 / 创作者 / 是否已猜出）。</summary>
+  /// <remarks>
+  /// 订阅 <see cref="AutoValue{T}"/> 会立刻回放一次当前值，但回放只是把符卡塞进待改写队列，
+  /// 紧随其后的 <see cref="RefreshSpellCardTree"/> 会清空队列并直接渲染最新值，因此无需抑制。
+  /// </remarks>
+  /// <param name="boss">当前 Boss；为 null 时只释放旧绑定。</param>
+  private void BindSpellCardValues(Boss? boss)
+  {
+    DisposeCardBindings();
+    if (boss == null)
+      return;
+
+    foreach (var card in boss.SpellCards)
+    {
+      // 三列都是符卡属性：符卡名、创作者，以及「已猜出」勾选框
+      _cardBindings.Add(card.Name.Bind().OnValue(_ => OnSpellCardValueChanged(card)));
+      _cardBindings.Add(card.Creator.Bind().OnValue(_ => OnSpellCardValueChanged(card)));
+      _cardBindings.Add(card.IsGuessedOut.Bind().OnValue(_ => OnSpellCardValueChanged(card)));
+    }
+  }
+
+  /// <summary>重挂当前 Boss 符卡列表的订阅；为 null 时只释放旧绑定。</summary>
+  /// <param name="boss">当前 Boss。</param>
+  private void BindSpellCardList(Boss? boss)
+  {
+    _spellCardsBinding?.Dispose();
+    _spellCardsBinding = null;
+    if (boss != null)
+      _spellCardsBinding = boss.SpellCards.Bind().OnModify(OnSpellCardListChanged);
+  }
+
+  /// <summary>符卡列表增删（或列表实例被替换）：重新纳管订阅并重建树。</summary>
+  private void OnSpellCardListChanged() => CallDeferred(nameof(RebindAndRefreshTree));
+
+  /// <remarks>
+  /// 列表本身也要重挂：换盘时可能只替换 <c>SpellCards</c> 实例而 Boss 对象不变，
+  /// 此时旧列表的订阅必须释放，否则会继续按已废弃的列表重建树。
+  /// </remarks>
+  private void RebindAndRefreshTree()
+  {
+    BindSpellCardList(_currentBoss);
+    BindSpellCardValues(_currentBoss);
+    RefreshSpellCardTree();
+  }
+
+  /// <summary>符卡属性变化（猜出 / 改名 / 改创作者）：排队一次主线程局部刷新。</summary>
+  /// <remarks>
+  /// 回调可能来自数据层线程（群聊猜测在 <c>Task.Run</c> 里跑），这里只入队，绝不触碰
+  /// <see cref="TreeItem"/>；同一帧内的多次变化合并成一次刷新。
+  /// </remarks>
+  private void OnSpellCardValueChanged(SpellCard card)
+  {
+    _changedCards.Enqueue(card);
+    if (Interlocked.CompareExchange(ref _flushScheduled, 1, 0) != 0)
+      return;
+
+    CallDeferred(nameof(FlushChangedCards));
+  }
+
+  /// <summary>把待改写的行更新成符卡当前值；无对应行（重建已覆盖）就跳过。</summary>
+  private void FlushChangedCards()
+  {
+    Interlocked.Exchange(ref _flushScheduled, 0);
+
+    while (_changedCards.TryDequeue(out var card))
+    {
+      if (_cardItems.TryGetValue(card, out var item))
+        ApplyCardValues(item, card);
+    }
+  }
+
+  /// <summary>把符卡的三个属性写进它的树行。</summary>
+  private static void ApplyCardValues(TreeItem item, SpellCard card)
+  {
+    item.SetText(0, card.Name.Value);
+    item.SetText(1, string.IsNullOrEmpty(card.Creator.Value) ? "(未揭晓)" : card.Creator.Value);
+    item.SetChecked(2, card.IsGuessedOut.Value);
+  }
+
+  private void DisposeCardBindings()
+  {
+    foreach (var binding in _cardBindings)
+      binding.Dispose();
+
+    _cardBindings.Clear();
   }
 
   // ==================== 事件处理器（只写数据模型） ====================
