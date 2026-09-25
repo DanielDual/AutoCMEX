@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://0kau4wocslml"]
+
+[ext_resource type="Script" uid="uid://db7p7ul2rk2ha" path="res://src/ui/info/CreatorRemainingPanel.cs" id="1_v3uhb"]
+
+[node name="CreatorRemainingColumn" type="VBoxContainer" unique_id=1291686401]
+script = ExtResource("1_v3uhb")
+
+[node name="TitleLabel" type="Label" parent="." unique_id=1680623963]
+unique_name_in_owner = true
+layout_mode = 2
+text = "创作者————剩余未被猜测符卡数表"
+
+[node name="TableScroll" type="ScrollContainer" parent="." unique_id=931328162]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="TableGrid" type="GridContainer" parent="TableScroll" unique_id=100859478]
+unique_name_in_owner = true
+layout_mode = 2
+columns = 2
+
+[node name="PublishButton" type="Button" parent="." unique_id=1610093314]
+unique_name_in_owner = true
+layout_mode = 2
+text = "发布该表"

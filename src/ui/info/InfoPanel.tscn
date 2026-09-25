@@ -1,11 +1,71 @@
 [gd_scene format=3 uid="uid://cmb8ndpqvxtot"]
 
+[ext_resource type="Script" uid="uid://bq7n2xk4mveas" path="res://src/ui/info/InfoPanel.cs" id="1_yr6mn"]
+
 [node name="Control" type="Control" unique_id=2075855882]
 layout_mode = 3
-anchors_preset = 0
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_yr6mn")
 
-[node name="PlaceholderLabel" type="Label" parent="." unique_id=1338471131]
+[node name="Root" type="MarginContainer" parent="." unique_id=526225608]
 layout_mode = 0
-text = "信息板块 - 暂不开发"
-horizontal_alignment = 1
-vertical_alignment = 1
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_constants/margin_left = 10
+theme_override_constants/margin_top = 10
+theme_override_constants/margin_right = 10
+theme_override_constants/margin_bottom = 10
+
+[node name="Layout" type="VBoxContainer" parent="Root" unique_id=815072529]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="TopScroll" type="ScrollContainer" parent="Root/Layout" unique_id=1189456844]
+layout_mode = 2
+size_flags_vertical = 3
+vertical_scroll_mode = 0
+
+[node name="Columns" type="HBoxContainer" parent="Root/Layout/TopScroll" unique_id=2058706429]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+theme_override_constants/separation = 10
+
+[node name="BottomBar" type="PanelContainer" parent="Root/Layout" unique_id=1765416928]
+layout_mode = 2
+size_flags_vertical = 0
+
+[node name="BottomRow" type="HBoxContainer" parent="Root/Layout/BottomBar" unique_id=1914676199]
+layout_mode = 2
+theme_override_constants/separation = 8
+
+[node name="GroupTitle" type="Label" parent="Root/Layout/BottomBar/BottomRow" unique_id=1447620065]
+layout_mode = 2
+text = "目标群聊"
+
+[node name="GroupScroll" type="ScrollContainer" parent="Root/Layout/BottomBar/BottomRow" unique_id=1983023363]
+layout_mode = 2
+size_flags_horizontal = 3
+vertical_scroll_mode = 3
+
+[node name="GroupList" type="HBoxContainer" parent="Root/Layout/BottomBar/BottomRow/GroupScroll" unique_id=1869618140]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="RefreshGroupsButton" type="Button" parent="Root/Layout/BottomBar/BottomRow" unique_id=599021526]
+unique_name_in_owner = true
+layout_mode = 2
+text = "刷新群列表"
+
+[node name="ForwardAllButton" type="Button" parent="Root/Layout/BottomBar/BottomRow" unique_id=256015010]
+unique_name_in_owner = true
+layout_mode = 2
+text = "一键转发"

@@ -1,0 +1,62 @@
+[gd_scene format=3 uid="uid://cb6agaer6y6bb"]
+
+[ext_resource type="Script" uid="uid://bhgy8p7su4gho" path="res://src/ui/info/GifSetPanel.cs" id="1_1aedx"]
+
+[node name="GifSetColumn" type="VBoxContainer" unique_id=1730915910]
+script = ExtResource("1_1aedx")
+
+[node name="HeaderRow" type="HBoxContainer" parent="." unique_id=1662937232]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="TitleLabel" type="Label" parent="HeaderRow" unique_id=1563315239]
+layout_mode = 2
+text = "符卡 GIF 集"
+
+[node name="SetSelector" type="OptionButton" parent="HeaderRow" unique_id=673198834]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ActionRow" type="HBoxContainer" parent="." unique_id=1198015297]
+layout_mode = 2
+theme_override_constants/separation = 6
+
+[node name="ImportFolderButton" type="Button" parent="ActionRow" unique_id=855145090]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导入文件夹"
+
+[node name="ImportZipButton" type="Button" parent="ActionRow" unique_id=20058897]
+unique_name_in_owner = true
+layout_mode = 2
+text = "导入压缩包"
+
+[node name="RecordButton" type="Button" parent="ActionRow" unique_id=1282745190]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "录制功能将在后续版本提供"
+disabled = true
+text = "录制"
+
+[node name="SetInfoLabel" type="Label" parent="." unique_id=1219300744]
+unique_name_in_owner = true
+layout_mode = 2
+text = "(未导入任何集)"
+autowrap_mode = 2
+
+[node name="CardScroll" type="ScrollContainer" parent="." unique_id=2017651219]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="CardList" type="VBoxContainer" parent="CardScroll" unique_id=1182362833]
+unique_name_in_owner = true
+layout_mode = 2
+theme_override_constants/separation = 10
+
+[node name="PublishButton" type="Button" parent="." unique_id=542578585]
+unique_name_in_owner = true
+layout_mode = 2
+text = "发布 GIF 集"

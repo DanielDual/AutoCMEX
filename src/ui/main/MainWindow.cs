@@ -5,11 +5,13 @@ using System.Collections.Generic;
 using AutoCMEX;
 using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Guessing;
+using AutoCMEX.Core.Info;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Core.WebSocket;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Guessing;
+using AutoCMEX.UI.Info;
 using AutoCMEX.UI.Logging;
 using AutoCMEX.UI.Merge;
 using AutoCMEX.UI.Settings;
@@ -32,6 +34,7 @@ public partial class MainWindow
     IProvide<IGuessResponseHandler>,
     IProvide<IGuessProcessingService>,
     IProvide<IWebSocketServer>,
+    IProvide<InfoEventBus>,
     IProvide<ILogService>
 {
   [Export]
@@ -77,7 +80,7 @@ public partial class MainWindow
   public IGuessingPanel GuessingPanelNode { get; set; } = default!;
 
   [Node("%InfoPanel")]
-  public Control InfoPanelNode { get; set; } = default!;
+  public IInfoPanel InfoPanelNode { get; set; } = default!;
 
   [Node("%SettingsPanel")]
   public ISettingsPanel SettingsPanelNode { get; set; } = default!;
@@ -103,6 +106,11 @@ public partial class MainWindow
   private IWebSocketServer _webSocketServer = default!;
   private ILogService _logService = default!;
 
+  /// <summary>
+  /// 信息板块入站事件总线：始终可用（测试模式也要提供），供信息面板订阅 Koishi 回执。
+  /// </summary>
+  private readonly InfoEventBus _infoEvents = new();
+
   DataManager IProvide<DataManager>.Value() => _dataManager;
 
   AiServiceFactory IProvide<AiServiceFactory>.Value() => _aiServiceFactory;
@@ -114,6 +122,8 @@ public partial class MainWindow
   IGuessProcessingService IProvide<IGuessProcessingService>.Value() => _guessProcessingService;
 
   IWebSocketServer IProvide<IWebSocketServer>.Value() => _webSocketServer;
+
+  InfoEventBus IProvide<InfoEventBus>.Value() => _infoEvents;
 
   ILogService IProvide<ILogService>.Value() => _logService;
 
@@ -164,7 +174,7 @@ public partial class MainWindow
 
       // 初始化 WebSocket（Server 或 Client 模式）
       var wsLog = AppLogs.GetOrCreate().GetLogger("WebSocket");
-      var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService);
+      var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService, _infoEvents);
       _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
       // 初始化日志服务
@@ -237,7 +247,7 @@ public partial class MainWindow
     await _webSocketServer.StopAsync();
 
     // 使用初始化器创建新实例
-    var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService);
+    var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService, _infoEvents);
     _webSocketServer = wsInitializer.CreateServer(_dataManager.Settings);
 
     // 更新面板绑定：通过接口解耦，避免具体类型检查

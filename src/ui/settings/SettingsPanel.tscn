@@ -3,6 +3,9 @@
 [ext_resource type="Script" uid="uid://cmxsol0aje66q" path="res://src/ui/settings/SettingsPanel.cs" id="1_4c3qi"]
 [ext_resource type="PackedScene" uid="uid://bwtxixlpfifw7" path="res://src/ui/settings/AiModelConfigPanel.tscn" id="2_aimodel"]
 [ext_resource type="PackedScene" uid="uid://hht0r77y8b4y" path="res://src/ui/settings/ChatConfigPanel.tscn" id="3_chat"]
+[ext_resource type="Script" uid="uid://bubjcl7bce0df" path="res://src/ui/settings/AiModelConfigPanel.cs" id="3_yhunq"]
+[ext_resource type="Script" uid="uid://vwn0wnq3t4w3" path="res://src/ui/settings/ChatConfigPanel.cs" id="5_gct5u"]
+[ext_resource type="Script" uid="uid://c5cppb0a6efbd" path="res://src/ui/settings/InfoConfigPanel.cs" id="6_x2n56"]
 
 [node name="Control" type="Control" unique_id=1958570285]
 layout_mode = 3
@@ -42,18 +45,58 @@ size_flags_horizontal = 3
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
-anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("3_yhunq")
 
 [node name="ChatConfigPanel" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea" unique_id=2068780662 instance=ExtResource("3_chat")]
 unique_name_in_owner = true
 visible = false
 layout_mode = 0
-anchors_preset = 15
 anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("5_gct5u")
+
+[node name="InfoConfigPanel" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea" unique_id=1060147079]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("6_x2n56")
+
+[node name="HintLabel" type="Label" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel" unique_id=1661835361]
+unique_name_in_owner = true
+layout_mode = 2
+text = "目标群是发布内容的接收方。"
+autowrap_mode = 3
+
+[node name="GroupScroll" type="ScrollContainer" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel" unique_id=540793043]
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="GroupRows" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/GroupScroll" unique_id=1608386998]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ActionRow" type="HBoxContainer" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel" unique_id=953420434]
+layout_mode = 2
+
+[node name="AddGroupButton" type="Button" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/ActionRow" unique_id=1036681716]
+unique_name_in_owner = true
+layout_mode = 2
+text = "添加目标群"
+
+[node name="StatusLabel" type="Label" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/ActionRow" unique_id=1872937421]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+vertical_alignment = 1
