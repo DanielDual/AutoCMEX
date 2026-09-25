@@ -480,11 +480,29 @@ public sealed partial class RecordingOrchestrator
   /// <summary>按剩余空间算最多能建几个沙箱（留 10% 余量，至少 1 个）。</summary>
   /// <param name="freeBytes">可用字节数；未知为 -1。</param>
   /// <param name="footprintBytes">单个沙箱字节数。</param>
-  /// <returns>可承受的 worker 数；无法探测时返回 <see cref="int.MaxValue"/>（即不压并行度）。</returns>
-  private static int AffordableWorkers(long freeBytes, long footprintBytes) =>
-    freeBytes <= 0 || footprintBytes <= 0
-      ? int.MaxValue
-      : (int)(freeBytes * 9 / 10 / footprintBytes);
+  /// <returns>
+  /// 可承受的 worker 数，**至少 1**（空间再紧也得先跑一个，否则 0 worker 会让整轮静默空转）；
+  /// 无法探测时返回 <see cref="int.MaxValue"/>（即不压并行度）。
+  /// </returns>
+  private static int AffordableWorkers(long freeBytes, long footprintBytes)
+  {
+    if (freeBytes <= 0 || footprintBytes <= 0)
+    {
+      return int.MaxValue;
+    }
+
+    // 先在 long 里算完再收敛：剩余空间按 90% 折算后除以「很小时」的沙箱体积，商可能超出 int，
+    // 直接强转会绕回负数（曾出现「只够 -26584515 个沙箱」把并行度降到负数、进而整轮中止）。
+    // 先除 10 再乘 9 而不是乘 9 再除 10，避免 freeBytes 接近 long 上限时先溢出。
+    var affordable = freeBytes / 10 * 9 / footprintBytes;
+    if (affordable < 1)
+    {
+      // 一个沙箱的余量都没有：仍跑一个——写满磁盘会走沙箱自身的失败路径并留日志，比 0 个 worker 好定位
+      return 1;
+    }
+
+    return affordable > int.MaxValue ? int.MaxValue : (int)affordable;
+  }
 
   /// <summary>字节数转 MB（向上取整，便于日志展示）。</summary>
   /// <param name="bytes">字节数；负数原样返回。</param>
