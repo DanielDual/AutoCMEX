@@ -16,7 +16,9 @@ public sealed class WebSocketPanelDriver : IDisposable
   public Mock<ILabel> PortLabel { get; }
   public Mock<ILabel> ConnectionCountLabel { get; }
   public Mock<ILabel> EventLabel { get; }
+  public Mock<ILabel> ErrorLabel { get; }
   public Mock<IButton> StartStopBtn { get; }
+  public Mock<ILabel> ClientListLabel { get; }
   public Mock<IItemList> ClientList { get; }
   public Mock<ITimer> RefreshTimer { get; }
 
@@ -30,7 +32,9 @@ public sealed class WebSocketPanelDriver : IDisposable
     PortLabel = new Mock<ILabel>();
     ConnectionCountLabel = new Mock<ILabel>();
     EventLabel = new Mock<ILabel>();
+    ErrorLabel = new Mock<ILabel>();
     StartStopBtn = new Mock<IButton>();
+    ClientListLabel = new Mock<ILabel>();
     ClientList = new Mock<IItemList>();
     RefreshTimer = new Mock<ITimer>();
 
@@ -42,7 +46,9 @@ public sealed class WebSocketPanelDriver : IDisposable
         ["%PortLabel"] = PortLabel.Object,
         ["%ConnectionCountLabel"] = ConnectionCountLabel.Object,
         ["%EventLabel"] = EventLabel.Object,
+        ["%ErrorLabel"] = ErrorLabel.Object,
         ["%StartStopBtn"] = StartStopBtn.Object,
+        ["%ClientListLabel"] = ClientListLabel.Object,
         ["%ClientList"] = ClientList.Object,
         ["%RefreshTimer"] = RefreshTimer.Object,
       }

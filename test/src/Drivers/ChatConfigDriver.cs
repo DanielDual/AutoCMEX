@@ -17,6 +17,7 @@ public sealed class ChatConfigDriver : IDisposable
   public Mock<IHBoxContainer> KoishiUrlRow { get; }
   public Mock<IOptionButton> FilterSelect { get; }
   public Mock<IButton> InstallBtn { get; }
+  public Mock<ILabel> PluginPathLabel { get; }
   public Mock<IFileDialog> PluginFileDialog { get; }
   public Mock<IAcceptDialog> PluginOkDialog { get; }
 
