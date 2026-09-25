@@ -84,21 +84,23 @@ Koishi v4。
 
 ### 集成方式
 
-通过 Koishi 插件实现框架与 AutoCMEX 之间的 WebSocket 通信：
+通过 Koishi 插件实现框架与 AutoCMEX 之间的 WebSocket 通信，两种模式（设置 → 群聊 → 模式）二选一：
 
 ```
 ┌──────────────┐   WebSocket (JSON)   ┌──────────────┐
 │              │ ←──────────────────→ │              │
 │   Koishi     │                      │  AutoCMEX    │
 │   框架       │   插件仅做消息转发    │  本项目      │
-│   (客户端)   │                      │  (服务端)    │
+│              │                      │              │
 └──────────────┘                      └──────────────┘
 ```
 
-- AutoCMEX 启动 WebSocket 服务端，监听配置的端口。
-- Koishi 插件作为客户端连接。
+- **Server 模式**（默认）：AutoCMEX 监听设置里的端口，Koishi 插件作为客户端连入。
+- **Client 模式**：AutoCMEX 主动连接设置里的 Koishi 地址（自动补全 `ws://` 前缀并附 Token）。
 - 插件仅做消息转发，所有处理逻辑在 AutoCMEX 完成。
 - 回应通过同一 WebSocket 连接返回。
+- **Client 模式未填 Koishi 地址时不会退化成 Server**：仍按 Client 建立实例，启动失败并把「未配置 Koishi 地址」记进 `IWebSocketServer.LastError`，由状态面板的红色错误行显示——避免「设置写 Client、实际跑 Server」的静默偏差。
+- 状态面板显示的**模式、端口/地址、连接数、错误**一律取自实际运行的 `IWebSocketServer` 实例（`Mode` / `Port` / `Url` / `LastError`），不取自设置：设置改动后实例重建前两者可能短暂不一致。
 
 ### WebSocket 协议
 
