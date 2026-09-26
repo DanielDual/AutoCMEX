@@ -69,3 +69,8 @@ text = "刷新群列表"
 unique_name_in_owner = true
 layout_mode = 2
 text = "一键转发"
+
+[node name="AutoPublishGuessingTable" type="CheckBox" parent="Root/Layout/BottomBar/BottomRow" unique_id=535937607]
+unique_name_in_owner = true
+layout_mode = 2
+text = "猜测表变化自动推送"

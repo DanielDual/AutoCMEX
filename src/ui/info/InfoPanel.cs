@@ -40,6 +40,12 @@ public partial class InfoPanel : Control, IInfoPanel
   /// <summary>单栏最小宽度（像素）；窗口更窄时由上栏横向滚动承接，而不是把四栏挤变形。</summary>
   private const int ColumnMinWidth = 320;
 
+  /// <summary>
+  /// 猜测表自动推送的防抖窗口（秒）：一次猜测会连着触发多次数据变化，
+  /// 等它们收敛成一张表再发，避免群里被中间态的表图刷屏。
+  /// </summary>
+  private const double AutoPublishDebounceSeconds = 1.5;
+
   #region AutoConnect Nodes
 
   [Node("%Columns")]
@@ -53,6 +59,9 @@ public partial class InfoPanel : Control, IInfoPanel
 
   [Node("%ForwardAllButton")]
   public IButton ForwardAllButton { get; set; } = default!;
+
+  [Node("%AutoPublishGuessingTable")]
+  public ICheckBox AutoPublishGuessingTable { get; set; } = default!;
 
   #endregion
 
@@ -82,11 +91,18 @@ public partial class InfoPanel : Control, IInfoPanel
 
   private readonly List<(TargetGroup Group, CheckBox Box)> _groupBoxes = new();
   private AutoList<TargetGroup>.Binding? _targetGroupsBinding;
+  private AutoValue<bool>.Binding? _autoPublishBinding;
 
   private AcceptDialog? _reportDialog;
   private Button? _retryButton;
   private PublishReport? _lastReport;
   private bool _isPublishing;
+
+  /// <summary>自动推送防抖计时器；每次表变化都重启它，因此只在最后一次变化后触发一次。</summary>
+  private Timer? _autoPublishTimer;
+
+  /// <summary>有「已变化但还没推出去」的表内容；发布期间攒下的变化靠它补发。</summary>
+  private bool _autoPublishPending;
 
   /// <inheritdoc/>
   public override void _Notification(int what) => this.Notify(what);
@@ -97,6 +113,11 @@ public partial class InfoPanel : Control, IInfoPanel
     _targetGroupsBinding?.Dispose();
     _targetGroupsBinding = null;
 
+    _autoPublishBinding?.Dispose();
+    _autoPublishBinding = null;
+
+    _autoPublishTimer?.Stop();
+
     InfoEvents.Received -= OnInfoEventReceived;
   }
 
@@ -105,6 +126,7 @@ public partial class InfoPanel : Control, IInfoPanel
   {
     RefreshGroupsButton.Pressed += OnRefreshGroupsPressed;
     ForwardAllButton.Pressed += OnForwardAllPressed;
+    AutoPublishGuessingTable.Toggled += OnAutoPublishToggled;
   }
 
   /// <summary>AutoInject 依赖解析完成：创建服务并装配四栏与下栏。</summary>
@@ -120,6 +142,12 @@ public partial class InfoPanel : Control, IInfoPanel
 
     _targetGroupsBinding = _dm.Settings.TargetGroups.Bind().OnModify(OnTargetGroupsChanged);
     RebuildGroupList();
+
+    // 先落初值再挂绑定：初值赋值不应被当成用户输入
+    AutoPublishGuessingTable.ButtonPressed = _dm.InfoConfig.AutoPublishGuessingTable.Value;
+    _autoPublishBinding = _dm
+      .InfoConfig.AutoPublishGuessingTable.Bind()
+      .OnValue(OnAutoPublishValueChanged);
 
     // 入站回执由 WebSocket 接收线程投递，订阅后统一切回主线程处理
     InfoEvents.Received += OnInfoEventReceived;
@@ -195,7 +223,8 @@ public partial class InfoPanel : Control, IInfoPanel
     _guessingTablePanel?.Setup(
       _dm!,
       _dataService!,
-      CreateColumnHandler(PublishItemKind.GuessingTable)
+      CreateColumnHandler(PublishItemKind.GuessingTable),
+      OnGuessingTableChanged
     );
 
     _creatorRemainingPanel = InstantiateColumn<CreatorRemainingPanel>(
@@ -244,8 +273,16 @@ public partial class InfoPanel : Control, IInfoPanel
     if (!EnsureTargets(targets))
       return;
 
+    // 本栏要发的就是这张表：撤销已排定的自动推送，避免同一张表发两遍
+    if (kind == PublishItemKind.GuessingTable)
+      CancelPendingAutoPublish();
+
     var report = await _publisher.PublishAsync(kind, targets, this);
     PresentReport(report);
+
+    // 发布期间表又变了：补发一次（否则那一轮的最后一次变化会永远漏掉）
+    if (kind == PublishItemKind.GuessingTable)
+      FlushPendingAutoPublish();
   }
 
   private async void OnForwardAllPressed()
@@ -256,6 +293,9 @@ public partial class InfoPanel : Control, IInfoPanel
     var targets = CollectTargetGroupIds();
     if (!EnsureTargets(targets))
       return;
+
+    // 「一键转发」也会把猜测表发出去：同样撤销已排定的自动推送（发布期间的新变化仍会补发）
+    CancelPendingAutoPublish();
 
     _isPublishing = true;
     ForwardAllButton.Disabled = true;
@@ -271,6 +311,8 @@ public partial class InfoPanel : Control, IInfoPanel
       _isPublishing = false;
       if (IsInsideTree())
         UpdateForwardButtonState();
+
+      FlushPendingAutoPublish();
     }
   }
 
@@ -368,6 +410,150 @@ public partial class InfoPanel : Control, IInfoPanel
   }
 
   private void OnTargetGroupsChanged() => CallDeferred(nameof(RebuildGroupList));
+
+  private void OnAutoPublishToggled(bool pressed)
+  {
+    if (_dm is null || _dm.InfoConfig.AutoPublishGuessingTable.Value == pressed)
+      return;
+
+    _dm.InfoConfig.AutoPublishGuessingTable.Value = pressed;
+    _dm.TriggerAutoSave();
+  }
+
+  private void OnAutoPublishValueChanged(bool value)
+  {
+    if (AutoPublishGuessingTable.ButtonPressed == value)
+      return;
+
+    AutoPublishGuessingTable.ButtonPressed = value;
+  }
+
+  /// <summary>
+  /// 猜测表内容变化：勾选了自动推送就排一次（防抖后的）发布。
+  /// </summary>
+  /// <remarks>
+  /// 这里不因「正在发布」而丢弃：变化先记在 <c>_autoPublishPending</c>，由发布收尾补发，
+  /// 否则一轮猜测的最后一次变化恰好落在发布期间时会永远发不出去。
+  /// </remarks>
+  private void OnGuessingTableChanged()
+  {
+    if (_dm is null || !_dm.InfoConfig.AutoPublishGuessingTable.Value)
+      return;
+
+    _autoPublishPending = true;
+    ScheduleAutoPublish();
+  }
+
+  /// <summary>
+  /// 撤销已排定的自动推送：让给即将发出的同一张表（「一键转发」或本栏发布），避免重复发。
+  /// </summary>
+  private void CancelPendingAutoPublish()
+  {
+    _autoPublishPending = false;
+    _autoPublishTimer?.Stop();
+  }
+
+  /// <summary>发布收尾：发布期间若攒下了表变化就补发一次。</summary>
+  private void FlushPendingAutoPublish()
+  {
+    if (_autoPublishPending && IsInsideTree())
+      ScheduleAutoPublish();
+  }
+
+  private void ScheduleAutoPublish()
+  {
+    if (!EnsureAutoPublishTimer())
+      return;
+
+    _autoPublishTimer!.Start();
+  }
+
+  private bool EnsureAutoPublishTimer()
+  {
+    if (_autoPublishTimer is not null && GodotObject.IsInstanceValid(_autoPublishTimer))
+      return true;
+
+    if (!IsInsideTree())
+      return false;
+
+    _autoPublishTimer = new Timer { OneShot = true, WaitTime = AutoPublishDebounceSeconds };
+    _autoPublishTimer.Timeout += OnAutoPublishTimeout;
+    AddChild(_autoPublishTimer);
+    return true;
+  }
+
+  private async void OnAutoPublishTimeout()
+  {
+    try
+    {
+      await AutoPublishGuessingTableAsync();
+    }
+    catch (Exception ex)
+    {
+      GD.PushWarning($"InfoPanel: 自动推送猜测表失败：{ex.Message}");
+    }
+  }
+
+  /// <summary>
+  /// 静默把当前猜测表推给下栏勾选的目标群。
+  /// </summary>
+  /// <remarks>
+  /// 目标群复用下栏勾选（与「一键转发」同一份）；自动推送不弹「未选择目标群」对话框——
+  /// 猜测进行中反复弹窗会打断操作，只在输出窗口留一条日志。成功同样静默，
+  /// 仅失败时复用发布结果对话框，因为失败基本意味着连接断了，必须让用户看见。
+  /// 失败不重排：否则断连时会变成每 1.5 秒一次的重试风暴，等下一次表变化再试即可。
+  /// </remarks>
+  private async Task AutoPublishGuessingTableAsync()
+  {
+    if (_publisher is null || _dm is null || !_autoPublishPending)
+      return;
+
+    if (!_dm.InfoConfig.AutoPublishGuessingTable.Value)
+    {
+      _autoPublishPending = false;
+      return;
+    }
+
+    // 一键转发进行中：这次变化先留着，等它结束再发（发出的是那之后收敛出来的表）
+    if (_isPublishing)
+    {
+      ScheduleAutoPublish();
+      return;
+    }
+
+    var targets = CollectTargetGroupIds();
+    if (targets.Count == 0)
+    {
+      _autoPublishPending = false;
+      GD.Print("InfoPanel: 已跳过猜测表自动推送：未勾选任何目标群。");
+      return;
+    }
+
+    // 先清标记再发送：发布期间新到的变化会重新置位，由收尾补发
+    _autoPublishPending = false;
+    _isPublishing = true;
+    UpdateForwardButtonState();
+    try
+    {
+      var report = await _publisher.PublishAsync(PublishItemKind.GuessingTable, targets, this);
+
+      if (!report.IsSuccess)
+      {
+        PresentReport(report);
+        return;
+      }
+
+      GD.Print($"InfoPanel: 已自动推送符卡猜测情况表到 {targets.Count} 个目标群。");
+    }
+    finally
+    {
+      _isPublishing = false;
+      if (IsInsideTree())
+        UpdateForwardButtonState();
+
+      FlushPendingAutoPublish();
+    }
+  }
 
   private void UpdateForwardButtonState()
   {

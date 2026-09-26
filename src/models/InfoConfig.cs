@@ -29,6 +29,15 @@ public class InfoConfig
   public AutoValue<string> ActiveGifSetId { get; set; } = new(string.Empty);
 
   /// <summary>
+  /// 符卡猜测情况表内容变化时，自动把这张表推送给下栏勾选的目标群聊。
+  /// </summary>
+  /// <remarks>
+  /// 只作用于这一张表；目标群复用下栏的勾选（与「一键转发」同一份，未勾选任何群时不发送）。
+  /// 变化后经防抖再发送，成功静默、失败提示，避免实时猜测期间连发多张重复表图。
+  /// </remarks>
+  public AutoValue<bool> AutoPublishGuessingTable { get; set; } = new(false);
+
+  /// <summary>
   /// 恢复被 JSON 显式 <c>null</c> 覆盖的自动同步属性。
   /// </summary>
   /// <remarks>
@@ -41,6 +50,7 @@ public class InfoConfig
     ActivityRule ??= new(string.Empty);
     GifSets ??= new();
     ActiveGifSetId ??= new(string.Empty);
+    AutoPublishGuessingTable ??= new(false);
 
     foreach (var set in GifSets)
     {
