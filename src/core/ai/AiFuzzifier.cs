@@ -167,16 +167,18 @@ public class AiFuzzifier
     sb.AppendLine("输出：12Alice 23Bob");
     sb.AppendLine("解释：原文本中的符卡下标与创作者名字倒了过来。重新放置即可。");
     sb.AppendLine();
-    sb.AppendLine("输入：1Ally 2Alice 3Bob");
-    sb.AppendLine("输出：1Alice 2Alice 3Bob");
-    sb.AppendLine(
-      "解释：输入的名字若是别名表里某个主名的别名，则替换为该主名；本身已是主名的名字保持不变。"
-    );
-    sb.AppendLine();
 
     // 别名表
     if (_aliasTable.Count > 0)
     {
+      // 别名转换的例子只在真给了别名表时出现：没有表时演示它反而会暗示存在一张表
+      sb.AppendLine("输入：1Ally 2Alice 3Bob");
+      sb.AppendLine("输出：1Alice 2Alice 3Bob");
+      sb.AppendLine(
+        "解释：输入的名字若是别名表里某个主名的别名，则替换为该主名；本身已是主名的名字保持不变。"
+      );
+      sb.AppendLine();
+
       sb.AppendLine("创作者别名表（请将别名转换为主名）：");
       foreach (var alias in _aliasTable)
       {
