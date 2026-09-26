@@ -167,6 +167,12 @@ public class AiFuzzifier
     sb.AppendLine("输出：12Alice 23Bob");
     sb.AppendLine("解释：原文本中的符卡下标与创作者名字倒了过来。重新放置即可。");
     sb.AppendLine();
+    sb.AppendLine("输入：1Ally 2Alice 3Bob");
+    sb.AppendLine("输出：1Alice 2Alice 3Bob");
+    sb.AppendLine(
+      "解释：输入的名字若是别名表里某个主名的别名，则替换为该主名；本身已是主名的名字保持不变。"
+    );
+    sb.AppendLine();
 
     // 别名表
     if (_aliasTable.Count > 0)
@@ -174,8 +180,10 @@ public class AiFuzzifier
       sb.AppendLine("创作者别名表（请将别名转换为主名）：");
       foreach (var alias in _aliasTable)
       {
-        var aliases = string.Join(", ", alias.Aliases);
-        sb.Append(CultureInfo.InvariantCulture, $"- {alias.MainName}（别名：{aliases}）");
+        // 无别名的行写「无别名」，不用空括号：空括号既像字段缺失，也可能被当成空字符串别名
+        var detail =
+          alias.Aliases.Count > 0 ? $"别名：{string.Join(", ", alias.Aliases)}" : "无别名";
+        sb.Append(CultureInfo.InvariantCulture, $"- {alias.MainName}（{detail}）");
         sb.AppendLine();
       }
       sb.AppendLine();
