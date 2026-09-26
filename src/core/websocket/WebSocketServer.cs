@@ -263,7 +263,7 @@ public class WebSocketServer : IWebSocketServer, IDisposable
   }
 
   /// <inheritdoc/>
-  public async Task BroadcastAsync(WebSocketMessage message)
+  public async Task<int> BroadcastAsync(WebSocketMessage message)
   {
     var json = _protocolHandler.SerializeMessage(message);
     _log.Print($"WebSocketServer broadcasting: type={message.Type}, id={message.Id}");
@@ -278,12 +278,13 @@ public class WebSocketServer : IWebSocketServer, IDisposable
       }
       catch (Exception ex)
       {
-        // 单个连接失败不影响其它目标：记录后继续，失败明细由调用方按目标群汇总
+        // 单个连接失败不影响其它目标：记录后继续；返回的送达数让调用方知道到底出去几条
         _log.Warn($"WebSocketServer broadcast failed for {conn.Id}: {ex.Message}");
       }
     }
 
     _log.Print($"WebSocketServer broadcast delivered to {sentCount} connection(s).");
+    return sentCount;
   }
 
   /// <inheritdoc/>

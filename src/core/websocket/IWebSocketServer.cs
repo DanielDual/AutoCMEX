@@ -58,16 +58,19 @@ public interface IWebSocketServer
   event Action<string>? OnClientDisconnected;
 
   /// <summary>
-  /// 向已连接的对端主动推送消息（非应答）。
+  /// 向已连接的对端主动推送消息（非应答），返回实际送达的连接数。
   /// </summary>
   /// <param name="message">出站消息。</param>
+  /// <returns>成功送出的连接数；无可用连接或逐个连接都失败时为 0。</returns>
   /// <remarks>
   /// <para>
   /// 用于由本端发起的推送（信息板块的发布请求、群列表查询等），与"收到消息后回包"区分开。
   /// </para>
   /// <para>
-  /// 无可用连接时直接返回，调用方应先用 <see cref="ConnectionCount"/> 预检，避免请求被静默丢弃。
+  /// 单个连接发送失败只记日志、不影响其它目标，**因此调用方无法靠异常判断送达**：需要知道
+  /// 「有没有真的送出去」的调用方（如丢包重试回帖，送不出去就要保留记录）必须看返回值。
+  /// 无可用连接时返回 0，调用方也可先用 <see cref="ConnectionCount"/> 预检。
   /// </para>
   /// </remarks>
-  Task BroadcastAsync(WebSocketMessage message);
+  Task<int> BroadcastAsync(WebSocketMessage message);
 }

@@ -206,13 +206,13 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   }
 
   /// <inheritdoc/>
-  public async Task BroadcastAsync(WebSocketMessage message)
+  public async Task<int> BroadcastAsync(WebSocketMessage message)
   {
     var ws = _ws;
     if (ws is null || ws.State != WebSocketState.Open)
     {
       _log.Warn($"WebSocketClient: outbound {message.Type} skipped, connection is not open.");
-      return;
+      return 0;
     }
 
     var json = _protocolHandler.SerializeMessage(message);
@@ -224,6 +224,9 @@ public class WebSocketClient : IWebSocketServer, IDisposable
       true,
       CancellationToken.None
     );
+
+    // 客户端只有一个对端：送出去就是 1，送不出去（未连接或上面抛异常）就是 0
+    return 1;
   }
 
   /// <summary>
