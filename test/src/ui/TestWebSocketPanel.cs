@@ -4,10 +4,12 @@ using System;
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using AutoCMEX.Core.WebSocket;
+using AutoCMEX.Models;
 using AutoCMEX.UI.WebSocket;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
+using Chickensoft.Log;
 using Godot;
 using Moq;
 using Shouldly;
@@ -15,6 +17,13 @@ using Shouldly;
 public class TestWebSocketPanel : TestClass
 {
   private WebSocketPanel _panel = default!;
+
+  /// <summary>面板手上（用于显示）的实例。</summary>
+  private MockWebSocketServer _server = default!;
+
+  /// <summary>生命周期工厂下次返回的实例；用例可换掉它来模拟「配置变更重启后换了实例」。</summary>
+  private MockWebSocketServer _nextInstance = default!;
+  private WebSocketLifecycle _lifecycle = default!;
   private Mock<ILabel> _statusLabel = default!;
   private Mock<ILabel> _modeLabel = default!;
   private Mock<ILabel> _portLabel = default!;
@@ -63,7 +72,13 @@ public class TestWebSocketPanel : TestClass
       }
     );
 
-    _panel.FakeDependency<IWebSocketServer>(new MockWebSocketServer());
+    _server = new MockWebSocketServer();
+    _nextInstance = _server;
+    _lifecycle = new WebSocketLifecycle(_ => _nextInstance, new Mock<ILog>().Object);
+    _lifecycle.Create(new AppSettings());
+
+    _panel.FakeDependency<IWebSocketServer>(_server);
+    _panel.FakeDependency<WebSocketLifecycle>(_lifecycle);
     _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
   }
@@ -249,21 +264,59 @@ public class TestWebSocketPanel : TestClass
   [Test]
   public void StartStopPressed_WhileReconnecting_StopsInsteadOfStartingAgain()
   {
-    // Arrange：重连等待中的客户端
-    var mockServer = new MockWebSocketServer
-    {
-      Mode = "Client",
-      IsRunning = false,
-      IsActive = true,
-    };
-    _panel.UpdateServer(mockServer);
+    // Arrange：重连等待中的客户端（控制器当前实例）
+    _server.Mode = "Client";
+    _server.IsRunning = false;
+    _server.IsActive = true;
+    _panel.UpdateServer(_server);
 
     // Act：点一次启停按钮
     _startStopBtn.Raise(button => button.Pressed += null);
 
     // Assert：走的是停止分支（旧实现按 IsRunning 判定，会再启动一次）
-    mockServer.StopCount.ShouldBe(1);
-    mockServer.StartCount.ShouldBe(0);
+    _server.StopCount.ShouldBe(1);
+    _server.StartCount.ShouldBe(0);
+  }
+
+  [Test]
+  public void StartStopPressed_WhenStopped_StartsTheInstance()
+  {
+    // Arrange：已创建但未启动的实例
+    _server.Mode = "Client";
+    _panel.UpdateServer(_server);
+
+    // Act：点一次启停按钮
+    _startStopBtn.Raise(button => button.Pressed += null);
+
+    // Assert
+    _server.StartCount.ShouldBe(1);
+    _server.StopCount.ShouldBe(0);
+  }
+
+  [Test]
+  public void StartStopPressed_ActsOnLifecycleCurrentInstance_NotOnStalePanelReference()
+  {
+    // Arrange：配置变更重启的窗口内，面板手上的引用已是被替换掉的旧实例
+    var stale = new MockWebSocketServer
+    {
+      Mode = "Client",
+      IsRunning = true,
+      IsActive = true,
+    };
+    _panel.UpdateServer(stale);
+
+    var current = new MockWebSocketServer { Mode = "Client" };
+    _nextInstance = current;
+    _lifecycle.Create(new AppSettings());
+
+    // Act：此时点按钮
+    _startStopBtn.Raise(button => button.Pressed += null);
+
+    // Assert：作用在控制器的当前实例上——面板若自行判方向并对旧引用下手，
+    // 旧实例会被重新拉起（与新实例同时在跑，正是连接震颤的成因）
+    current.StartCount.ShouldBe(1);
+    stale.StartCount.ShouldBe(0);
+    stale.StopCount.ShouldBe(0);
   }
 }
 

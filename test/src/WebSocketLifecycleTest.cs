@@ -222,7 +222,57 @@ public class WebSocketLifecycleTest : TestClass
     await Should.ThrowAsync<ObjectDisposedException>(() => lifecycle.RestartAsync(settings));
     await Should.NotThrowAsync(() => lifecycle.StartAsync(settings));
     await Should.NotThrowAsync(lifecycle.StopAsync);
+    await Should.NotThrowAsync(lifecycle.ToggleAsync);
     factory.Created.Count.ShouldBe(1);
+  }
+
+  [Test]
+  public async Task Toggle_WhenInstanceIsWorking_StopsIt()
+  {
+    // Arrange：实例已在工作
+    var factory = new RecordingFactory();
+    var lifecycle = new WebSocketLifecycle(factory.Create, new Mock<ILog>().Object);
+    var settings = BuildSettings(mode: "Server", port: 5140);
+    var server = (FakeWebSocketServer)lifecycle.Create(settings);
+    await lifecycle.StartAsync(settings);
+
+    // Act
+    await lifecycle.ToggleAsync();
+
+    // Assert：方向由控制器按当前实例判定——界面拿不到「重连等待中仍在工作」，
+    // 客户端此刻 IsRunning 为 false，若按它判方向会把正在重连的客户端再启动一次（空操作，停不掉）
+    server.StopCount.ShouldBe(1);
+    server.StartCount.ShouldBe(1);
+    server.IsActive.ShouldBeFalse();
+  }
+
+  [Test]
+  public async Task Toggle_WhenInstanceIsStopped_StartsIt()
+  {
+    // Arrange：实例已创建但未启动
+    var factory = new RecordingFactory();
+    var lifecycle = new WebSocketLifecycle(factory.Create, new Mock<ILog>().Object);
+    var server = (FakeWebSocketServer)lifecycle.Create(BuildSettings(mode: "Server", port: 5140));
+
+    // Act
+    await lifecycle.ToggleAsync();
+
+    // Assert
+    server.StartCount.ShouldBe(1);
+    server.StopCount.ShouldBe(0);
+    server.IsActive.ShouldBeTrue();
+  }
+
+  [Test]
+  public async Task Toggle_WithoutInstance_DoesNotCreateOne()
+  {
+    // Arrange：尚未创建实例（启动流程早期的形态）
+    var factory = new RecordingFactory();
+    var lifecycle = new WebSocketLifecycle(factory.Create, new Mock<ILog>().Object);
+
+    // Act & Assert：点按钮不应凭空造出一个实例
+    await Should.NotThrowAsync(lifecycle.ToggleAsync);
+    factory.Created.ShouldBeEmpty();
   }
 
   private static AppSettings BuildSettings(string mode, int port)

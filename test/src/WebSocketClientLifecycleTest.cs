@@ -155,13 +155,37 @@ public class WebSocketClientLifecycleTest : TestClass
     await Should.NotThrowAsync(client.StopAsync);
   }
 
-  private static WebSocketClient CreateClient(int port) =>
+  [Test]
+  public async Task StopAsync_StopsTheHeartbeat_NoPingArrivesAfterwards()
+  {
+    // Arrange：心跳间隔调短，便于在测试窗口里先观察到 ping
+    var port = FindFreePort();
+    using var server = new LocalWebSocketServer(port);
+    server.Start();
+    using var client = CreateClient(port, heartbeatIntervalMs: 100);
+    await client.StartAsync();
+    (await WaitUntilAsync(() => client.IsRunning)).ShouldBeTrue();
+    (await WaitUntilAsync(() => server.ReceivedCount > 0)).ShouldBeTrue();
+
+    // Act
+    await client.StopAsync();
+    await Task.Delay(150); // 让在途的最后一帧落地，再取基准
+    var afterStop = server.ReceivedCount;
+
+    // Assert：停止返回即代表实例上再无活动任务——心跳不该继续发 ping
+    // （旧实现的心跳是 fire-and-forget 句柄，停止返回时它还可能在睡觉或正在写已释放的 socket）
+    await Task.Delay(400);
+    server.ReceivedCount.ShouldBe(afterStop);
+    server.LiveCount.ShouldBe(0);
+  }
+
+  private static WebSocketClient CreateClient(int port, int heartbeatIntervalMs = 30000) =>
     new(
       $"ws://127.0.0.1:{port}",
       new ProtocolHandler(),
       new MessageRouter(new Mock<ILog>().Object),
       ReconnectIntervalMs,
-      30000,
+      heartbeatIntervalMs,
       new Mock<ILog>().Object
     );
 
@@ -196,6 +220,7 @@ public class WebSocketClientLifecycleTest : TestClass
     private readonly List<WebSocket> _sockets = new();
     private int _acceptedCount;
     private int _liveCount;
+    private int _receivedCount;
 
     public LocalWebSocketServer(int port, bool closeImmediatelyOnAccept = false)
     {
@@ -214,6 +239,9 @@ public class WebSocketClientLifecycleTest : TestClass
 
     /// <summary>当前存活的连接数。</summary>
     public int LiveCount => Volatile.Read(ref _liveCount);
+
+    /// <summary>累计收到的数据帧数（客户端只发心跳 ping，可据它观察心跳是否还在跑）。</summary>
+    public int ReceivedCount => Volatile.Read(ref _receivedCount);
 
     public void Start()
     {
@@ -317,6 +345,8 @@ public class WebSocketClientLifecycleTest : TestClass
           var result = await socket.ReceiveAsync(new ArraySegment<byte>(buffer), _cts.Token);
           if (result.MessageType == WebSocketMessageType.Close)
             break;
+
+          Interlocked.Increment(ref _receivedCount);
         }
       }
       catch (Exception)
