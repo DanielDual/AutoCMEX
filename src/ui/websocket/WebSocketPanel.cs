@@ -65,6 +65,13 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
   [Dependency]
   public IWebSocketServer Server => this.DependOn<IWebSocketServer>();
 
+  /// <summary>
+  /// 启停执行器：实例的启停一律经它下发（与配置变更触发的重启共用同一把锁）。
+  /// 面板不直接调实例的启停——面板手上的实例可能是重启前的旧引用。
+  /// </summary>
+  [Dependency]
+  public WebSocketLifecycle Lifecycle => this.DependOn<WebSocketLifecycle>();
+
   private IWebSocketServer? _server;
 
   /// <summary>待处理的连接变化（由 socket 线程投递，主线程在 <see cref="RefreshUI"/> 里消费）。</summary>
@@ -160,21 +167,19 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
   }
 
   /// <summary>
-  /// 启停按钮：按实例是否「在工作」（<see cref="IWebSocketServer.IsActive"/>）判定方向，
-  /// 而不是按「是否已连接」——Client 断线重连期间实例已在工作但未连接，按后者点下去只会再启动一次
-  /// （幂等后成空操作），用户反而停不掉正在重连的客户端。
+  /// 启停按钮：交给 <see cref="WebSocketLifecycle"/> 执行——方向（在工作则停、否则启动）由它在锁内
+  /// 按**当前实例**判定，不用面板的显示状态，也不用面板手上的实例引用。
   /// </summary>
+  /// <remarks>
+  /// 方向不能按 <see cref="IWebSocketServer.IsRunning"/> 判：Client 断线重连期间实例已在工作但未连接，
+  /// 按「是否已连接」点下去只会再启动一次（幂等后成空操作），用户反而停不掉正在重连的客户端。
+  /// 更不能作用在面板自己的实例引用上：配置变更重启期间该引用可能已是旧实例，点下去会把旧实例重新拉起。
+  /// </remarks>
   private async void OnStartStopPressed()
   {
-    if (_server == null)
-      return;
-
     try
     {
-      if (_server.IsActive)
-        await _server.StopAsync();
-      else
-        await _server.StartAsync();
+      await Lifecycle.ToggleAsync();
     }
     catch (Exception ex)
     {

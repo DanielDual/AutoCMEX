@@ -143,6 +143,34 @@ public class WebSocketLifecycle
   }
 
   /// <summary>
+  /// 启停当前实例：它在工作（<see cref="IWebSocketServer.IsActive"/>）则停止，否则启动。
+  /// </summary>
+  /// <remarks>
+  /// 方向在锁内按**当前实例**判定，而不是按界面上的显示状态。界面（状态面板）拿的是上次推送的实例引用，
+  /// 配置变更重启期间它可能已指向被替换掉的旧实例；若由界面自行判断方向并对自己的引用下手，
+  /// 就会出现「旧实例被重新启动 + 新实例同时在跑」的多实例场景——正是连接震颤的成因。
+  /// 启停与重启共用这把锁，因此点击要么完整地发生在重启之前，要么作用在重启后的实例上。
+  /// </remarks>
+  public async Task ToggleAsync()
+  {
+    await _gate.WaitAsync();
+    try
+    {
+      if (_current is null || _disposed)
+        return;
+
+      if (_current.IsActive)
+        await _current.StopAsync();
+      else
+        await _current.StartAsync();
+    }
+    finally
+    {
+      _gate.Release();
+    }
+  }
+
+  /// <summary>
   /// 判断实例的有效配置是否已满足设置：比较「模式 + 该模式对应的端口 / 地址」。
   /// </summary>
   /// <param name="server">已存在的实例。</param>

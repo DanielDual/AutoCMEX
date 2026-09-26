@@ -34,6 +34,7 @@ public partial class MainWindow
     IProvide<IGuessResponseHandler>,
     IProvide<IGuessProcessingService>,
     IProvide<IWebSocketServer>,
+    IProvide<WebSocketLifecycle>,
     IProvide<InfoEventBus>,
     IProvide<ILogService>
 {
@@ -123,6 +124,8 @@ public partial class MainWindow
   IGuessProcessingService IProvide<IGuessProcessingService>.Value() => _guessProcessingService;
 
   IWebSocketServer IProvide<IWebSocketServer>.Value() => _webSocketServer;
+
+  WebSocketLifecycle IProvide<WebSocketLifecycle>.Value() => _webSocketLifecycle;
 
   InfoEventBus IProvide<InfoEventBus>.Value() => _infoEvents;
 
