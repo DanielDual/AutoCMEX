@@ -27,6 +27,16 @@ public enum PublishItemKind
   ActivityRule = 3,
 }
 
+/// <summary>发布项在群内的呈现方式。</summary>
+public enum PublishSendMode
+{
+  /// <summary>合并转发：整条消息由若干节点组成，群内以一张可展开的转发卡片呈现。</summary>
+  Forward = 0,
+
+  /// <summary>直接发图：每个节点作为一条普通群消息里的图片，群内直接看到图。</summary>
+  Image = 1,
+}
+
 /// <summary>发布项类别的固定顺序与展示名。</summary>
 public static class PublishOrder
 {
@@ -38,6 +48,23 @@ public static class PublishOrder
     PublishItemKind.CreatorRemainingTable,
     PublishItemKind.ActivityRule,
   };
+
+  /// <summary>
+  /// 取发布项的群内呈现方式：只有 GIF 集需要合并转发，两张表直接发图。
+  /// </summary>
+  /// <param name="kind">发布项类别。</param>
+  /// <returns>呈现方式。</returns>
+  /// <remarks>
+  /// 表是「一眼看完」的整图，塞进转发卡片反而要多点一次才能看到；GIF 集逐条展开才有意义，故保留合并转发。
+  /// 活动规则是纯文本、没有图片形态，沿用合并转发不变。
+  /// </remarks>
+  public static PublishSendMode GetSendMode(PublishItemKind kind) =>
+    kind switch
+    {
+      PublishItemKind.GuessingTable => PublishSendMode.Image,
+      PublishItemKind.CreatorRemainingTable => PublishSendMode.Image,
+      _ => PublishSendMode.Forward,
+    };
 
   /// <summary>取发布项的展示名（结果报告与日志共用，保证两处措辞一致）。</summary>
   /// <param name="kind">发布项类别。</param>

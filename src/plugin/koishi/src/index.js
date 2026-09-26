@@ -232,11 +232,17 @@ async function handleGroupListRequest(ctx, send) {
  *
  * 关键约束：合并转发整条消息只能由 node 元素组成；图片经适配器上传失败只会记 warn，
  * 因此这里对每个附件做本地可读性自检，任何一张不可读都整条拒发并回报具体序号。
+ *
+ * 群内呈现方式由 payload.mode 决定（应用侧的发布策略）：
+ * - `forward`：整条合并转发，逐节点可展开（GIF 集）；
+ * - `image`：逐节点直接发图，群里一眼看到（两张表——表图自带标题栏，不再另发文字）。
+ * 缺省按 `forward` 处理，保证旧版应用仍能正常发布。
  */
 async function handlePublishForward(ctx, payload, send) {
   const requestId = payload?.requestId || "";
   const channelId = String(payload?.channelId || "");
   const kind = payload?.kind || "";
+  const mode = payload?.mode === "image" ? "image" : "forward";
   const nodes = Array.isArray(payload?.nodes) ? payload.nodes : [];
 
   const report = (success, message, failedNodes) => {
@@ -287,6 +293,53 @@ async function handlePublishForward(ctx, payload, send) {
     return;
   }
 
+  const numericChannelId = Number(channelId);
+  if (!Number.isFinite(numericChannelId)) {
+    report(false, `无法解析群 ID：${channelId}。`);
+    return;
+  }
+
+  const internal = bot.internal || {};
+
+  if (mode === "image") {
+    if (typeof internal.sendGroupMsg !== "function") {
+      report(false, "当前适配器不支持 sendGroupMsg，无法直接发图。");
+      return;
+    }
+
+    try {
+      let sent = 0;
+      for (const node of nodes) {
+        // 表图自带标题栏，直接发图不再重复发一遍标题文字；没有图的节点才退回文本
+        const content = node?.imagePath
+          ? [{ type: "image", data: { file: toFileUrl(node.imagePath) } }]
+          : [node?.text || node?.title || ""]
+              .filter((text) => text)
+              .map((text) => ({ type: "text", data: { text } }));
+        if (content.length === 0) continue;
+
+        await internal.sendGroupMsg(numericChannelId, content);
+        sent++;
+      }
+
+      ctx.logger.info(
+        `[AutoCMEX] Published ${sent} image message(s) to ${channelId} (kind=${kind}, requestId=${requestId})`,
+      );
+      report(true, "");
+    } catch (err) {
+      ctx.logger.warn(`[AutoCMEX] Publish (image) failed: ${err.message}`);
+      report(false, `发送失败：${err.message}`);
+    }
+
+    return;
+  }
+
+  if (typeof internal.sendGroupForwardMsg !== "function") {
+    report(false, "当前适配器不支持 sendGroupForwardMsg，无法发送合并转发。");
+    return;
+  }
+
+  // 合并转发整条消息只能由 node 组成，标题与图片都塞进同一个节点里
   const forwardNodes = nodes.map((node) => {
     const title = node?.text || node?.title || "";
     const content = [];
@@ -306,18 +359,6 @@ async function handlePublishForward(ctx, payload, send) {
       },
     };
   });
-
-  const numericChannelId = Number(channelId);
-  if (!Number.isFinite(numericChannelId)) {
-    report(false, `无法解析群 ID：${channelId}。`);
-    return;
-  }
-
-  const internal = bot.internal || {};
-  if (typeof internal.sendGroupForwardMsg !== "function") {
-    report(false, "当前适配器不支持 sendGroupForwardMsg，无法发送合并转发。");
-    return;
-  }
 
   try {
     await internal.sendGroupForwardMsg(numericChannelId, forwardNodes);

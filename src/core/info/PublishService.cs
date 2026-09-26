@@ -337,7 +337,7 @@ public sealed class PublishService
 
     foreach (var channelId in targets)
     {
-      var ack = await SendForwardAsync(kind, channelId, prepared.Nodes);
+      var ack = await SendAsync(kind, channelId, prepared.Nodes);
       if (ack.IsSuccess)
       {
         succeeded++;
@@ -359,7 +359,7 @@ public sealed class PublishService
     return PublishItemResult.Attempted(kind, targets.Count, succeeded, failures);
   }
 
-  private async Task<PublishAck> SendForwardAsync(
+  private async Task<PublishAck> SendAsync(
     PublishItemKind kind,
     string channelId,
     IReadOnlyList<PublishNode> nodes
@@ -384,6 +384,8 @@ public sealed class PublishService
         requestId,
         channelId,
         kind = InfoProtocol.ToWireValue(kind),
+        // 呈现方式由应用侧（发布策略）决定，插件只照做，避免同一张表在两端各判一次
+        mode = InfoProtocol.ToWireValue(PublishOrder.GetSendMode(kind)),
         nodes = nodes
           .Select(node => new
           {
