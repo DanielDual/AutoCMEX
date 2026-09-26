@@ -2,7 +2,6 @@ namespace AutoCMEX.Core.Guessing;
 
 using System.Collections.Generic;
 using System.Diagnostics;
-using System.Linq;
 using System.Text.RegularExpressions;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.Models;
@@ -178,36 +177,43 @@ public partial class GuessPipeline
   /// <summary>
   /// 将猜测文本中的别名转换为主名
   /// </summary>
+  /// <param name="text">猜测文本，形如「下标+创作者」并以空格分隔。</param>
+  /// <returns>替换后的文本；未命中别名表的部分原样保留。</returns>
+  /// <remarks>
+  /// 判定规则：<b>主名优先</b>——猜测里的名字若本身是某行主名，则一律不作替换；
+  /// 否则按「先声明者胜」取第一条把它列为别名的行。别名表可被用户编辑，因此既可能出现
+  /// 「甲行的别名恰是乙行的主名」（旧的「命中即替换」会把真实主名改写掉，造成判错），
+  /// 也可能出现同一别名被多行声明，两种情形都必须有确定且可预期的归宿。
+  /// </remarks>
   private string ConvertAliases(string text)
   {
     if (_aliasTable.Count == 0)
       return text;
 
+    var mainNames = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+    foreach (var alias in _aliasTable)
+      mainNames.Add(alias.MainName);
+
+    var aliasToMain = new Dictionary<string, string>(System.StringComparer.OrdinalIgnoreCase);
+    foreach (var alias in _aliasTable)
+    {
+      foreach (var name in alias.Aliases)
+      {
+        if (string.IsNullOrWhiteSpace(name) || mainNames.Contains(name))
+          continue;
+        aliasToMain.TryAdd(name, alias.MainName);
+      }
+    }
+
     var parts = text.Split(' ');
     for (int i = 0; i < parts.Length; i++)
     {
-      var part = parts[i];
-      var match = GuessParser.PairRegex().Match(part);
+      var match = GuessParser.PairRegex().Match(parts[i]);
       if (!match.Success)
         continue;
 
-      var index = match.Groups[1].Value;
-      var creator = match.Groups[2].Value;
-
-      foreach (var alias in _aliasTable)
-      {
-        if (
-          alias.Aliases.Any(a =>
-            string.Equals(a, creator, System.StringComparison.OrdinalIgnoreCase)
-          )
-        )
-        {
-          creator = alias.MainName;
-          break;
-        }
-      }
-
-      parts[i] = index + creator;
+      if (aliasToMain.TryGetValue(match.Groups[2].Value, out var mainName))
+        parts[i] = match.Groups[1].Value + mainName;
     }
 
     return string.Join(' ', parts);
