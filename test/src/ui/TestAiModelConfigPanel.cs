@@ -115,6 +115,18 @@ public class TestAiModelConfigPanel : TestClass
   }
 
   [Test]
+  public void ResolveTestConnectionTimeout_TakesTheSettingAndCapsItAtThirtySeconds()
+  {
+    // 「测试连接」跟随设置里的请求超时，但不跟着它一起等下去
+    AiModelConfigPanel.ResolveTestConnectionTimeout(5).ShouldBe(5);
+    AiModelConfigPanel.ResolveTestConnectionTimeout(30).ShouldBe(30);
+    AiModelConfigPanel.ResolveTestConnectionTimeout(600).ShouldBe(30);
+    // 设置文件被塞进非法值时兜到下限，不能算出 0 或负超时（HttpClient 会直接抛异常）
+    AiModelConfigPanel.ResolveTestConnectionTimeout(0).ShouldBe(1);
+    AiModelConfigPanel.ResolveTestConnectionTimeout(-3).ShouldBe(1);
+  }
+
+  [Test]
   public void ActiveModelSelect_SelectingItem_UpdatesActiveAiModelId()
   {
     var model = new AiModelConfig

@@ -53,6 +53,66 @@ public class AiServiceTest : TestClass
   }
 
   [Test]
+  public void AiServiceFactory_CreateService_AppliesRequestTimeout()
+  {
+    ReadRequestTimeout(AiServiceFactory.CreateService(MakeConfig("OpenAI"), 42))
+      .ShouldBe(TimeSpan.FromSeconds(42));
+    ReadRequestTimeout(AiServiceFactory.CreateService(MakeConfig("Anthropic"), 42))
+      .ShouldBe(TimeSpan.FromSeconds(42));
+    // 不显式给超时时沿用默认值，防止默认值被无意改掉
+    ReadRequestTimeout(AiServiceFactory.CreateService(MakeConfig("OpenAI")))
+      .ShouldBe(TimeSpan.FromSeconds(100));
+  }
+
+  [Test]
+  public void AiServiceFactory_GetActiveService_UsesConfiguredRequestTimeout()
+  {
+    // 「请求超时(秒)」此前根本没接上：设置成多少都一样，服务始终是默认的 100 秒
+    var tmpDir = Path.Combine(Path.GetTempPath(), $"AutoCMEX_Test_{Guid.NewGuid():N}");
+    Directory.CreateDirectory(tmpDir);
+    try
+    {
+      var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(tmpDir));
+      var dm = new DataManager(tmpDir, encryptor);
+      dm.Settings.AiModels.Add(MakeConfig("OpenAI"));
+      dm.Settings.ActiveAiModelId.Value = "test";
+      dm.Settings.AiTimeoutSeconds.Value = 7;
+
+      var factory = new AiServiceFactory(dm);
+
+      ReadRequestTimeout(factory.GetActiveService()).ShouldBe(TimeSpan.FromSeconds(7));
+    }
+    finally
+    {
+      if (Directory.Exists(tmpDir))
+        Directory.Delete(tmpDir, true);
+    }
+  }
+
+  /// <summary>构造字段齐全的模型配置，仅供工厂产出服务实例，不发起请求。</summary>
+  private static AiModelConfig MakeConfig(string apiFormat) =>
+    new()
+    {
+      Id = new AutoValue<string>("test"),
+      ApiFormat = new AutoValue<string>(apiFormat),
+      EndpointUrl = new AutoValue<string>("https://example.test"),
+      ModelId = new AutoValue<string>("some-model"),
+      EncryptedApiKey = new AutoValue<string>("sk-test"),
+    };
+
+  /// <summary>请求超时只在构造时写进 HttpClient、没有公开读取口，因此反射取私有字段。</summary>
+  private static TimeSpan ReadRequestTimeout(IAiService service)
+  {
+    var field = service
+      .GetType()
+      .GetField("_httpClient", BindingFlags.NonPublic | BindingFlags.Instance);
+    field.ShouldNotBeNull();
+    // Godot 也有同名类型 HttpClient，这里必须写全名
+    var httpClient = (System.Net.Http.HttpClient)field!.GetValue(service)!;
+    return httpClient.Timeout;
+  }
+
+  [Test]
   public void AiFuzzifier_CanBeConstructed()
   {
     var config = new AiModelConfig
