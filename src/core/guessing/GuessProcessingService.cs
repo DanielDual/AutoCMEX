@@ -68,22 +68,54 @@ public class GuessProcessingService : IGuessProcessingService
   }
 
   /// <inheritdoc/>
-  public Task<GuessProcessingResult> ProcessAsync(string rawText)
-  {
-    var currentBoss = ResolveCurrentBoss();
-    return ProcessAsync(
+  public Task<GuessProcessingResult> ProcessAsync(string rawText) =>
+    ProcessInternalAsync(
       rawText,
-      currentBoss,
+      ResolveCurrentBoss(),
       filterMode: _dataManager.Settings.MessageFilterMode.Value ?? "strict",
-      treatFailureAsNotGuess: true
+      treatFailureAsNotGuess: true,
+      requestId: string.Empty,
+      sender: string.Empty,
+      recordDroppedOnFailure: true
     );
-  }
 
-  private async Task<GuessProcessingResult> ProcessAsync(
+  /// <inheritdoc/>
+  public Task<GuessProcessingResult> ProcessAsync(
+    string rawText,
+    string requestId,
+    string sender
+  ) =>
+    ProcessInternalAsync(
+      rawText,
+      ResolveCurrentBoss(),
+      filterMode: _dataManager.Settings.MessageFilterMode.Value ?? "strict",
+      treatFailureAsNotGuess: true,
+      requestId: requestId ?? string.Empty,
+      sender: sender ?? string.Empty,
+      recordDroppedOnFailure: true
+    );
+
+  /// <summary>
+  /// 猜测处理主干：严格管道、AI 兜底与丢包落库都在这里
+  /// </summary>
+  /// <param name="rawText">原始猜测文本。</param>
+  /// <param name="currentBoss">当前 Boss。</param>
+  /// <param name="filterMode">消息筛选模式。</param>
+  /// <param name="treatFailureAsNotGuess">失败时是否按「非猜测」返回。</param>
+  /// <param name="requestId">来源请求标识，写进丢包记录供重试回帖用。</param>
+  /// <param name="sender">来源发送者，写进丢包记录。</param>
+  /// <param name="recordDroppedOnFailure">
+  /// AI 兜底失败时是否新落一条丢包记录。重放时为 false：否则会删掉旧记录又换一个 Id 落新记录，
+  /// 用户看到的「丢包被重新解析了一遍」正是这么来的。
+  /// </param>
+  private async Task<GuessProcessingResult> ProcessInternalAsync(
     string rawText,
     Boss? currentBoss,
     string filterMode,
-    bool treatFailureAsNotGuess
+    bool treatFailureAsNotGuess,
+    string requestId,
+    string sender,
+    bool recordDroppedOnFailure
   )
   {
     var input = rawText?.Trim() ?? string.Empty;
@@ -147,11 +179,20 @@ public class GuessProcessingService : IGuessProcessingService
         $"GuessProcessingService.ProcessAsync AI fallback failed: {ex.GetType().Name}: {ex.Message}"
       );
 
-      var dropped = new DroppedGuess(input, ex.Message);
-      _droppedGuessRepository.Add(dropped);
-      _log.Print(
-        $"GuessProcessingService: added to dropped list (total={_droppedGuessRepository.GetAll().Count}), id={dropped.Id}"
-      );
+      if (recordDroppedOnFailure)
+      {
+        var dropped = new DroppedGuess(input, ex.Message, requestId, sender, filterMode);
+        _droppedGuessRepository.Add(dropped);
+        _log.Print(
+          $"GuessProcessingService: added to dropped list (total={_droppedGuessRepository.GetAll().Count}), id={dropped.Id}"
+        );
+      }
+      else
+      {
+        _log.Print(
+          "GuessProcessingService: replay failed again; the existing dropped record is kept."
+        );
+      }
 
       return treatFailureAsNotGuess
         ? GuessProcessingResult.NotGuess(ex.Message)
@@ -192,6 +233,10 @@ public class GuessProcessingService : IGuessProcessingService
   public IReadOnlyList<DroppedGuess> GetDroppedGuesses() => _droppedGuessRepository.GetAll();
 
   /// <inheritdoc/>
+  public DroppedGuess? FindDroppedGuess(string droppedId) =>
+    _droppedGuessRepository.FindById(droppedId);
+
+  /// <inheritdoc/>
   public async Task<GuessProcessingResult> RetryDroppedGuessAsync(string droppedId)
   {
     var dropped = _droppedGuessRepository.FindById(droppedId);
@@ -201,21 +246,19 @@ public class GuessProcessingService : IGuessProcessingService
 
     _log.Print($"GuessProcessingService: retrying dropped guess {droppedId}: {dropped.RawText}");
 
-    var currentBoss = ResolveCurrentBoss();
-    var result = await ProcessAsync(
+    // 三处刻意与首次处理不同：按丢包当时的口径重放、不再新落记录、也不在这里删记录
+    //（删记录由 DroppedGuessRetryService 在确认能回帖或确定无源可回之后统一裁决）。
+    return await ProcessInternalAsync(
       dropped.RawText,
-      currentBoss,
-      filterMode: _dataManager.Settings.MessageFilterMode.Value ?? "strict",
-      treatFailureAsNotGuess: true
+      ResolveCurrentBoss(),
+      filterMode: string.IsNullOrEmpty(dropped.FilterMode)
+        ? _dataManager.Settings.MessageFilterMode.Value ?? "strict"
+        : dropped.FilterMode,
+      treatFailureAsNotGuess: true,
+      requestId: dropped.RequestId,
+      sender: dropped.Sender,
+      recordDroppedOnFailure: false
     );
-
-    if (result.Status != GuessProcessingStatus.Error)
-    {
-      _droppedGuessRepository.Remove(droppedId);
-      _log.Print($"GuessProcessingService: dropped guess {droppedId} retried successfully.");
-    }
-
-    return result;
   }
 
   /// <inheritdoc/>
