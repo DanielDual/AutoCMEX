@@ -152,11 +152,26 @@ public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
     }
   }
 
-  private static async Task<bool> TestModelConnection(AiModelConfig model)
+  /// <summary>
+  /// 「测试连接」允许的最长等待（秒）。请求超时可设到 600 秒，但连接性验证只关心能否连上，
+  /// 不该让用户为一次测试干等十分钟，因此这里给测试连接单独封顶。
+  /// </summary>
+  internal const int TestConnectionTimeoutCapSeconds = 30;
+
+  /// <summary>
+  /// 计算「测试连接」使用的超时：取请求超时设置值与上限中的较小值，且不小于 1 秒。
+  /// </summary>
+  internal static int ResolveTestConnectionTimeout(int configuredSeconds) =>
+    Math.Clamp(configuredSeconds, 1, TestConnectionTimeoutCapSeconds);
+
+  private async Task<bool> TestModelConnection(AiModelConfig model)
   {
     try
     {
-      var service = AiServiceFactory.CreateService(model);
+      var service = AiServiceFactory.CreateService(
+        model,
+        ResolveTestConnectionTimeout(_settings.AiTimeoutSeconds.Value)
+      );
       return await service.TestConnectionAsync();
     }
     catch

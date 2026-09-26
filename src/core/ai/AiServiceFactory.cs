@@ -23,7 +23,7 @@ public class AiServiceFactory
   public virtual IAiService GetActiveService()
   {
     var config = GetActiveModelConfig();
-    return CreateService(config);
+    return CreateService(config, _dataManager.Settings.AiTimeoutSeconds.Value);
   }
 
   /// <summary>
@@ -68,12 +68,14 @@ public class AiServiceFactory
   /// <summary>
   /// 根据模型配置创建对应的 IAiService 实例
   /// </summary>
-  public static IAiService CreateService(AiModelConfig config)
+  /// <param name="config">模型配置。</param>
+  /// <param name="timeoutSeconds">单次 HTTP 请求的超时秒数；默认与设置项默认值一致。</param>
+  public static IAiService CreateService(AiModelConfig config, int timeoutSeconds = 100)
   {
     return config.ApiFormat.Value switch
     {
-      "OpenAI" => new OpenAiService(config),
-      "Anthropic" => new AnthropicService(config),
+      "OpenAI" => new OpenAiService(config, timeoutSeconds),
+      "Anthropic" => new AnthropicService(config, timeoutSeconds),
       _ => throw new ArgumentException($"不支持的 API 格式: {config.ApiFormat.Value}"),
     };
   }
