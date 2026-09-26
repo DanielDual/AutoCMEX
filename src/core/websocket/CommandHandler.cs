@@ -115,7 +115,9 @@ public class CommandHandler : IMessageHandler
       $"CommandHandler: dispatching guess from {sender} (conn={connectionId}), text={text}"
     );
 
-    var result = await _guessProcessingService.ProcessAsync(text);
+    // 带上 message.Id 与 sender：命中 AI 兜底失败时它们会随丢包记录留档，
+    // 重试成功后由 DroppedGuessRetryService 引用原消息回帖。
+    var result = await _guessProcessingService.ProcessAsync(text, message.Id, sender);
     var responses = new List<WebSocketMessage>
     {
       WebSocketMessage.CreateAck(message.Id, "success"),
@@ -124,19 +126,10 @@ public class CommandHandler : IMessageHandler
     switch (result.Status)
     {
       case GuessProcessingStatus.Success:
-        if (result.ShouldReply)
+        var replyEvent = GuessReplyFactory.CreateResultEvent(message.Id, result);
+        if (replyEvent is not null)
         {
-          responses.Add(
-            WebSocketMessage.CreateEvent(
-              "guess_result",
-              new
-              {
-                requestId = message.Id,
-                replyText = result.ReplyText,
-                normalizedGuess = result.NormalizedGuess,
-              }
-            )
-          );
+          responses.Add(replyEvent);
         }
         else
         {
