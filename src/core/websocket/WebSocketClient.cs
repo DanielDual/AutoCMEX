@@ -24,6 +24,7 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   private ClientWebSocket? _ws;
   private CancellationTokenSource? _cts;
   private Task? _loopTask;
+  private Task? _heartbeatTask;
   private readonly SemaphoreSlim _lifecycleGate = new(1, 1);
   private bool _disposed;
   private string _lastError = string.Empty;
@@ -140,6 +141,8 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   /// <remarks>
   /// 必须无条件取消并等待连接循环结束，不能用 <see cref="IsRunning"/> 提前返回：
   /// 重连等待中它同样是 false，按它返回会留下仍在跑的循环，5 秒后自己连回来（「停不掉的客户端」）。
+  /// 连接循环在每条连接结束时都会取消并等待心跳循环退出，因此等到循环返回即代表本实例上再无活动任务
+  /// （不会再有心跳往已释放的 socket 上发 ping）。
   /// </remarks>
   public async Task StopAsync()
   {
@@ -271,6 +274,7 @@ public class WebSocketClient : IWebSocketServer, IDisposable
     _cts?.Cancel();
     _cts?.Dispose();
     _loopTask = null;
+    _heartbeatTask = null;
     _ws?.Dispose();
     IsActive = false;
     GC.SuppressFinalize(this);
@@ -280,28 +284,37 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   {
     while (!token.IsCancellationRequested)
     {
+      // 每条连接一个独立的心跳作用域：连接结束即取消它。旧写法的心跳是 fire-and-forget 且读共享的 _ws 字段，
+      // 重连后旧心跳会跟着新 socket 继续发 ping（每重连一次多一条心跳），也没有任何句柄可以等它退出。
+      using var connectionCts = CancellationTokenSource.CreateLinkedTokenSource(token);
+      var connectionToken = connectionCts.Token;
+
       try
       {
         _ws?.Dispose();
         _ws = new ClientWebSocket();
         _log.Print($"WebSocketClient: connecting to {_url}...");
 
-        await _ws.ConnectAsync(new Uri(_url), token);
+        await _ws.ConnectAsync(new Uri(_url), connectionToken);
         IsRunning = true;
         _lastError = string.Empty;
         var connectionId = "koishi-client";
         _log.Print($"WebSocketClient: connected to {_url}.");
         OnClientConnected?.Invoke(connectionId);
 
-        // 启动心跳
-        _ = Task.Run(() => HeartbeatLoop(connectionId, token), token);
+        // 心跳绑定本次连接的 socket 与令牌：socket 一失效它自己就退出，不读共享字段
+        var ws = _ws;
+        _heartbeatTask = Task.Run(
+          () => HeartbeatLoop(connectionId, ws, connectionToken),
+          connectionToken
+        );
 
         // 消息接收循环
-        await ReceiveLoop(connectionId, token);
+        await ReceiveLoop(connectionId, connectionToken);
       }
       catch (OperationCanceledException)
       {
-        break;
+        // 停止客户端或取消本次连接：都不是错误，继续与否交给下面的 while 条件
       }
       catch (Exception ex)
       {
@@ -312,6 +325,11 @@ public class WebSocketClient : IWebSocketServer, IDisposable
 
       IsRunning = false;
       OnClientDisconnected?.Invoke("koishi-client");
+
+      // 心跳随本次连接一起收尾：先取消连接作用域（不影响整个客户端），再等它真正退出。
+      // 连接循环返回前不留后台任务，StopAsync 等待循环结束即代表实例上再无活动任务。
+      connectionCts.Cancel();
+      await AwaitHeartbeatAsync();
 
       if (!token.IsCancellationRequested)
       {
@@ -410,21 +428,27 @@ public class WebSocketClient : IWebSocketServer, IDisposable
     }
   }
 
-  private async Task HeartbeatLoop(string connectionId, CancellationToken token)
+  /// <summary>
+  /// 心跳循环：按间隔向本次连接的 socket 发 ping，直到连接失效或被取消。
+  /// </summary>
+  /// <param name="connectionId">连接标识（仅用于日志）。</param>
+  /// <param name="ws">本次连接的 socket（不读共享字段，避免重连后旧心跳往新 socket 上发 ping）。</param>
+  /// <param name="token">本次连接的取消令牌。</param>
+  private async Task HeartbeatLoop(string connectionId, ClientWebSocket ws, CancellationToken token)
   {
-    while (!token.IsCancellationRequested && _ws?.State == WebSocketState.Open)
+    while (!token.IsCancellationRequested && ws.State == WebSocketState.Open)
     {
       try
       {
         await Task.Delay(_heartbeatIntervalMs, token);
 
-        if (_ws?.State != WebSocketState.Open)
+        if (ws.State != WebSocketState.Open)
           break;
 
         var ping = WebSocketMessage.CreateAck("ping", "ping");
         var json = _protocolHandler.SerializeMessage(ping);
         var bytes = Encoding.UTF8.GetBytes(json);
-        await _ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
+        await ws.SendAsync(new ArraySegment<byte>(bytes), WebSocketMessageType.Text, true, token);
       }
       catch (OperationCanceledException)
       {
@@ -432,9 +456,34 @@ public class WebSocketClient : IWebSocketServer, IDisposable
       }
       catch (Exception ex)
       {
-        _log.Warn($"WebSocketClient: heartbeat error: {ex.Message}");
+        _log.Warn($"WebSocketClient: heartbeat error ({connectionId}): {ex.Message}");
         break;
       }
+    }
+  }
+
+  /// <summary>
+  /// 等待心跳循环退出（调用前须已取消它的令牌），保证连接循环返回时没有残留任务。
+  /// </summary>
+  private async Task AwaitHeartbeatAsync()
+  {
+    var heartbeat = _heartbeatTask;
+    _heartbeatTask = null;
+
+    if (heartbeat is null)
+      return;
+
+    try
+    {
+      await heartbeat;
+    }
+    catch (OperationCanceledException)
+    {
+      // 取消是心跳退出的正常路径
+    }
+    catch (Exception ex)
+    {
+      _log.Warn($"WebSocketClient: heartbeat loop ended with error: {ex.Message}");
     }
   }
 }
