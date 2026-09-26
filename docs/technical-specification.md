@@ -54,6 +54,11 @@ AI 模型用于猜测板块的以下功能：
 | 模型 ID  | 模型标识符          |
 | API 密钥 | 用于认证的密钥      |
 
+除上表的单模型字段外，另有一个**全局**的「请求超时（秒）」设置（1~600，默认 100）：
+
+- 由 `AiServiceFactory.GetActiveService()` 读取并传给 `CreateService(config, timeoutSeconds)`，最终写入服务的 `HttpClient.Timeout`；因此模糊化处理与托管猜测都吃这一项。
+- 「测试连接」也跟随该设置，但经 `AiModelConfigPanel.ResolveTestConnectionTimeout()` 取 `min(设置值, 30)`（下限 1 秒），避免一次连通性验证长时间阻塞。
+
 ### 安全要求
 
 - **API 密钥必须安全保存，绝对不能泄露。**
