@@ -342,9 +342,19 @@ public class WebSocketLifecycleTest : TestClass
 
     public string LastError => string.Empty;
 
-    public event Action<string>? OnClientConnected;
+    /// <summary>替身不模拟连接事件（接口要求存在，用例只关心启停与释放）。</summary>
+    public event Action<string>? OnClientConnected
+    {
+      add { }
+      remove { }
+    }
 
-    public event Action<string>? OnClientDisconnected;
+    /// <summary>替身不模拟断开事件（接口要求存在，用例只关心启停与释放）。</summary>
+    public event Action<string>? OnClientDisconnected
+    {
+      add { }
+      remove { }
+    }
 
     public Task StartAsync()
     {
