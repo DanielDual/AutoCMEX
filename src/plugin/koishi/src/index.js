@@ -145,6 +145,48 @@ function pickBot(ctx) {
 }
 
 /**
+ * 统一次版本的适配器返回形状：Satori 风格（`koishi-plugin-adapter-onebot` 6.x 等）返回
+ * `{ data: [...] }`，更旧的直接返回数组；其它形状（null、字符串、对象）一律当空列表。
+ */
+function normalizeGroupList(value) {
+  if (Array.isArray(value)) return value;
+  if (value && Array.isArray(value.data)) return value.data;
+  return [];
+}
+
+/**
+ * 取单个机器人可见的群：先试公开 API（新版返回 `{ data }`、旧版返回数组），为空再退回内部 API
+ * （OneBot 群聊只有这条路径能拿到群）。
+ *
+ * 两次调用各自兜住异常：QQ 频道机器人的 `getGuildList` 必抛（它走的是频道接口），
+ * 不能因此放弃它下面同样可用的 `internal.getGroupList`，更不能让一个坏机器人拖垮整次请求。
+ */
+async function fetchBotGroups(ctx, bot) {
+  try {
+    if (typeof bot.getGuildList === "function") {
+      const list = normalizeGroupList(await bot.getGuildList());
+      if (list.length > 0) return list;
+    }
+  } catch (err) {
+    ctx.logger.warn(
+      `[AutoCMEX] Failed to fetch group list (getGuildList): ${err.message}`,
+    );
+  }
+
+  try {
+    if (bot.internal && typeof bot.internal.getGroupList === "function") {
+      return normalizeGroupList(await bot.internal.getGroupList());
+    }
+  } catch (err) {
+    ctx.logger.warn(
+      `[AutoCMEX] Failed to fetch group list (getGroupList): ${err.message}`,
+    );
+  }
+
+  return [];
+}
+
+/**
  * 拉取所有机器人可见的群，按 channelId 去重。
  */
 async function collectGroups(ctx) {
@@ -152,25 +194,9 @@ async function collectGroups(ctx) {
   const seen = new Set();
 
   for (const bot of ctx.bots || []) {
-    let list = null;
-    try {
-      if (typeof bot.getGuildList === "function") {
-        list = await bot.getGuildList();
-      }
+    const list = await fetchBotGroups(ctx, bot);
 
-      if (
-        (!list || list.length === 0) &&
-        bot.internal &&
-        typeof bot.internal.getGroupList === "function"
-      ) {
-        list = await bot.internal.getGroupList();
-      }
-    } catch (err) {
-      ctx.logger.warn(`[AutoCMEX] Failed to fetch group list: ${err.message}`);
-      continue;
-    }
-
-    for (const item of list || []) {
+    for (const item of list) {
       const channelId = String(
         item.id || item.group_id || item.channelId || "",
       );
