@@ -278,8 +278,8 @@ public class GuessEngineTest : TestClass
       Name = "TestBoss",
       SpellCards = new AutoList<SpellCard>
       {
-        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("艾草芽") },
-        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("BAK") },
+        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("Alice") },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
       },
     };
 
@@ -288,18 +288,18 @@ public class GuessEngineTest : TestClass
     {
       new()
       {
-        MainName = "BAK",
-        Aliases = new AutoList<string> { "艾草芽" },
+        MainName = "Bob",
+        Aliases = new AutoList<string> { "Alice" },
       },
       new()
       {
-        MainName = "艾草芽",
-        Aliases = new AutoList<string> { "acy" },
+        MainName = "Alice",
+        Aliases = new AutoList<string> { "Ally" },
       },
     };
 
     var pipeline = new GuessPipeline(new GuessResponseHandler(), aliases);
-    var result = pipeline.Process("1艾草芽 2BAK", boss);
+    var result = pipeline.Process("1Alice 2Bob", boss);
 
     result.IsSuccess.ShouldBeTrue();
     result.Response.ShouldBe("✔️");
@@ -313,8 +313,8 @@ public class GuessEngineTest : TestClass
       Name = "TestBoss",
       SpellCards = new AutoList<SpellCard>
       {
-        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("艾草芽") },
-        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("BAK") },
+        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("Alice") },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
       },
     };
 
@@ -322,18 +322,18 @@ public class GuessEngineTest : TestClass
     {
       new()
       {
-        MainName = "BAK",
-        Aliases = new AutoList<string> { "艾草芽" },
+        MainName = "Bob",
+        Aliases = new AutoList<string> { "Alice" },
       },
       new()
       {
-        MainName = "艾草芽",
-        Aliases = new AutoList<string> { "acy" },
+        MainName = "Alice",
+        Aliases = new AutoList<string> { "Ally" },
       },
     };
 
     var pipeline = new GuessPipeline(new GuessResponseHandler(), aliases);
-    var result = pipeline.Process("1acy 2BAK", boss);
+    var result = pipeline.Process("1Ally 2Bob", boss);
 
     result.IsSuccess.ShouldBeTrue();
     result.Response.ShouldBe("✔️");

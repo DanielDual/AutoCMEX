@@ -3,6 +3,7 @@ namespace AutoCMEX;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Reflection;
 using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
@@ -91,6 +92,49 @@ public class AiServiceTest : TestClass
       if (Directory.Exists(tmpDir))
         Directory.Delete(tmpDir, true);
     }
+  }
+
+  [Test]
+  public void AiFuzzifier_Prompt_TeachesAliasConversionAndMarksCreatorsWithoutAliases()
+  {
+    var aliases = new List<CreatorAlias>
+    {
+      new() { MainName = "Alice" },
+      new() { MainName = "Bob" },
+    };
+    aliases[0].Aliases.Add("Ally");
+
+    var prompt = BuildPrompt(aliases);
+
+    // 别名转换必须有可直接照做的例子（例子只允许出现占位符名）
+    prompt.ShouldContain("输入：1Ally 2Alice 3Bob");
+    prompt.ShouldContain("输出：1Alice 2Alice 3Bob");
+    // 无别名的创作者行写「无别名」，不能是空括号（空括号既像字段缺失，又像空字符串别名）
+    prompt.ShouldContain("- Bob（无别名）");
+    prompt.ShouldNotContain("（别名：）");
+    // 「表外名字转最匹配主名」是有意保留的规则，不能被顺手删掉
+    prompt.ShouldContain("否则，请按照将其转换为最匹配的主名。");
+  }
+
+  [Test]
+  public void AiFuzzifier_Prompt_OmitsAliasExampleWhenTheTableIsEmpty()
+  {
+    var prompt = BuildPrompt(new List<CreatorAlias>());
+
+    prompt.ShouldNotContain("1Ally");
+    // 表头（不是规则句里那处提及）不该出现
+    prompt.ShouldNotContain("创作者别名表（请将别名转换为主名）：");
+  }
+
+  /// <summary>取 AiFuzzifier 的系统提示词（生成为私有方法，用反射取，避免为测试开生产接缝）。</summary>
+  private static string BuildPrompt(IReadOnlyList<CreatorAlias> aliases)
+  {
+    var fuzzifier = new AiFuzzifier(null!, aliases, null!);
+    var method = typeof(AiFuzzifier).GetMethod(
+      "BuildSystemPrompt",
+      BindingFlags.NonPublic | BindingFlags.Instance
+    )!;
+    return (string)method.Invoke(fuzzifier, null)!;
   }
 
   [Test]

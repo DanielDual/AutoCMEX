@@ -221,9 +221,9 @@ public class TestAliasPanel : TestClass
   [Test]
   public void OnDeleteSelected_CreatorRow_DeletesOnlyThatCreator()
   {
-    _dm.Aliases.Add(new CreatorAlias { MainName = "BAK" });
-    _dm.Aliases.Add(new CreatorAlias { MainName = "BAK" });
-    _dm.Aliases[1].Aliases.Add("标记");
+    _dm.Aliases.Add(new CreatorAlias { MainName = "Alice" });
+    _dm.Aliases.Add(new CreatorAlias { MainName = "Alice" });
+    _dm.Aliases[1].Aliases.Add("A1");
     _panel.Refresh();
     CreatorRow(1).Select(0);
 
