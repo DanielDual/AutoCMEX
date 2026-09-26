@@ -1,8 +1,8 @@
 namespace AutoCMEX.UI.Guessing;
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
 using System.Threading.Tasks;
 using AutoCMEX;
 using AutoCMEX.Core.Ai;
@@ -50,6 +50,9 @@ public partial class GuessingPanel : Control, IGuessingPanel
   [Node("%ClearDroppedBtn")]
   public IButton ClearDroppedBtn { get; set; } = default!;
 
+  [Node("%RemoveDroppedBtn")]
+  public IButton RemoveDroppedBtn { get; set; } = default!;
+
   #endregion
 
   #region Dependencies
@@ -63,10 +66,24 @@ public partial class GuessingPanel : Control, IGuessingPanel
   [Dependency]
   public IGuessProcessingService GuessProcessingService => this.DependOn<IGuessProcessingService>();
 
+  /// <summary>
+  /// 丢包重试协调器：重试链路的终点是群聊（引用原消息回帖），不是这里
+  /// </summary>
+  [Dependency]
+  public IDroppedGuessRetryService DroppedGuessRetryService =>
+    this.DependOn<IDroppedGuessRetryService>();
+
   #endregion
 
   private DataManager? _dm;
   private IGuessProcessingService? _guessProcessingService;
+  private IDroppedGuessRetryService? _retryService;
+
+  /// <summary>
+  /// 丢包列表当前渲染的快照：列表项与记录一一对应，删除时按选中下标取 Id
+  /// </summary>
+  private readonly List<DroppedGuess> _droppedSnapshot = new();
+
   private AutoValue<string?>.Binding? _activeAiModelIdBinding;
   private AutoList<AiModelConfig>.Binding? _aiModelsBinding;
   private AutoList<DroppedGuess>.Binding? _droppedGuessesBinding;
@@ -82,6 +99,11 @@ public partial class GuessingPanel : Control, IGuessingPanel
   /// 测试用：获取 OnRetryAllDropped 委托
   /// </summary>
   public Action GetOnRetryAllDropped() => OnRetryAllDropped;
+
+  /// <summary>
+  /// 测试用：获取 OnRemoveSelectedDropped 委托
+  /// </summary>
+  public Action GetOnRemoveSelectedDropped() => OnRemoveSelectedDropped;
 
   public override void _Notification(int what) => this.Notify(what);
 
@@ -100,12 +122,14 @@ public partial class GuessingPanel : Control, IGuessingPanel
     // 丢包重试 UI 信号连接
     RetryDroppedBtn.Pressed += OnRetryAllDropped;
     ClearDroppedBtn.Pressed += OnClearDropped;
+    RemoveDroppedBtn.Pressed += OnRemoveSelectedDropped;
   }
 
   public void OnResolved()
   {
     _dm = DataManager;
     _guessProcessingService = GuessProcessingService;
+    _retryService = DroppedGuessRetryService;
 
     if (_dm != null)
     {
@@ -258,7 +282,12 @@ public partial class GuessingPanel : Control, IGuessingPanel
   {
     // Node references may not be resolved yet if called from _Notification
     // before AutoInject has run.
-    if (DroppedList == null || RetryDroppedBtn == null || ClearDroppedBtn == null)
+    if (
+      DroppedList == null
+      || RetryDroppedBtn == null
+      || ClearDroppedBtn == null
+      || RemoveDroppedBtn == null
+    )
       return;
 
     var service = _guessProcessingService;
@@ -267,10 +296,14 @@ public partial class GuessingPanel : Control, IGuessingPanel
 
     DroppedList.Clear();
     var dropped = service.GetDroppedGuesses();
+    _droppedSnapshot.Clear();
+    _droppedSnapshot.AddRange(dropped);
+
     if (dropped.Count == 0)
     {
       RetryDroppedBtn.Disabled = true;
       ClearDroppedBtn.Disabled = true;
+      RemoveDroppedBtn.Disabled = true;
       return;
     }
 
@@ -281,16 +314,20 @@ public partial class GuessingPanel : Control, IGuessingPanel
 
     RetryDroppedBtn.Disabled = _isRetrying;
     ClearDroppedBtn.Disabled = false;
+    RemoveDroppedBtn.Disabled = false;
   }
 
   private async void OnRetryAllDropped()
   {
-    var service = _guessProcessingService;
-    if (service == null)
+    var retryService = _retryService;
+    if (retryService == null)
+    {
+      _log.Warn("OnRetryAllDropped: retry service not available.");
       return;
+    }
 
-    var dropped = service.GetDroppedGuesses();
-    if (dropped.Count == 0)
+    var dropped = _guessProcessingService?.GetDroppedGuesses();
+    if (dropped == null || dropped.Count == 0)
       return;
 
     _log.Print($"OnRetryAllDropped: retrying {dropped.Count} dropped guesses.");
@@ -298,22 +335,18 @@ public partial class GuessingPanel : Control, IGuessingPanel
     RetryDroppedBtn.Disabled = true;
     RetryDroppedBtn.Text = "重试中...";
 
-    var successCount = 0;
-    var failCount = 0;
-
-    // 并行重试所有丢包
-    var tasks = dropped.Select(async d =>
-    {
-      var result = await service.RetryDroppedGuessAsync(d.Id);
-      if (result.IsGuess)
-        Interlocked.Increment(ref successCount);
-      else
-        Interlocked.Increment(ref failCount);
-    });
-
+    IReadOnlyList<DroppedRetryOutcome> outcomes;
     try
     {
-      await Task.WhenAll(tasks);
+      // 重试的终点是群聊：协调器负责重放 + 引用原消息回帖，并决定记录去留
+      outcomes = await retryService.RetryAllAsync();
+    }
+    catch (Exception ex)
+    {
+      // async void 里的异常没人接，会直接把进程带崩：这里兜住并写进回应栏
+      _log.Err($"OnRetryAllDropped: retry aborted: {ex.GetType().Name}: {ex.Message}");
+      ResponseDisplay.Text = $"[color=red]丢包重试中断：{ex.Message}[/color]";
+      return;
     }
     finally
     {
@@ -324,7 +357,64 @@ public partial class GuessingPanel : Control, IGuessingPanel
       RetryDroppedBtn.Disabled = _isRetrying;
     }
 
-    _log.Print($"OnRetryAllDropped: done, success={successCount}, fail={failCount}");
+    var successCount = outcomes.Count(o => o.Succeeded);
+    _log.Print(
+      $"OnRetryAllDropped: done, success={successCount}, fail={outcomes.Count - successCount}"
+    );
+    ShowRetryOutcomes(outcomes);
+  }
+
+  /// <summary>
+  /// 把逐条重试结局写进回应显示栏
+  /// </summary>
+  /// <param name="outcomes">重试结局（按丢包记录顺序）。</param>
+  /// <remarks>
+  /// 重试不再只是「数成功率」：没回帖的原因（非猜测 / 链路未运行 / 原消息已过期）必须让用户看见，
+  /// 否则「记录了去留却说不清为什么」。
+  /// </remarks>
+  private void ShowRetryOutcomes(IReadOnlyList<DroppedRetryOutcome> outcomes)
+  {
+    if (outcomes.Count == 0)
+      return;
+
+    var color = outcomes.Any(o => !o.Succeeded) ? "yellow" : "green";
+    var lines = outcomes.Select(o => $"[{o.DroppedId}] {o.Message}");
+    ResponseDisplay.Text = $"[color={color}]丢包重试结果[/color]\n{string.Join("\n", lines)}";
+  }
+
+  /// <summary>
+  /// 删除丢包列表里选中的记录
+  /// </summary>
+  /// <remarks>
+  /// 兜底出口：超过插件 5 分钟会话窗口的重试会推送成功但无人接收，记录照旧会被移除；
+  /// 但链路异常、用户想放弃某条记录时，必须能手动清掉，否则列表里会出现删不掉的条目。
+  /// </remarks>
+  private void OnRemoveSelectedDropped()
+  {
+    var service = _guessProcessingService;
+    if (service == null)
+      return;
+
+    var selected = DroppedList.GetSelectedItems();
+    if (selected.Length == 0)
+    {
+      _log.Warn("OnRemoveSelectedDropped: nothing selected.");
+      ResponseDisplay.Text = "[color=red]请先在丢包列表里选中要删除的记录[/color]";
+      return;
+    }
+
+    var removed = 0;
+    foreach (var index in selected)
+    {
+      if (index < 0 || index >= _droppedSnapshot.Count)
+        continue;
+
+      service.RemoveDroppedGuess(_droppedSnapshot[index].Id);
+      removed++;
+    }
+
+    _log.Print($"OnRemoveSelectedDropped: removed {removed} dropped guesses.");
+    ResponseDisplay.Text = $"[color=green]已删除 {removed} 条丢包记录[/color]";
   }
 
   private void OnClearDropped()

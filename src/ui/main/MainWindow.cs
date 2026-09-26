@@ -35,6 +35,7 @@ public partial class MainWindow
     IProvide<IGuessProcessingService>,
     IProvide<IWebSocketServer>,
     IProvide<WebSocketLifecycle>,
+    IProvide<IDroppedGuessRetryService>,
     IProvide<InfoEventBus>,
     IProvide<ILogService>
 {
@@ -106,6 +107,7 @@ public partial class MainWindow
   private IGuessProcessingService _guessProcessingService = default!;
   private IWebSocketServer _webSocketServer = default!;
   private WebSocketLifecycle _webSocketLifecycle = default!;
+  private IDroppedGuessRetryService _droppedGuessRetryService = default!;
   private ILogService _logService = default!;
 
   /// <summary>
@@ -126,6 +128,9 @@ public partial class MainWindow
   IWebSocketServer IProvide<IWebSocketServer>.Value() => _webSocketServer;
 
   WebSocketLifecycle IProvide<WebSocketLifecycle>.Value() => _webSocketLifecycle;
+
+  IDroppedGuessRetryService IProvide<IDroppedGuessRetryService>.Value() =>
+    _droppedGuessRetryService;
 
   InfoEventBus IProvide<InfoEventBus>.Value() => _infoEvents;
 
@@ -185,6 +190,12 @@ public partial class MainWindow
       var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService, _infoEvents);
       _webSocketLifecycle = new WebSocketLifecycle(wsInitializer.CreateServer, wsLog);
       _webSocketServer = _webSocketLifecycle.Create(_dataManager.Settings);
+
+      // 丢包重试协调器：在 lifecycle 之后构造，重试成功时经它向活跃端点推送回复
+      _droppedGuessRetryService = new DroppedGuessRetryService(
+        _guessProcessingService,
+        _webSocketLifecycle
+      );
 
       // 初始化日志服务
       _logService = AppLogs.GetOrCreate();
