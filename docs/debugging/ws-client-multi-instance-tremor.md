@@ -76,18 +76,25 @@ Koishi 记的是 `Client disconnected: code=1006`，AutoCMEX 记的是 `server c
 
 ## 修复
 
-- **新增 `WebSocketLifecycle`**：作为实例创建/启动/停止/重启的唯一入口，持有当前实例并把三种操作全部串行化。
+- **新增 `WebSocketLifecycle`**：作为实例创建/启动/停止/重启的唯一入口，持有当前实例并把启停与重启全部串行化（界面启停经 `ToggleAsync()`，见下节）。
 - **幂等与必停判据改为「循环任务句柄是否还活着」**（`Task? _loopTask` / `_acceptLoopTask` + `SemaphoreSlim(1,1)`），不再依赖对外状态 `IsRunning`；`StopAsync` 一律「取消 → 关监听器/中止 socket → `await` 循环退出」。
 - **校验式重启**：期望配置（模式 + 该模式对应的端口/地址）与当前实例的有效配置一致时，原样返回现有实例，**不重建不启停**——启动时那三次订阅回调因此退化为空操作；配置真变化时才「停旧 → 建新 → 启新」。
-- **`IWebSocketServer.IsActive`（新增）**：表示「实例是否仍在工作」（含 Client 重连等待）。状态面板的启停按钮方向与文案改按它判定、状态标签在重连等待时显示「未连接（重连中）」——否则重连中的客户端「点一下反而更连不上、也停不掉」。
+- **`IWebSocketServer.IsActive`（新增）**：表示「实例是否仍在工作」（含 Client 重连等待）。状态面板的按钮与状态标签文案按它显示（重连等待时为「断开」/「未连接（重连中）」）——否则重连中的客户端「点一下反而更连不上、也停不掉」。
 - **`WebSocketServer` 的接受循环只服务本次启动的 listener 实例**（不读字段，避免重启换实例时操作错对象），启动失败一律收尾（丢掉半成品监听器）并把原因写进 `LastError`。
+
+## 收尾：评审列出的两条低危项
+
+评审认为两条都属「轻」，但与震颤同源/同域，用户要求一并收掉：
+
+1. **界面启停没走生命周期控制器的门**。修复后启停时序已在控制器内串行化，但状态面板仍是对**自己手上的实例引用**调 `StartAsync` / `StopAsync`，方向也由面板按显示状态判定。面板拿的是上次推送的引用，配置变更重启期间它可能已是被替换掉的旧实例 ⇒ 在重启那几毫秒内点按钮，会把已停的旧实例重新拉起（与新实例同时在跑，与震颤同一类多实例场景）。收法：控制器新增 `ToggleAsync()`，方向在锁内按**当前实例**判定、与重启共用同一把锁；面板只调它，`MainWindow` 把控制器一并 `IProvide` 给面板。至此「启停只有一个入口」成为事实，不只是文档口径。
+2. **心跳循环是 fire-and-forget**。旧写法 `_ = Task.Run(() => HeartbeatLoop(connectionId, token))` 且循环内读共享的 `_ws` 字段：停止返回时它可能正睡在 `Task.Delay` 里、也可能正在写已被释放的 socket；重连后旧心跳会跟着新 socket 继续发 ping（每重连一次多一条）。收法：每条连接一个独立心跳作用域（`CreateLinkedTokenSource`）与该连接的 socket 快照，连接结束即「取消 → `await` 心跳退出」，`StopAsync` 返回即代表实例上再无活动任务。
 
 ## 验证
 
 - `dotnet build`：0 错误。
-- `$GODOT --run-tests --quit-on-finish --coverage`（**带窗口，非 headless**）：**679 通过 / 0 失败 / 0 跳过**（修复前 656 条）。
-- 新增单测：`WebSocketClientLifecycleTest`、`WebSocketServerLifecycleTest`、`WebSocketLifecycleTest`，并在 `TestWebSocketPanel` 补两条（重连中按钮方向与状态文案）。
-- 覆盖率：整体行 68.2%、分支 57.1%（`WebSocketLifecycle` 36/37 行、`WebSocketClient` 47/65 行、`WebSocketServer` 51/74 行）。
+- `$GODOT --run-tests --quit-on-finish --coverage`（**带窗口，非 headless**）：**685 通过 / 0 失败 / 0 跳过**（修复前 656 条）。
+- 新增单测：`WebSocketClientLifecycleTest`、`WebSocketServerLifecycleTest`、`WebSocketLifecycleTest`，并在 `TestWebSocketPanel` 补三条（重连中按钮文案与状态标签、重连中点击走停止分支、重启换实例后点击作用在控制器当前实例而非面板旧引用）；收尾两条另加 `WebSocketLifecycleTest` 启停方向三条（工作中则停、已停则启、无实例不凭空造）与 `WebSocketClientLifecycleTest` 一条（停止后不再有心跳到达对端）。
+- 覆盖率：整体行 68.3%、分支 57.3%（`WebSocketLifecycle` 36/37 行、`WebSocketClient` 48/66 行、`WebSocketServer` 51/74 行）。
 - **真机验收留待用户执行**：Client 模式连 Koishi 5141，启动后 30s 内 Koishi 端只应看到 1 次连接、0 次踢出（手动停止除外）。
 
 ## 遗留观察（本次未处理）
