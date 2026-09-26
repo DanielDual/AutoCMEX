@@ -176,6 +176,33 @@ public class TestInfoPanel : TestClass
   private static string RequestId(WebSocketMessage message) =>
     message.Payload.GetProperty("data").GetProperty("requestId").GetString()!;
 
+  /// <summary>取发布请求的群内呈现方式（<c>forward</c> 合并转发 / <c>image</c> 直接发图）。</summary>
+  private static string SentMode(WebSocketMessage message) =>
+    message.Payload.GetProperty("data").GetProperty("mode").GetString()!;
+
+  /// <summary>
+  /// 等真实时间流逝 <paramref name="seconds"/> 秒（不是等固定帧数）：自动推送的防抖窗口按引擎时间计，
+  /// 用帧数等待会在帧率波动时假通过。
+  /// </summary>
+  private static async Task WaitSecondsAsync(Node node, double seconds) =>
+    await node.ToSignal(node.GetTree().CreateTimer(seconds), SceneTreeTimer.SignalName.Timeout);
+
+  /// <summary>把已发出载荷里的图片路径登记进清理清单（两表每发布一次都会新渲染一个 PNG）。</summary>
+  private void TrackPublishedImages()
+  {
+    foreach (var message in _sent)
+    {
+      foreach (
+        var node in message.Payload.GetProperty("data").GetProperty("nodes").EnumerateArray()
+      )
+      {
+        var path = node.GetProperty("imagePath").GetString();
+        if (!string.IsNullOrWhiteSpace(path))
+          _tempFiles.Add(path!);
+      }
+    }
+  }
+
   /// <summary>取面板的报告对话框（面板只建一个，标题随用途变化）。</summary>
   private static AcceptDialog FindDialog(Node panel)
   {
@@ -857,6 +884,150 @@ public class TestInfoPanel : TestClass
 
     _sent.Select(SentKind).ShouldBe(new[] { "CreatorRemainingTable", "ActivityRule" });
     FindDialog(panel).DialogText.ShouldContain("共 1 项，成功 1 项");
+  }
+
+  [Test]
+  public async Task Publish_CarriesPerItemSendMode_TablesAsImageGifAndRuleAsForward()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    ImportGifSet();
+    EnableGroup("10001");
+    _dm.InfoConfig.ActivityRule.Value = "活动规则正文";
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    panel.GetNode<Button>("%ForwardAllButton").EmitSignal(BaseButton.SignalName.Pressed);
+    (await PumpPublishAsync(panel, 4)).ShouldBeTrue("四项都应拿到回执后结束");
+    await SettleAsync(panel);
+    TrackPublishedImages();
+
+    // 两张表直接发图（群内一眼看完，不必多点一次转发卡片再展开）；
+    // GIF 集要逐条展开、活动规则是纯文本无图片形态，仍走合并转发。
+    _sent.Select(SentMode).ShouldBe(new[] { "forward", "image", "image", "forward" });
+  }
+
+  [Test]
+  public async Task AutoPublishGuessingTable_SendsImageOnChangeOnlyWhenChecked()
+  {
+    // 第二个 Boss 不是当前选中项：它的数据变化会触发刷新，但改变不了这张表
+    var otherBoss = CreateBoss();
+    otherBoss.Name = "OtherBoss";
+    CreateDataManager(new[] { CreateBoss(), otherBoss });
+    EnableGroup("10001");
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var autoPublish = panel.GetNode<CheckBox>("%AutoPublishGuessingTable");
+    autoPublish.ButtonPressed.ShouldBeFalse("默认不自动推送，避免开箱就往群里发表");
+    _dm.InfoConfig.AutoPublishGuessingTable.Value.ShouldBeFalse();
+
+    // 未勾选：表变化（符卡 2 由未猜出变已猜出）等过防抖窗口也不得发送
+    _dm.Bosses[0].SpellCards[1].IsGuessedOut.Value = true;
+    await SettleAsync(panel);
+    await WaitSecondsAsync(panel, 2.0);
+    _sent.ShouldBeEmpty("未勾选自动推送时表变化不得发送");
+
+    // 勾选即写回模型（与「目标群」勾选同一套绑定方式，下次启动仍是勾选状态）
+    autoPublish.SetPressedNoSignal(true);
+    autoPublish.EmitSignal(BaseButton.SignalName.Toggled, true);
+    await SettleAsync(panel);
+    _dm.InfoConfig.AutoPublishGuessingTable.Value.ShouldBeTrue();
+
+    // 防抖：一次猜测里连改两次，只发一张（发的是收敛后的那张表）
+    _dm.Bosses[0].SpellCards[2].IsGuessedOut.Value = false;
+    await WaitSecondsAsync(panel, 0.4);
+    _dm.Bosses[0].SpellCards[1].IsGuessedOut.Value = false;
+    await WaitSecondsAsync(panel, 2.0);
+    (await PumpPublishAsync(panel, 1)).ShouldBeTrue("勾选后表变化应自动推一次");
+    await SettleAsync(panel);
+    TrackPublishedImages();
+
+    _sent.Count.ShouldBe(1, "同一次猜测里的连续变化应被防抖合并成一次发送");
+    SentKind(_sent[0]).ShouldBe("GuessingTable");
+    SentMode(_sent[0]).ShouldBe("image");
+    FindDialogOrNull(panel).ShouldBeNull("自动推送成功时静默，不打断正在进行的猜测");
+
+    // 与这张表无关的变化（非当前选中 Boss 的符卡）也要刷新，但不得再发一张：靠内容指纹挡住
+    otherBoss.SpellCards[1].IsGuessedOut.Value = true;
+    await SettleAsync(panel);
+    await WaitSecondsAsync(panel, 2.0);
+    _sent.Count.ShouldBe(1, "表内容没变就不得重复推送");
+  }
+
+  [Test]
+  public async Task AutoPublishGuessingTable_ManualPublishCancelsPendingAutoPush()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    ImportGifSet();
+    EnableGroup("10001");
+    _dm.InfoConfig.ActivityRule.Value = "活动规则正文";
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    _dm.InfoConfig.AutoPublishGuessingTable.Value = true;
+    await SettleAsync(panel);
+
+    // 表刚变（自动推送已排定），用户随即点「一键转发」：这次发布已经包含这张表，不得再补一张
+    _dm.Bosses[0].SpellCards[1].IsGuessedOut.Value = true;
+    await SettleAsync(panel);
+    panel.GetNode<Button>("%ForwardAllButton").EmitSignal(BaseButton.SignalName.Pressed);
+    (await PumpPublishAsync(panel, 4)).ShouldBeTrue();
+    await SettleAsync(panel);
+    TrackPublishedImages();
+
+    await WaitSecondsAsync(panel, 2.0);
+    _sent.Count.ShouldBe(4, "手动发布已发出这张表，自动推送不得再补一张");
+  }
+
+  [Test]
+  public async Task AutoPublishGuessingTable_ShowsReportOnFailureAndDoesNotRetry()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    EnableGroup("10001");
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    _dm.InfoConfig.AutoPublishGuessingTable.Value = true;
+    await SettleAsync(panel);
+
+    _dm.Bosses[0].SpellCards[1].IsGuessedOut.Value = true;
+    await SettleAsync(panel);
+    await WaitSecondsAsync(panel, 2.0);
+
+    // 失败必须让用户看见（基本意味着连接断了），但不能变成每 1.5 秒一次的自动重试
+    (await PumpPublishAsync(panel, 1, false)).ShouldBeTrue();
+    await SettleAsync(panel);
+
+    _sent.Count.ShouldBe(1);
+    FindDialog(panel).DialogText.ShouldContain("共 1 项，成功 0 项，失败 1 项");
+
+    await WaitSecondsAsync(panel, 2.0);
+    _sent.Count.ShouldBe(1, "失败后不得自动重排重试，等下一次表变化再试");
+  }
+
+  [Test]
+  public async Task AutoPublishGuessingTable_WithoutTargetGroups_SkipsSilently()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    // 不勾选任何目标群，但打开自动推送
+    _dm.InfoConfig.AutoPublishGuessingTable.Value = true;
+    await SettleAsync(panel);
+
+    _dm.Bosses[0].SpellCards[1].IsGuessedOut.Value = true;
+    await SettleAsync(panel);
+    await WaitSecondsAsync(panel, 2.0);
+
+    _sent.ShouldBeEmpty();
+    FindDialogOrNull(panel)
+      .ShouldBeNull("自动推送没有目标群时只记日志，不弹「未选择目标群」打断猜测");
   }
 
   [Test]
