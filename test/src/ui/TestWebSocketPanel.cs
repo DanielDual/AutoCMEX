@@ -367,10 +367,11 @@ public class MockWebSocketServer : IWebSocketServer
     return Task.CompletedTask;
   }
 
-  public Task BroadcastAsync(WebSocketMessage message)
+  public Task<int> BroadcastAsync(WebSocketMessage message)
   {
     BroadcastedMessages.Add(message);
-    return Task.CompletedTask;
+    // 这个替身代表一条在跑的单链路：送出去就是送到了一个对端
+    return Task.FromResult(1);
   }
 
   /// <summary>已推送的出站消息（供断言用）。</summary>

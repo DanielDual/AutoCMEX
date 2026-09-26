@@ -57,6 +57,29 @@ public class DroppedGuessTest : TestClass
     d1.Id.ShouldNotBe(d2.Id);
   }
 
+  [Test]
+  public void DroppedGuess_CarriesReplyContext()
+  {
+    // 重试要按原消息回帖，因此来源请求标识、发送者与丢包当时的口径都得留档
+    var dropped = new DroppedGuess("text", "error", "req-1", "group-1", "strict");
+
+    dropped.RequestId.ShouldBe("req-1");
+    dropped.Sender.ShouldBe("group-1");
+    dropped.FilterMode.ShouldBe("strict");
+  }
+
+  [Test]
+  public void DroppedGuess_WithoutContext_FallsBackToEmptyStrings()
+  {
+    // 本地手输路径没有来源：空串而不是 null，好让重试侧只判空、不必到处防 null
+    var dropped = new DroppedGuess("text", "error");
+
+    dropped.RequestId.ShouldBeEmpty();
+    dropped.Sender.ShouldBeEmpty();
+    dropped.FilterMode.ShouldBeEmpty();
+    new DroppedGuess("text", "error", null!, null!, null!).RequestId.ShouldBeEmpty();
+  }
+
   // ==================== DroppedGuessRepository Tests ====================
 
   [Test]

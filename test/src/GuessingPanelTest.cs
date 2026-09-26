@@ -24,7 +24,10 @@ public class GuessingPanelTest : TestClass
   private Mock<IItemList> _droppedList = default!;
   private Mock<IButton> _retryDroppedBtn = default!;
   private Mock<IButton> _clearDroppedBtn = default!;
+  private Mock<IButton> _removeDroppedBtn = default!;
   private Mock<IButton> _fuzzifyBtn = default!;
+  private Mock<IRichTextLabel> _responseDisplay = default!;
+  private Mock<IDroppedGuessRetryService> _retryService = default!;
   private readonly List<Node> _toCleanup = new();
 
   public GuessingPanelTest(Node testScene)
@@ -47,12 +50,16 @@ public class GuessingPanelTest : TestClass
     _fuzzifyBtn = new Mock<IButton>();
     _fuzzifyBtn.SetupProperty(m => m.Disabled);
     var processBtn = new Mock<IButton>();
-    var responseDisplay = new Mock<IRichTextLabel>();
+    _responseDisplay = new Mock<IRichTextLabel>();
+    _responseDisplay.SetupProperty(m => m.Text);
     _droppedList = new Mock<IItemList>();
     _retryDroppedBtn = new Mock<IButton>();
     _retryDroppedBtn.SetupProperty(m => m.Disabled);
+    _retryDroppedBtn.SetupProperty(m => m.Text);
     _clearDroppedBtn = new Mock<IButton>();
     _clearDroppedBtn.SetupProperty(m => m.Disabled);
+    _removeDroppedBtn = new Mock<IButton>();
+    _removeDroppedBtn.SetupProperty(m => m.Disabled);
 
     _panel.FakeNodeTree(
       new()
@@ -60,10 +67,11 @@ public class GuessingPanelTest : TestClass
         ["%GuessInput"] = guessInput.Object,
         ["%FuzzifyBtn"] = _fuzzifyBtn.Object,
         ["%ProcessBtn"] = processBtn.Object,
-        ["%ResponseDisplay"] = responseDisplay.Object,
+        ["%ResponseDisplay"] = _responseDisplay.Object,
         ["%DroppedList"] = _droppedList.Object,
         ["%RetryDroppedBtn"] = _retryDroppedBtn.Object,
         ["%ClearDroppedBtn"] = _clearDroppedBtn.Object,
+        ["%RemoveDroppedBtn"] = _removeDroppedBtn.Object,
       }
     );
 
@@ -78,6 +86,10 @@ public class GuessingPanelTest : TestClass
         _droppedRepo
       )
     );
+
+    // 重试链路的终点在协调器里（它负责回帖），面板只负责发起与展示结局
+    _retryService = new Mock<IDroppedGuessRetryService>();
+    _panel.FakeDependency<IDroppedGuessRetryService>(_retryService.Object);
 
     _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
@@ -143,6 +155,12 @@ public class GuessingPanelTest : TestClass
   }
 
   [Test]
+  public void RemoveDroppedBtn_IsDisabledByDefault()
+  {
+    _panel.RemoveDroppedBtn.Disabled.ShouldBeTrue();
+  }
+
+  [Test]
   public async Task DroppedList_UpdatesWhenDroppedGuessesChange()
   {
     _droppedRepo.Add(new DroppedGuess("text", "error"));
@@ -154,6 +172,7 @@ public class GuessingPanelTest : TestClass
     );
     _retryDroppedBtn.Object.Disabled.ShouldBeFalse();
     _clearDroppedBtn.Object.Disabled.ShouldBeFalse();
+    _removeDroppedBtn.Object.Disabled.ShouldBeFalse();
   }
 
   [Test]
@@ -170,6 +189,109 @@ public class GuessingPanelTest : TestClass
     _droppedList.Verify(m => m.Clear(), Times.AtLeastOnce);
     _retryDroppedBtn.Object.Disabled.ShouldBeTrue();
     _clearDroppedBtn.Object.Disabled.ShouldBeTrue();
+    _removeDroppedBtn.Object.Disabled.ShouldBeTrue();
+  }
+
+  [Test]
+  public async Task RemoveSelectedDropped_WithoutSelection_ShowsHintAndKeepsRecords()
+  {
+    _droppedRepo.Add(new DroppedGuess("text1", "error1"));
+    _droppedRepo.Add(new DroppedGuess("text2", "error2"));
+    await _panel.ToSignal(TestScene.GetTree(), "process_frame");
+
+    _panel.GetOnRemoveSelectedDropped()();
+
+    _droppedRepo.GetAll().Count.ShouldBe(2);
+    _responseDisplay.Object.Text.ShouldContain("选中");
+  }
+
+  [Test]
+  public async Task RemoveSelectedDropped_RemovesOnlyTheSelectedRecord()
+  {
+    var first = new DroppedGuess("text1", "error1");
+    var second = new DroppedGuess("text2", "error2");
+    _droppedRepo.Add(first);
+    _droppedRepo.Add(second);
+    await _panel.ToSignal(TestScene.GetTree(), "process_frame");
+
+    // 选中下标 1 = 列表里第二条记录
+    _droppedList.Setup(m => m.GetSelectedItems()).Returns(new[] { 1 });
+    _panel.GetOnRemoveSelectedDropped()();
+
+    _droppedRepo.GetAll().Count.ShouldBe(1);
+    _droppedRepo.GetAll()[0].Id.ShouldBe(first.Id);
+    _responseDisplay.Object.Text.ShouldContain("已删除 1 条");
+  }
+
+  [Test]
+  public async Task RetryAllDropped_RoutesThroughTheCoordinatorAndShowsEveryOutcome()
+  {
+    _droppedRepo.Add(new DroppedGuess("1Alice 2Bob", "ai down", "req-1", "group-1", "strict"));
+    await _panel.ToSignal(TestScene.GetTree(), "process_frame");
+
+    _retryService
+      .Setup(s => s.RetryAllAsync())
+      .ReturnsAsync(
+        new List<DroppedRetryOutcome>
+        {
+          new(
+            "abc12345",
+            "1Alice 2Bob",
+            DroppedRetryStatus.Replied,
+            "已引用原消息回帖，记录已移除。",
+            true
+          ),
+          new(
+            "def67890",
+            "1Alice 2Bob",
+            DroppedRetryStatus.LinkInactive,
+            "链路未运行或没有已连接的对端，结果未送达，记录保留。",
+            false
+          ),
+        }
+      );
+
+    _panel.GetOnRetryAllDropped()();
+    for (var i = 0; i < 5; i++)
+      await _panel.ToSignal(TestScene.GetTree(), "process_frame");
+
+    // 面板不再自己调服务重放，而是把重放与回帖整个交给协调器，并把逐条结局显示出来
+    _retryService.Verify(s => s.RetryAllAsync(), Times.Once);
+    _responseDisplay.Object.Text.ShouldContain("丢包重试结果");
+    _responseDisplay.Object.Text.ShouldContain("已引用原消息回帖");
+    _responseDisplay.Object.Text.ShouldContain("结果未送达");
+    _retryDroppedBtn.Object.Text.ShouldBe("重试全部丢包");
+    _retryDroppedBtn.Object.Disabled.ShouldBeFalse();
+  }
+
+  [Test]
+  public async Task RetryAllDropped_WithoutDroppedGuesses_DoesNotCallTheCoordinator()
+  {
+    _panel.GetOnRetryAllDropped()();
+    for (var i = 0; i < 2; i++)
+      await _panel.ToSignal(TestScene.GetTree(), "process_frame");
+
+    _retryService.Verify(s => s.RetryAllAsync(), Times.Never);
+  }
+
+  [Test]
+  public async Task RetryAllDropped_CoordinatorThrows_ReportsItWithoutCrashingThePanel()
+  {
+    // async void 里的异常没人接：协调器抛出来时必须自己兜住、写进回应栏，并把按钮状态还原
+    _droppedRepo.Add(new DroppedGuess("text1", "error1"));
+    await _panel.ToSignal(TestScene.GetTree(), "process_frame");
+    _retryService
+      .Setup(s => s.RetryAllAsync())
+      .ThrowsAsync(new InvalidOperationException("coordinator exploded"));
+
+    _panel.GetOnRetryAllDropped()();
+    for (var i = 0; i < 5; i++)
+      await _panel.ToSignal(TestScene.GetTree(), "process_frame");
+
+    _responseDisplay.Object.Text.ShouldContain("重试中断");
+    _responseDisplay.Object.Text.ShouldContain("coordinator exploded");
+    _retryDroppedBtn.Object.Text.ShouldBe("重试全部丢包");
+    _retryDroppedBtn.Object.Disabled.ShouldBeFalse();
   }
 
   [Test]

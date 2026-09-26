@@ -73,7 +73,7 @@ public class PublishServiceTest : TestClass
     _server
       .Setup(server => server.BroadcastAsync(It.IsAny<WebSocketMessage>()))
       .Callback((WebSocketMessage message) => OnBroadcast(message))
-      .Returns(Task.CompletedTask);
+      .ReturnsAsync(1);
 
     _tableImages = new FakeTableImageFactory(Path.Combine(_root, "images"));
     _service = new PublishService(

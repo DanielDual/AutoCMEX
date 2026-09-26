@@ -170,6 +170,8 @@ public class TestGuessToSpellCardSync : TestClass
     retryDroppedBtn.SetupProperty(m => m.Disabled);
     var clearDroppedBtn = new Mock<IButton>();
     clearDroppedBtn.SetupProperty(m => m.Disabled);
+    var removeDroppedBtn = new Mock<IButton>();
+    removeDroppedBtn.SetupProperty(m => m.Disabled);
 
     _guessPanel = new GuessingPanel();
     (_guessPanel as IAutoInit).IsTesting = true;
@@ -184,6 +186,7 @@ public class TestGuessToSpellCardSync : TestClass
         ["%DroppedList"] = droppedList.Object,
         ["%RetryDroppedBtn"] = retryDroppedBtn.Object,
         ["%ClearDroppedBtn"] = clearDroppedBtn.Object,
+        ["%RemoveDroppedBtn"] = removeDroppedBtn.Object,
       }
     );
     _guessPanel.FakeDependency<DataManager>(_dm);
@@ -195,6 +198,10 @@ public class TestGuessToSpellCardSync : TestClass
         new GuessResponseHandler(),
         new DroppedGuessRepository()
       )
+    );
+    // 本用例只关心猜测处理链路，重试协调器不参与，给个哑替身让依赖解析得通过
+    _guessPanel.FakeDependency<IDroppedGuessRetryService>(
+      new Mock<IDroppedGuessRetryService>().Object
     );
     _guessPanel._Notification((int)Node.NotificationEnterTree);
     _guessPanel._Notification((int)Node.NotificationReady);

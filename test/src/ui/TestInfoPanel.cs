@@ -103,7 +103,7 @@ public class TestInfoPanel : TestClass
     _server
       .Setup(s => s.BroadcastAsync(It.IsAny<WebSocketMessage>()))
       .Callback<WebSocketMessage>(_sent.Add)
-      .Returns(Task.CompletedTask);
+      .ReturnsAsync(1);
 
     _bus = new InfoEventBus();
 

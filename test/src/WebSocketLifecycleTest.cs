@@ -374,7 +374,7 @@ public class WebSocketLifecycleTest : TestClass
       return Task.CompletedTask;
     }
 
-    public Task BroadcastAsync(WebSocketMessage message) => Task.CompletedTask;
+    public Task<int> BroadcastAsync(WebSocketMessage message) => Task.FromResult(1);
 
     public void Dispose()
     {
