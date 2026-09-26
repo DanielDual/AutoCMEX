@@ -271,6 +271,75 @@ public class GuessEngineTest : TestClass
   }
 
   [Test]
+  public void Pipeline_AliasConversion_MainNameTakesPrecedenceOverAlias()
+  {
+    var boss = new Boss
+    {
+      Name = "TestBoss",
+      SpellCards = new AutoList<SpellCard>
+      {
+        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("艾草芽") },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("BAK") },
+      },
+    };
+
+    // 别名面板允许用户造出「甲行的别名 = 乙行的主名」，此时真实主名必须原样保留
+    var aliases = new List<CreatorAlias>
+    {
+      new()
+      {
+        MainName = "BAK",
+        Aliases = new AutoList<string> { "艾草芽" },
+      },
+      new()
+      {
+        MainName = "艾草芽",
+        Aliases = new AutoList<string> { "acy" },
+      },
+    };
+
+    var pipeline = new GuessPipeline(new GuessResponseHandler(), aliases);
+    var result = pipeline.Process("1艾草芽 2BAK", boss);
+
+    result.IsSuccess.ShouldBeTrue();
+    result.Response.ShouldBe("✔️");
+  }
+
+  [Test]
+  public void Pipeline_AliasConversion_AliasStillConvertsToMainName()
+  {
+    var boss = new Boss
+    {
+      Name = "TestBoss",
+      SpellCards = new AutoList<SpellCard>
+      {
+        new() { Name = new AutoValue<string>("Card1"), Creator = new AutoValue<string>("艾草芽") },
+        new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("BAK") },
+      },
+    };
+
+    var aliases = new List<CreatorAlias>
+    {
+      new()
+      {
+        MainName = "BAK",
+        Aliases = new AutoList<string> { "艾草芽" },
+      },
+      new()
+      {
+        MainName = "艾草芽",
+        Aliases = new AutoList<string> { "acy" },
+      },
+    };
+
+    var pipeline = new GuessPipeline(new GuessResponseHandler(), aliases);
+    var result = pipeline.Process("1acy 2BAK", boss);
+
+    result.IsSuccess.ShouldBeTrue();
+    result.Response.ShouldBe("✔️");
+  }
+
+  [Test]
   public void Pipeline_RevealedCard_Skipped()
   {
     var boss = new Boss
