@@ -1,0 +1,26 @@
+name: "🛡️ Sensitive Guard"
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  sensitive_guard:
+    name: "🛡️ Sensitive Guard"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run sensitive-content guard
+        env:
+          SENSITIVE_DENYLIST: ${{ secrets.SENSITIVE_DENYLIST }}
+        run: |
+          set -eu
+          chmod +x .github/scripts/sensitive-guard.sh
+          if [ -n "${SENSITIVE_DENYLIST:-}" ]; then
+            printf '%s\n' "$SENSITIVE_DENYLIST" > "$RUNNER_TEMP/denylist.txt"
+            export AUTOCMEX_DENYLIST="$RUNNER_TEMP/denylist.txt"
+          fi
+          ./.github/scripts/sensitive-guard.sh

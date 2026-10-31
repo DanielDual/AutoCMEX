@@ -1,0 +1,111 @@
+[gd_scene format=3 uid="uid://b0o67jk40412y"]
+
+[ext_resource type="Script" uid="uid://c41htm0llrugj" path="res://src/ui/guessing/GuessingPanel.cs" id="1_lp4yd"]
+[ext_resource type="PackedScene" uid="uid://0y1bexufiiq8" path="res://src/ui/guessing/SpellCardPanel.tscn" id="2_spellcard"]
+[ext_resource type="PackedScene" uid="uid://dmclev4tq27j" path="res://src/ui/guessing/AliasPanel.tscn" id="3_alias"]
+[ext_resource type="Script" uid="uid://brn7j3xhjgple" path="res://src/ui/guessing/SpellCardPanel.cs" id="3_cw7ct"]
+[ext_resource type="Script" uid="uid://dljgmqsk7p1ol" path="res://src/ui/guessing/AliasPanel.cs" id="5_3qtac"]
+
+[node name="Control" type="Control" unique_id=460198611]
+layout_mode = 3
+anchors_preset = 0
+script = ExtResource("1_lp4yd")
+
+[node name="MainContainer" type="VBoxContainer" parent="." unique_id=1869632835]
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="ContentArea" type="HSplitContainer" parent="MainContainer" unique_id=234324132]
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="LeftSplit" type="VSplitContainer" parent="MainContainer/ContentArea" unique_id=1531241355]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="SpellCardPanel" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=1291741918 instance=ExtResource("2_spellcard")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("3_cw7ct")
+
+[node name="AliasPanel" type="VBoxContainer" parent="MainContainer/ContentArea/LeftSplit" unique_id=1330251026 instance=ExtResource("3_alias")]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+script = ExtResource("5_3qtac")
+
+[node name="RightPanel" type="VBoxContainer" parent="MainContainer/ContentArea" unique_id=489645881]
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="GuessInput" type="TextEdit" parent="MainContainer/ContentArea/RightPanel" unique_id=55733082]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+placeholder_text = "输入猜测文本，如：1Alice 2Bob 3Charlie"
+
+[node name="GuessButtons" type="HBoxContainer" parent="MainContainer/ContentArea/RightPanel" unique_id=1284235469]
+layout_mode = 2
+
+[node name="FuzzifyBtn" type="Button" parent="MainContainer/ContentArea/RightPanel/GuessButtons" unique_id=41580526]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "请先配置 AI 模型"
+disabled = true
+text = "模糊化处理"
+
+[node name="ProcessBtn" type="Button" parent="MainContainer/ContentArea/RightPanel/GuessButtons" unique_id=1104154199]
+unique_name_in_owner = true
+layout_mode = 2
+text = "处理"
+
+[node name="ResponseDisplay" type="RichTextLabel" parent="MainContainer/ContentArea/RightPanel" unique_id=47797024]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+bbcode_enabled = true
+text = "回应将显示在此处"
+
+[node name="DroppedSection" type="VBoxContainer" parent="MainContainer/ContentArea/RightPanel" unique_id=914169008]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DroppedSeparator" type="HSeparator" parent="MainContainer/ContentArea/RightPanel/DroppedSection" unique_id=2126514842]
+layout_mode = 2
+
+[node name="DroppedHeaderLabel" type="Label" parent="MainContainer/ContentArea/RightPanel/DroppedSection" unique_id=1182941070]
+layout_mode = 2
+text = "丢包列表"
+
+[node name="DroppedList" type="ItemList" parent="MainContainer/ContentArea/RightPanel/DroppedSection" unique_id=750633295]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="DroppedButtons" type="HBoxContainer" parent="MainContainer/ContentArea/RightPanel/DroppedSection" unique_id=1568078829]
+custom_minimum_size = Vector2(0, 30)
+layout_mode = 2
+
+[node name="RetryDroppedBtn" type="Button" parent="MainContainer/ContentArea/RightPanel/DroppedSection/DroppedButtons" unique_id=1124905516]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "重试全部丢包"
+
+[node name="ClearDroppedBtn" type="Button" parent="MainContainer/ContentArea/RightPanel/DroppedSection/DroppedButtons" unique_id=2014185853]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "清空丢包"
+
+[node name="RemoveDroppedBtn" type="Button" parent="MainContainer/ContentArea/RightPanel/DroppedSection/DroppedButtons" unique_id=1748848562]
+unique_name_in_owner = true
+layout_mode = 2
+disabled = true
+text = "删除选中丢包"

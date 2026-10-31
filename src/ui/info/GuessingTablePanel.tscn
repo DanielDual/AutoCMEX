@@ -1,0 +1,26 @@
+[gd_scene format=3 uid="uid://b4ccjtqoneh0e"]
+
+[ext_resource type="Script" uid="uid://st83nwxp3ybn" path="res://src/ui/info/GuessingTablePanel.cs" id="1_cwd3e"]
+
+[node name="GuessingTableColumn" type="VBoxContainer" unique_id=1436875458]
+script = ExtResource("1_cwd3e")
+
+[node name="TitleLabel" type="Label" parent="." unique_id=1059602074]
+unique_name_in_owner = true
+layout_mode = 2
+text = "符卡猜测情况表"
+
+[node name="TableScroll" type="ScrollContainer" parent="." unique_id=624629264]
+layout_mode = 2
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="TableGrid" type="GridContainer" parent="TableScroll" unique_id=1256740810]
+unique_name_in_owner = true
+layout_mode = 2
+columns = 3
+
+[node name="PublishButton" type="Button" parent="." unique_id=253688751]
+unique_name_in_owner = true
+layout_mode = 2
+text = "发布该表"

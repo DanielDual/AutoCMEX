@@ -1,0 +1,20 @@
+[gd_scene format=3 uid="uid://cf207h7rjdsqq"]
+
+[ext_resource type="Script" uid="uid://dnptq66dxqpbd" path="res://src/ui/info/ActivityRulePanel.cs" id="1_is6wv"]
+
+[node name="ActivityRuleColumn" type="VBoxContainer" unique_id=1458705641]
+script = ExtResource("1_is6wv")
+
+[node name="TitleLabel" type="Label" parent="." unique_id=2106933778]
+layout_mode = 2
+text = "活动规则"
+
+[node name="RuleEdit" type="TextEdit" parent="." unique_id=386600288]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3
+
+[node name="PublishButton" type="Button" parent="." unique_id=498620083]
+unique_name_in_owner = true
+layout_mode = 2
+text = "发布活动规则"

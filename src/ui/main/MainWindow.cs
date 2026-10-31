@@ -1,0 +1,323 @@
+namespace AutoCMEX.UI.Main;
+
+using System;
+using System.Collections.Generic;
+using AutoCMEX;
+using AutoCMEX.Core.Ai;
+using AutoCMEX.Core.Guessing;
+using AutoCMEX.Core.Info;
+using AutoCMEX.Core.Logging;
+using AutoCMEX.Core.Storage;
+using AutoCMEX.Core.WebSocket;
+using AutoCMEX.Models;
+using AutoCMEX.UI.Guessing;
+using AutoCMEX.UI.Info;
+using AutoCMEX.UI.Logging;
+using AutoCMEX.UI.Merge;
+using AutoCMEX.UI.Settings;
+using AutoCMEX.UI.WebSocket;
+using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
+using Chickensoft.Introspection;
+using Chickensoft.Sync.Primitives;
+using Godot;
+
+/// <summary>
+/// 主窗口脚本：左右两栏布局、板块切换，同时作为 DI 容器提供核心服务
+/// </summary>
+[Meta(typeof(IAutoNode))]
+public partial class MainWindow
+  : Control,
+    IProvide<DataManager>,
+    IProvide<AiServiceFactory>,
+    IProvide<GuessPipeline>,
+    IProvide<IGuessResponseHandler>,
+    IProvide<IGuessProcessingService>,
+    IProvide<IWebSocketServer>,
+    IProvide<WebSocketLifecycle>,
+    IProvide<IDroppedGuessRetryService>,
+    IProvide<InfoEventBus>,
+    IProvide<ILogService>
+{
+  [Export]
+  public int LeftPanelWidth { get; set; } = 200;
+
+  #region AutoConnect Nodes
+
+  [Node("%LeftPanel")]
+  public IVBoxContainer LeftPanel { get; set; } = default!;
+
+  [Node("%RightPanel")]
+  public IControl RightPanel { get; set; } = default!;
+
+  [Node("%MergeBtn")]
+  public IButton MergeBtn { get; set; } = default!;
+
+  [Node("%GuessingBtn")]
+  public IButton GuessingBtn { get; set; } = default!;
+
+  [Node("%InfoBtn")]
+  public IButton InfoBtn { get; set; } = default!;
+
+  [Node("%SettingsBtn")]
+  public IButton SettingsBtn { get; set; } = default!;
+
+  [Node("%HelpBtn")]
+  public IButton HelpBtn { get; set; } = default!;
+
+  [Node("%LogBtn")]
+  public IButton LogBtn { get; set; } = default!;
+
+  [Node("%WebSocketBtn")]
+  public IButton WebSocketBtn { get; set; } = default!;
+
+  #endregion
+
+  #region Panel Nodes (instanced in scene)
+
+  [Node("%MergePanel")]
+  public IMergePanel MergePanelNode { get; set; } = default!;
+
+  [Node("%GuessingPanel")]
+  public IGuessingPanel GuessingPanelNode { get; set; } = default!;
+
+  [Node("%InfoPanel")]
+  public IInfoPanel InfoPanelNode { get; set; } = default!;
+
+  [Node("%SettingsPanel")]
+  public ISettingsPanel SettingsPanelNode { get; set; } = default!;
+
+  [Node("%HelpPanel")]
+  public Control HelpPanelNode { get; set; } = default!;
+
+  [Node("%LogPanel")]
+  public ILogPanel LogPanelNode { get; set; } = default!;
+
+  [Node("%WebSocketPanel")]
+  public IWebSocketPanel WebSocketPanelNode { get; set; } = default!;
+
+  #endregion
+
+  #region Provided Services
+
+  private DataManager _dataManager = default!;
+  private AiServiceFactory _aiServiceFactory = default!;
+  private GuessPipeline _guessPipeline = default!;
+  private GuessResponseHandler _guessResponseHandler = default!;
+  private IGuessProcessingService _guessProcessingService = default!;
+  private IWebSocketServer _webSocketServer = default!;
+  private WebSocketLifecycle _webSocketLifecycle = default!;
+  private IDroppedGuessRetryService _droppedGuessRetryService = default!;
+  private ILogService _logService = default!;
+
+  /// <summary>
+  /// 信息板块入站事件总线：始终可用（测试模式也要提供），供信息面板订阅 Koishi 回执。
+  /// </summary>
+  private readonly InfoEventBus _infoEvents = new();
+
+  DataManager IProvide<DataManager>.Value() => _dataManager;
+
+  AiServiceFactory IProvide<AiServiceFactory>.Value() => _aiServiceFactory;
+
+  GuessPipeline IProvide<GuessPipeline>.Value() => _guessPipeline;
+
+  IGuessResponseHandler IProvide<IGuessResponseHandler>.Value() => _guessResponseHandler;
+
+  IGuessProcessingService IProvide<IGuessProcessingService>.Value() => _guessProcessingService;
+
+  IWebSocketServer IProvide<IWebSocketServer>.Value() => _webSocketServer;
+
+  WebSocketLifecycle IProvide<WebSocketLifecycle>.Value() => _webSocketLifecycle;
+
+  IDroppedGuessRetryService IProvide<IDroppedGuessRetryService>.Value() =>
+    _droppedGuessRetryService;
+
+  InfoEventBus IProvide<InfoEventBus>.Value() => _infoEvents;
+
+  ILogService IProvide<ILogService>.Value() => _logService;
+
+  #endregion
+
+  private readonly Dictionary<string, Control> _panels = new();
+  private readonly Dictionary<string, IButton> _navButtons = new();
+
+  private AutoValue<string>.Binding? _webSocketModeBinding;
+  private AutoValue<int>.Binding? _webSocketPortBinding;
+  private AutoValue<string>.Binding? _koishiWebSocketUrlBinding;
+
+  private Control? _currentPanel;
+  private const string DefaultPanel = "guessing";
+
+  public override void _Notification(int what) => this.Notify(what);
+
+  public override void _ExitTree()
+  {
+    // 先摘掉配置绑定，保证退出过程中不会再有新的重启请求进来
+    _webSocketModeBinding?.Dispose();
+    _webSocketPortBinding?.Dispose();
+    _koishiWebSocketUrlBinding?.Dispose();
+    _webSocketLifecycle?.Dispose();
+    _dataManager?.Dispose();
+  }
+
+  public void OnReady()
+  {
+    var isTesting = (this as IAutoInit).IsTesting;
+    if (!isTesting)
+    {
+      // 初始化核心服务
+      var dataDir = ProjectSettings.GlobalizePath("user://data/");
+      var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(dataDir));
+      _dataManager = new DataManager(dataDir, encryptor);
+      _dataManager.LoadAll();
+
+      _aiServiceFactory = new AiServiceFactory(_dataManager);
+
+      _guessResponseHandler = new GuessResponseHandler();
+      _guessPipeline = new GuessPipeline(_guessResponseHandler, _dataManager.Aliases);
+      var droppedGuessRepository = new DroppedGuessRepository();
+      _guessProcessingService = new GuessProcessingService(
+        _dataManager,
+        _aiServiceFactory,
+        _guessResponseHandler,
+        droppedGuessRepository
+      );
+
+      // 初始化 WebSocket（Server 或 Client 模式）。实例的创建/启停/重启统一走 WebSocketLifecycle：
+      // 配置绑定的 OnValue 是「订阅即回调」，启动时三个绑定会连打三次重启，
+      // 必须由它串行化并跳过「配置其实没变」的重复重启，否则会留下继续连接却无人引用的孤儿实例。
+      var wsLog = AppLogs.GetOrCreate().GetLogger("WebSocket");
+      var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService, _infoEvents);
+      _webSocketLifecycle = new WebSocketLifecycle(wsInitializer.CreateServer, wsLog);
+      _webSocketServer = _webSocketLifecycle.Create(_dataManager.Settings);
+
+      // 丢包重试协调器：在 lifecycle 之后构造，重试成功时经它向活跃端点推送回复
+      _droppedGuessRetryService = new DroppedGuessRetryService(
+        _guessProcessingService,
+        _webSocketLifecycle
+      );
+
+      // 初始化日志服务
+      _logService = AppLogs.GetOrCreate();
+
+      // 订阅配置变更事件，自动重启 WebSocket（保存 Binding 引用以便释放）
+      _webSocketModeBinding = _dataManager
+        .Settings.WebSocketMode.Bind()
+        .OnValue(_ => RestartWebSocket());
+      _webSocketPortBinding = _dataManager
+        .Settings.WebSocketPort.Bind()
+        .OnValue(_ => RestartWebSocket());
+      _koishiWebSocketUrlBinding = _dataManager
+        .Settings.KoishiWebSocketUrl.Bind()
+        .OnValue(_ => RestartWebSocket());
+    }
+
+    // 通知 AutoInject 依赖已就绪
+    this.Provide();
+  }
+
+  public void OnProvided()
+  {
+    // 所有依赖已提供，初始化 UI
+    LeftPanel.CustomMinimumSize = new Vector2(LeftPanelWidth, 0);
+
+    // 注册导航按钮
+    _navButtons["merge"] = MergeBtn;
+    _navButtons["guessing"] = GuessingBtn;
+    _navButtons["info"] = InfoBtn;
+    _navButtons["settings"] = SettingsBtn;
+    _navButtons["help"] = HelpBtn;
+    _navButtons["logging"] = LogBtn;
+    _navButtons["websocket"] = WebSocketBtn;
+
+    // 连接信号
+    MergeBtn.Pressed += () => SwitchPanel("merge");
+    GuessingBtn.Pressed += () => SwitchPanel("guessing");
+    InfoBtn.Pressed += () => SwitchPanel("info");
+    SettingsBtn.Pressed += () => SwitchPanel("settings");
+    HelpBtn.Pressed += () => SwitchPanel("help");
+    LogBtn.Pressed += () => SwitchPanel("logging");
+    WebSocketBtn.Pressed += () => SwitchPanel("websocket");
+
+    // 注册场景中的面板（统一转成 Godot Control，供板块切换时控制 Visible）
+    _panels["merge"] = ToControl(MergePanelNode);
+    _panels["guessing"] = ToControl(GuessingPanelNode);
+    _panels["info"] = ToControl(InfoPanelNode);
+    _panels["settings"] = ToControl(SettingsPanelNode);
+    _panels["help"] = ToControl(HelpPanelNode);
+    _panels["logging"] = ToControl(LogPanelNode);
+    _panels["websocket"] = ToControl(WebSocketPanelNode);
+
+    SwitchPanel(DefaultPanel);
+
+    // 启动 WebSocket 服务器（测试模式下跳过，避免启动真实网络服务）
+    if (!(this as IAutoInit).IsTesting)
+      _ = _webSocketLifecycle.StartAsync(_dataManager.Settings);
+  }
+
+  /// <summary>
+  /// 重启 WebSocket 服务（切换模式或配置变更时调用）
+  /// </summary>
+  /// <remarks>
+  /// <c>async void</c> 是信号/绑定回调直接调用的既定形态，异常必须在此收口（否则会被
+  /// Godot 的同步上下文吞掉）；重启本身由 <see cref="WebSocketLifecycle"/> 串行化，
+  /// 并在「配置其实没变」时原样返回现有实例，不重建不启停。
+  /// </remarks>
+  public async void RestartWebSocket()
+  {
+    try
+    {
+      _webSocketServer = await _webSocketLifecycle.RestartAsync(_dataManager.Settings);
+
+      // 更新面板绑定：通过接口解耦，避免具体类型检查。
+      // 不再把「设置里的模式」传进去——面板一律按实例自身的实际模式/端口/地址显示。
+      if (WebSocketPanelNode is IWebSocketPanel panel)
+      {
+        panel.UpdateServer(_webSocketServer);
+      }
+    }
+    catch (Exception ex)
+    {
+      AppLogs
+        .GetOrCreate()
+        .GetLogger("WebSocket")
+        .Err($"MainWindow: restart WebSocket failed: {ex.GetType().Name}: {ex.Message}");
+    }
+  }
+
+  /// <summary>
+  /// 切换板块
+  /// </summary>
+  private void SwitchPanel(string key)
+  {
+    if (!_panels.TryGetValue(key, out var panel))
+      return;
+
+    // 隐藏当前面板
+    if (_currentPanel != null)
+      _currentPanel.Visible = false;
+
+    // 显示目标面板
+    panel.Visible = true;
+    _currentPanel = panel;
+
+    // 更新按钮状态
+    foreach (var (k, btn) in _navButtons)
+    {
+      btn.Disabled = k == key;
+    }
+  }
+
+  /// <summary>
+  /// 将 <c>[Node]</c> 属性解析出的面板对象统一转为 Godot <see cref="Control"/>，
+  /// 以便通过 <see cref="Control.Visible"/> 切换板块显示。
+  /// 脚本面板实例本身是 <c>Control</c> 子类；原生面板经适配器包装，取其 <see cref="INodeAdapter.TargetObj"/>。
+  /// </summary>
+  private static Control? ToControl(object panel) =>
+    panel switch
+    {
+      Control c => c,
+      INodeAdapter a => a.TargetObj as Control,
+      _ => null,
+    };
+}

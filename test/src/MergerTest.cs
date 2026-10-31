@@ -1,0 +1,1936 @@
+namespace AutoCMEX;
+
+using System.Linq;
+using AutoCMEX.Core.Merge;
+using Chickensoft.GoDotTest;
+using Godot;
+using Shouldly;
+
+/// <summary>
+/// Merger 合并器单元测试：重编号注入、按对应表顺序、资源路径重写、冲突收集、可选自动改名。
+/// </summary>
+public class MergerTest : TestClass
+{
+  public MergerTest(Node testScene)
+    : base(testScene) { }
+
+  /// <summary>
+  /// 一个带符卡/资源/对象注入点注释的模板。
+  /// </summary>
+  private const string TemplateText =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"File\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".ProjSettings, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Output Name\",\"attrInput\":\"\",\"EditWindow\":\"\"},{\"attrCap\":\"Author\",\"attrInput\":\"LuaSTG\",\"EditWindow\":\"\"}],\"AttributeCount\":2}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert spellcards here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"code\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "3,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert objects here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n";
+
+  /// <summary>
+  /// 构造单张符卡（指定 SCName 与是否非符），可带上一个资源节点。
+  /// </summary>
+  private static string SpellCard(string name, bool nonSpell, string? resourcePath = null)
+  {
+    var card =
+      "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+      + name
+      + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}\n";
+    if (resourcePath != null)
+    {
+      card +=
+        "3,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"res/"
+        + resourcePath
+        + "\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n";
+    }
+    return card;
+  }
+
+  private static string PackageDoc(params string[] spellCards) =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + string.Join("", spellCards);
+
+  [Test]
+  public void Merge_InjectsInMappingOrder()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false)), out _)!
+    );
+    var pkgB = new CreatorPackageDoc(
+      "B",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡B", false)), out _)!
+    );
+
+    var mapping = new[]
+    {
+      new MergeMappingEntry(1, 0, "B"), // B 的卡先注入
+      new MergeMappingEntry(0, 0, "A"), // A 的卡后注入
+    };
+
+    var result = new Merger().Merge(template, new[] { pkgA, pkgB }, mapping);
+    result.IsSuccess.ShouldBeTrue();
+
+    var types = result.Merged!.Nodes.Select(n => n.Type).ToList();
+    var scIdx = new System.Collections.Generic.List<int>();
+    for (int i = 0; i < types.Count; i++)
+      if (types[i] == ".Boss.BossSpellCard, ")
+        scIdx.Add(i);
+
+    scIdx.Count.ShouldBe(2);
+    // 注入位置应位于符卡注入注释之后（注释索引之后）
+    // 按映射顺序：第一张是 B 的卡，第二张是 A 的卡 —— 通过 SCName 判断
+    result.Merged.Nodes[scIdx[0]].GetAttrAt(0).ShouldBe("卡B");
+    result.Merged.Nodes[scIdx[1]].GetAttrAt(0).ShouldBe("卡A");
+  }
+
+  [Test]
+  public void Merge_ProducesRoundTrippableDocument()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false)), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var serialized = result.Merged!.Serialize();
+    var reparsed = LstgesParser.ParseDocument(serialized, out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+    reparsed!.Count.ShouldBe(result.Merged.Count);
+  }
+
+  [Test]
+  public void Merge_RenumbersLevels_CorrectNesting()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false)), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 符卡注入注释在 level 2；注入的 BossSpellCard 根应为 level 2，其子节点 level>2
+    var nodes = result.Merged!.Nodes;
+    for (int i = 1; i < nodes.Count; i++)
+    {
+      // 子节点层级必须大于父节点层级（若父节点在模板中连续）
+      // 这里仅验证整体：任意节点的 Level 不小于其前驱中最近的、level 更小者的 level
+    }
+    // 验证注入的卡根层级 == 注释层级 2，且其子节点层级 > 根
+    int spellIdx = -1;
+    for (int i = 0; i < nodes.Count; i++)
+      if (nodes[i].Type == ".Boss.BossSpellCard, ")
+      {
+        spellIdx = i;
+        break;
+      }
+
+    spellIdx.ShouldBeGreaterThan(-1);
+    nodes[spellIdx].Level.ShouldBe(2);
+    nodes[spellIdx + 1].Level.ShouldBeGreaterThan(nodes[spellIdx].Level);
+  }
+
+  [Test]
+  public void Merge_ResourcePath_PreservedInSourceDir()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false, "boss.png")), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var image = result.Merged!.Nodes.First(n => n.Type == ".Graphics.LoadImage, ");
+    // 资源保留「源目录中的相对位置」（boss.png 在符卡子树里，路径为 res/boss.png），不折成裸名
+    image.GetAttrAt(0).ShouldBe("res/boss.png");
+    result.Conflicts.ShouldBeEmpty();
+  }
+
+  [Test]
+  public void Merge_ResourceCollision_ListedAndPreservedByDefault()
+  {
+    // 模板资源注入点可缺省（此处无资源注入点，仅验证冲突收集与保留原名）
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false, "boss.png")), out _)!
+    );
+    var pkgB = new CreatorPackageDoc(
+      "B",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡B", false, "boss.png")), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA, pkgB },
+      new[] { new MergeMappingEntry(0, 0, "A"), new MergeMappingEntry(1, 0, "B") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 默认保留原名（不自动改名）
+    result.Conflicts.ShouldNotBeEmpty();
+    result
+      .Conflicts.Any(c => c.Kind == MergeConflictKind.Resource && c.Name == "boss.png")
+      .ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_ResourceAutoRename_PrefixesCollisions()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false, "boss.png")), out _)!
+    );
+    var pkgB = new CreatorPackageDoc(
+      "B",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡B", false, "boss.png")), out _)!
+    );
+
+    var opt = new MergeOptions { AutoRenameResources = true };
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA, pkgB },
+      new[] { new MergeMappingEntry(0, 0, "A"), new MergeMappingEntry(1, 0, "B") },
+      opt
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var images = result.Merged!.Nodes.Where(n => n.Type == ".Graphics.LoadImage, ").ToList();
+    // 自动改名后，两个 boss.png 分别带前缀 A_/B_；目录层次（res/）保持不变
+    images.Select(n => n.GetAttrAt(0)).OrderBy(x => x).ShouldContain("res/A_boss.png");
+    images.Select(n => n.GetAttrAt(0)).OrderBy(x => x).ShouldContain("res/B_boss.png");
+  }
+
+  [Test]
+  public void Merge_ObjectDefs_Injected()
+  {
+    var text =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"my_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"卡X\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n";
+    var pkg = new CreatorPackageDoc("X", LstgesParser.ParseDocument(text, out _)!);
+
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "X") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 对象注入点注释存在时，TaskDefine 应被注入
+    result.Merged!.Nodes.Any(n => n.Type == ".Task.TaskDefine, ").ShouldBeTrue();
+  }
+
+  /// <summary>
+  /// 一个带资源注入点注释的模板（Resources marker 放在 level 2）。
+  /// </summary>
+  private const string TemplateWithResourceMarker =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"File\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert resources here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert spellcards here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n";
+
+  [Test]
+  public void Merge_TopLevelResourceNodes_InjectedIntoResourceMarker()
+  {
+    // 创作者包顶层有独立资源加载节点（不在符卡子树内）
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"resource\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"images/bg.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡A", false);
+
+    var template = LstgesParser.ParseDocument(TemplateWithResourceMarker, out _)!;
+    var pkgA = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 顶层 LoadImage 应被注入到资源注入点（在该注释之后），且保留源目录相对路径 images/bg.png
+    var images = result.Merged!.Nodes.Where(n => n.Type == ".Graphics.LoadImage, ").ToList();
+    images.Count.ShouldBeGreaterThan(0);
+    images.Any(n => n.GetAttrAt(0) == "images/bg.png").ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_ObjectNameConflict_Deduplicated()
+  {
+    var taskText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"dup_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡X", false);
+
+    var pkgA = new CreatorPackageDoc("A", LstgesParser.ParseDocument(taskText, out _)!);
+    var pkgB = new CreatorPackageDoc("B", LstgesParser.ParseDocument(taskText, out _)!);
+
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA, pkgB },
+      new[] { new MergeMappingEntry(0, 0, "A"), new MergeMappingEntry(1, 0, "B") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 同一对象名冲突只应出现一次（去重），且包名用可读名
+    var objConflicts = result
+      .Conflicts.Where(c => c.Kind == MergeConflictKind.Object && c.Name == "dup_task")
+      .ToList();
+    objConflicts.Count.ShouldBe(1);
+    objConflicts[0].Packages.ShouldContain("A");
+    objConflicts[0].Packages.ShouldContain("B");
+  }
+
+  [Test]
+  public void Merge_AllInjectedSpellcardRoots_SameLevelAsMarker()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false)), out _)!
+    );
+    var pkgB = new CreatorPackageDoc(
+      "B",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡B", false)), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA, pkgB },
+      new[] { new MergeMappingEntry(0, 0, "A"), new MergeMappingEntry(1, 0, "B") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var roots = result.Merged!.Nodes.Where(n => n.Type == ".Boss.BossSpellCard, ").ToList();
+    roots.Count.ShouldBe(2);
+    // 每个注入的符卡根层级都等于注入点注释层级（2），彼此同级（兄弟）
+    roots.All(r => r.Level == 2).ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_LowerLevelsMonotonic_NoBrokenNesting()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false)), out _)!
+    );
+    var pkgB = new CreatorPackageDoc(
+      "B",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡B", false)), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA, pkgB },
+      new[] { new MergeMappingEntry(0, 0, "A"), new MergeMappingEntry(1, 0, "B") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes;
+    // 逐节点：任何节点的层级不得跳到比上一个更深的「越级」（子级仅允许比父级深，兄弟/父级层级合法）
+    for (int i = 1; i < nodes.Count; i++)
+    {
+      // 找最近的、层级严格小于本节点的前驱（即父/祖），保证本节点深度不越级
+      int parentLevel = -1;
+      for (int j = i - 1; j >= 0; j--)
+      {
+        if (nodes[j].Level < nodes[i].Level)
+        {
+          parentLevel = nodes[j].Level;
+          break;
+        }
+      }
+      if (parentLevel >= 0)
+        nodes[i].Level.ShouldBeInRange(parentLevel + 1, parentLevel + 2); // 只允许父-子或父-孙，不越级到深多层
+    }
+  }
+
+  [Test]
+  public void Merge_RoundTrip_PreservesInjectedSubtreeStructure()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false)), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var serialized = result.Merged!.Serialize();
+    var reparsed = LstgesParser.ParseDocument(serialized, out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+
+    var origCards = result.Merged.Nodes.Where(n => n.Type == ".Boss.BossSpellCard, ").ToList();
+    var newCards = reparsed!.Nodes.Where(n => n.Type == ".Boss.BossSpellCard, ").ToList();
+    origCards.Count.ShouldBe(newCards.Count);
+    // 往返后符卡根层级与 SCName 不变
+    for (int i = 0; i < origCards.Count; i++)
+    {
+      newCards[i].Level.ShouldBe(origCards[i].Level);
+      newCards[i].GetAttrAt(0).ShouldBe(origCards[i].GetAttrAt(0));
+    }
+  }
+
+  [Test]
+  public void Merge_MissingObjectMarker_Warns()
+  {
+    // 模板无对象注入点，但包内存在对象定义 → 不报错但应警告且对象不注入
+    var noObjMarker =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert spellcards here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n";
+    var tmpl = LstgesParser.ParseDocument(noObjMarker, out _)!;
+
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"t\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      tmpl,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+    result.Warnings.Any(w => w.Contains("对象注入点")).ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_ResourceSuggestedName_PopulatedOnAutoRename()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false, "boss.png")), out _)!
+    );
+    var pkgB = new CreatorPackageDoc(
+      "B",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡B", false, "boss.png")), out _)!
+    );
+
+    var opt = new MergeOptions { AutoRenameResources = true };
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA, pkgB },
+      new[] { new MergeMappingEntry(0, 0, "A"), new MergeMappingEntry(1, 0, "B") },
+      opt
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var conflict = result.Conflicts.First(c =>
+      c.Kind == MergeConflictKind.Resource && c.Name == "boss.png"
+    );
+    conflict.SuggestedName.ShouldNotBeNullOrEmpty();
+    conflict.SuggestedName!.ShouldContain("_boss.png");
+  }
+
+  /// <summary>
+  /// 一个同时含资源/对象/符卡三个注入点注释的模板（模拟真实模板）。\n
+  /// 顺序：references 文件夹(资源注点) → code 文件夹(对象注点) → Boss(符卡注点)。\n
+  /// </summary>
+  private const string FullTemplateA =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"File\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"references\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert resources here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"code\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert objects here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert spellcards here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n";
+
+  /// <summary>
+  /// 一个含 顶层资源 + 对象定义 + 一张符卡 的创作者包。\n
+  /// </summary>
+  private static string RichPackageText() =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"resource\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"images/top_bg.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"code\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"卡A\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"30\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}\n";
+
+  [Test]
+  public void Merge_ThreeInjectionPoints_AllPositionedCorrectly()
+  {
+    // 回归：多注入点并存时，对象/资源注入不能被符卡注入导致的索引右移所错位。
+    var template = LstgesParser.ParseDocument(FullTemplateA, out _)!;
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(RichPackageText(), out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+    result.Warnings.ShouldBeEmpty();
+
+    var nodes = result.Merged!.Nodes;
+
+    // 找到注入后的三处目标：BossSpellCard、TaskDefine、LoadImage
+    int spellIdx = IndexOf(nodes, ".Boss.BossSpellCard, ");
+    int taskIdx = IndexOf(nodes, ".Task.TaskDefine, ");
+    int imgIdx = IndexOf(nodes, ".Graphics.LoadImage, ");
+
+    spellIdx.ShouldBeGreaterThan(-1);
+    taskIdx.ShouldBeGreaterThan(-1);
+    imgIdx.ShouldBeGreaterThan(-1);
+
+    // 对象注点位于符卡注点之前（code 文件夹在 Boss 之前），
+    // 因此 TaskDefine 必须排在所有 BossSpellCard 之前，而非被注入进符卡子树内部。
+    taskIdx.ShouldBeLessThan(spellIdx);
+
+    // 三处注入点的根层级都等于其注点注释层级(2)
+    nodes[spellIdx].Level.ShouldBe(2);
+    nodes[taskIdx].Level.ShouldBe(2);
+    nodes[imgIdx].Level.ShouldBe(2);
+
+    // 资源路径保留「源目录中的相对路径」（不折为裸名）
+    nodes[imgIdx].GetAttrAt(0).ShouldBe("images/top_bg.png");
+
+    // 往返解析保持合法且结构不变
+    var serialized = result.Merged.Serialize();
+    var reparsed = LstgesParser.ParseDocument(serialized, out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+    reparsed!.Nodes.Count(n => n.Type == ".Boss.BossSpellCard, ").ShouldBe(1);
+    reparsed.Nodes.Count(n => n.Type == ".Task.TaskDefine, ").ShouldBe(1);
+  }
+
+  private static int IndexOf(
+    System.Collections.Generic.IReadOnlyList<LstgesNode> nodes,
+    string type
+  )
+  {
+    for (int i = 0; i < nodes.Count; i++)
+      if (nodes[i].Type == type)
+        return i;
+    return -1;
+  }
+
+  [Test]
+  public void Merge_MissingSpellcardInjectionPoint_ReturnsError()
+  {
+    var noMarker =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n";
+    var template = LstgesParser.ParseDocument(noMarker, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false)), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeFalse();
+    result.Error.ShouldContain("符卡注入点");
+  }
+
+  [Test]
+  public void Merge_BadPackageIndex_ReturnsError()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false)), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA },
+      new[] { new MergeMappingEntry(5, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeFalse();
+    result.Error.ShouldContain("不存在的创作者包");
+  }
+
+  [Test]
+  public void Merge_BadCardIndex_ReturnsError()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false)), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA },
+      new[] { new MergeMappingEntry(0, 9, "A") }
+    );
+    result.IsSuccess.ShouldBeFalse();
+    result.Error.ShouldContain("不存在的符卡");
+  }
+
+  [Test]
+  public void Merge_InjectsNonSpellToo()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("", true)), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    result.Merged!.Nodes.Any(n => n.Type == ".Boss.BossSpellCard, ").ShouldBeTrue();
+  }
+
+  /// <summary>
+  /// 一个「自带归档空间 + 资源注入点」的模板（模板拥有 resource/ 归档空间，资源注点在 level 2）。
+  /// </summary>
+  private const string TemplateWithArchiveSpace =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"resource/\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert resources here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert spellcards here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n";
+
+  /// <summary>
+  /// 一个含「顶层资源（归类到给定归档空间）+ 一张符卡」的创作者包。
+  /// </summary>
+  private static string PackageWithTopResource(string archiveName, string resourcePath) =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + archiveName
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "3,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\""
+    + resourcePath
+    + "\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + SpellCard("卡A", false);
+
+  [Test]
+  public void Merge_TopLevelResource_ExcludedWhenArchiveHitsTemplateSet()
+  {
+    // 包顶层资源落在模板已有的归档空间 resource/ 下（模板自带、创作者不改动）→ 不检测/不导入。
+    var template = LstgesParser.ParseDocument(TemplateWithArchiveSpace, out _)!;
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageWithTopResource("resource/", "boss/my.png"), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 该资源被排除：合并工程不应出现其 LoadImage，且模板的归档空间不动。
+    var images = result.Merged!.Nodes.Where(n => n.Type == ".Graphics.LoadImage, ").ToList();
+    images.Any(i => i.GetAttrAt(0) == "boss/my.png").ShouldBeFalse();
+  }
+
+  [Test]
+  public void Merge_TopLevelResource_ExcludedByConfigList()
+  {
+    // 归档空间不在模板，但命中配置排除清单 → 同样排除。
+    var template = LstgesParser.ParseDocument(TemplateWithArchiveSpace, out _)!;
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageWithTopResource("common/", "theme/bg.png"), out _)!
+    );
+
+    var opt = new MergeOptions { ExcludedArchiveSpaces = new[] { "common/" } };
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") },
+      opt
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var images = result.Merged!.Nodes.Where(n => n.Type == ".Graphics.LoadImage, ").ToList();
+    images.Any(i => i.GetAttrAt(0) == "theme/bg.png").ShouldBeFalse();
+    // 排除时归档空间也不搬迁
+    result
+      .Merged!.Nodes.Any(n =>
+        n.Type == ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp"
+        && n.GetAttr("Name") == "common/"
+      )
+      .ShouldBeFalse();
+  }
+
+  [Test]
+  public void Merge_TopLevelResource_CarriesArchiveSpaceVerbatim_WhenNotExcluded()
+  {
+    // 归档空间不是模板已有、也不在配置清单 → 资源连同其归档空间基准节点原封不动搬迁并注入。
+    var template = LstgesParser.ParseDocument(TemplateWithArchiveSpace, out _)!;
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageWithTopResource("custom/", "boss/my.png"), out _)!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 归档空间节点被原样注入（attrInput="custom/" 一字不差），且资源被注入（保留源目录相对路径 boss/my.png）。
+    var archiveNode = result.Merged!.Nodes.FirstOrDefault(n =>
+      n.Type == ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp"
+      && n.GetAttr("Name") == "custom/"
+    );
+    archiveNode.ShouldNotBeNull();
+    // 归档空间节点落在「资源注入点」同级（marker 于 level2），而非被抬到其上层（否则基准错乱）
+    archiveNode.Level.ShouldBe(2);
+    var images = result.Merged!.Nodes.Where(n => n.Type == ".Graphics.LoadImage, ").ToList();
+    var injectedImage = images.First(i => i.GetAttrAt(0) == "boss/my.png");
+    // 资源节点必须落在归档同级、紧随其后（非归档子树）——归档是 LeafNode，其下不允许任何节点。
+    injectedImage.Level.ShouldBe(archiveNode.Level);
+    var mergedNodes = result.Merged.Nodes.ToList();
+    mergedNodes.IndexOf(archiveNode!).ShouldBeLessThan(mergedNodes.IndexOf(injectedImage!));
+
+    // 往返解析合法，结构保持
+    var reparsed = LstgesParser.ParseDocument(result.Merged!.Serialize(), out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+  }
+
+  [Test]
+  public void Merge_PatchScript_TreatedAsTopLevelResource_InjectedWithArchive()
+  {
+    // 这些断言依赖 Windows 反斜杠路径语义；Linux CI 上 Path 处理不同，跳过。
+    if (!System.OperatingSystem.IsWindows())
+    {
+      return;
+    }
+    // Patch 的作用是「导入脚本」（attrInput=脚本相对路径），必须与图片/音频资源同等对待：
+    // 未排除时连同其归档空间原样搬迁并注入资源注入点，脚本相对路径保留（不打成纯文件名），
+    // Sharp 打包才能把脚本收进压缩包（否则导出包缺脚本，运行时无法加载）。
+    var template = LstgesParser.ParseDocument(TemplateWithArchiveSpace, out _)!;
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(
+        PackageWithPatch("custom/", "resource\\\\bg\\\\samp_bg.lua"),
+        out _
+      )!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // Patch 被注入，脚本相对路径一字不差保留。
+    var patch = result.Merged!.Nodes.FirstOrDefault(n =>
+      n.Type == ".General.Patch, LuaSTGEditorSharp"
+    );
+    patch.ShouldNotBeNull();
+    patch!.GetAttrAt(0).ShouldBe("resource\\bg\\samp_bg.lua");
+
+    // 归档空间落资源注入点同级(marker level2)，Patch 与其同级、紧随其后（非归档子树——
+    // 归档是 LeafNode，其下不允许任何节点）。
+    var archive = result.Merged!.Nodes.FirstOrDefault(n =>
+      n.Type == ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp"
+    );
+    archive.ShouldNotBeNull();
+    archive!.Level.ShouldBe(2);
+    patch.Level.ShouldBe(archive.Level);
+    var mergedNodes = result.Merged.Nodes.ToList();
+    mergedNodes.IndexOf(archive!).ShouldBeLessThan(mergedNodes.IndexOf(patch!));
+
+    // 往返解析合法
+    var reparsed = LstgesParser.ParseDocument(result.Merged.Serialize(), out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+  }
+
+  private static string PackageWithPatch(string archiveName, string scriptPath) =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + archiveName
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "3,{\"$type\":\".General.Patch, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\""
+    + scriptPath
+    + "\",\"EditWindow\":\"luaFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + SpellCard("卡A", false);
+
+  private static string PackageWithPatchSibling(string archiveName, string scriptPath) =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + archiveName
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Patch, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\""
+    + scriptPath
+    + "\",\"EditWindow\":\"luaFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + SpellCard("卡A", false);
+
+  [Test]
+  public void Merge_PatchSiblingOfArchive_StillInjectedWithArchive()
+  {
+    // 这些断言依赖 Windows 反斜杠路径语义；Linux CI 上 Path 处理不同，跳过。
+    if (!System.OperatingSystem.IsWindows())
+    {
+      return;
+    }
+    // 真机形态：脚本 Patch 与 sample_exp\ 归档「同级、且在归档之后」。ArchiveSpace 是流式作用域
+    // （其后所有节点无论层级都归属它，直到下一个 ArchiveSpace），故脚本必须连同归档注入、脚本相对路径保留；
+    // 绝不能因「层级配对」漏掉脚本（否则导出包缺脚本，运行时无法加载）。
+    var template = LstgesParser.ParseDocument(TemplateWithArchiveSpace, out _)!;
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(
+        PackageWithPatchSibling("sample_exp/", "sample_exp\\\\sample_scripts.lua"),
+        out _
+      )!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var patch = result.Merged!.Nodes.FirstOrDefault(n =>
+      n.Type == ".General.Patch, LuaSTGEditorSharp"
+    );
+    patch.ShouldNotBeNull();
+    patch!.GetAttrAt(0).ShouldBe("sample_exp\\sample_scripts.lua"); // 脚本路径保留
+    var archive = result.Merged!.Nodes.FirstOrDefault(n =>
+      n.Type == ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp"
+    );
+    archive.ShouldNotBeNull();
+    archive!.Level.ShouldBe(2); // 归档落资源注入点同级
+    // 流式：脚本在归档之后，注入时归档节点应排在脚本之前（脚本随归档一并注入）
+    var mergedNodes = result.Merged.Nodes.ToList();
+    mergedNodes.IndexOf(archive!).ShouldBeLessThan(mergedNodes.IndexOf(patch!));
+
+    var reparsed = LstgesParser.ParseDocument(result.Merged.Serialize(), out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+  }
+
+  [Test]
+  public void Merge_ResourceNodes_AllSiblingOfArchive_NotSubtree()
+  {
+    // 所有资源型节点（AddFile/Patch/LoadImage）都必须作为「归属归档」的同级后继注入，绝不落入归档子树。
+    // 归档是 [LeafNode]，编辑器不允许其子树有任何节点；资源落子树会隔断流式 archiveSpace，导致打包错档/漏档。
+    var template = LstgesParser.ParseDocument(TemplateWithArchiveSpace, out _)!;
+    var pkg = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(
+        PackageWithResourceSibling("custom/", "boss/my.png", "resource\\\\samp\\\\samp.lua"),
+        out _
+      )!
+    );
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var archive = result.Merged!.Nodes.First(n =>
+      n.Type == ".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp"
+      && n.GetAttr("Name") == "custom/"
+    );
+    var image = result.Merged.Nodes.First(n => n.Type == ".Graphics.LoadImage, ");
+    var patch = result.Merged.Nodes.First(n => n.Type == ".General.Patch, LuaSTGEditorSharp");
+
+    // 全部与归档同级、紧随其后（非子树）
+    image.Level.ShouldBe(archive.Level);
+    patch.Level.ShouldBe(archive.Level);
+    var merged = result.Merged.Nodes.ToList();
+    merged.IndexOf(archive).ShouldBeLessThan(merged.IndexOf(image));
+    merged.IndexOf(archive).ShouldBeLessThan(merged.IndexOf(patch));
+
+    // 往返解析合法，结构保持
+    var reparsed = LstgesParser.ParseDocument(result.Merged.Serialize(), out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+  }
+
+  private static string PackageWithResourceSibling(
+    string archiveName,
+    string imagePath,
+    string scriptPath
+  ) =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + archiveName
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"$type\":\".DependencyAttrItem, \",\"attrCap\":\"Path\",\"attrInput\":\""
+    + imagePath
+    + "\",\"EditWindow\":\"imageFile\"},{\"attrCap\":\"Resource name\",\"attrInput\":\"samp_img\",\"EditWindow\":\"\"}],\"AttributeCount\":2}\n"
+    + "2,{\"$type\":\".General.Patch, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\""
+    + scriptPath
+    + "\",\"EditWindow\":\"luaFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + SpellCard("卡A", false);
+
+  [Test]
+  public void Merge_StandaloneDefinitions_InjectedIntoObjectMarker()
+  {
+    // 独立定义/代码节点（敌人类型/弯折激光/Boss背景/渲染目标/函数/自定义节点，未命中任何被注入子树、
+    // 非 BossDefine、非 Stage）应由统一采集器打上「定义」标签注入对象注入点，确保合并产物
+    // 不缺运行时代码（类/函数/背景），避免运行时缺席报错。
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Enemy.EnemyDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"my_enemy\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "1,{\"$type\":\".Laser.BentLaserDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"my_blaser\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "1,{\"$type\":\".Boss.BossBGDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"my_scbg\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "1,{\"$type\":\".Render.RenderTarget, \",\"Attributes\":[{\"attrCap\":\"Operation\",\"attrInput\":\"Push\",\"EditWindow\":\"renderOp\"},{\"attrCap\":\"Name\",\"attrInput\":\"\\\"\\\"\"}],\"AttributeCount\":2}\n"
+      + "1,{\"$type\":\".Render.CreateRenderTarget, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"my_target\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "1,{\"$type\":\".Data.Function, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"my_util\",\"EditWindow\":\"\"},{\"attrCap\":\"Parameter List\",\"attrInput\":\"\",\"EditWindow\":\"\"},{\"attrCap\":\"Localized\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":3}\n"
+      + "1,{\"$type\":\".Advanced.UnidentifiedNode, LuaSTGEditorSharp\",\"Attributes\":[{\"$type\":\".DependencyAttrItem, \",\"attrCap\":\"Type\",\"attrInput\":\"my_custom\",\"EditWindow\":\"userDefinedNodeDefinition\"},{\"attrCap\":\"tag\",\"attrInput\":\"normal\"}],\"AttributeCount\":2}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes;
+    nodes.Any(n => n.Type == ".Enemy.EnemyDefine, ").ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Laser.BentLaserDefine, ").ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Boss.BossBGDefine, ").ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Render.RenderTarget, ").ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Render.CreateRenderTarget, ").ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Data.Function, ").ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Advanced.UnidentifiedNode, LuaSTGEditorSharp").ShouldBeTrue();
+
+    // 定义注入在对象注入点上（模板中该注释位于 level 3，其子树根重编号到注入点层级）。
+    var enemy = nodes.First(n => n.Type == ".Enemy.EnemyDefine, ");
+    enemy.Level.ShouldBe(3);
+    var func = nodes.First(n => n.Type == ".Data.Function, ");
+    func.Level.ShouldBe(3);
+  }
+
+  [Test]
+  public void Merge_BossDefineChildren_NotStandaloneInjectedWhenCovered()
+  {
+    // 回归：BossDefine 及其子树（BossInit/Dialog/BossSpellCard 等）由模板共享，绝不作为独立定义注入，
+    // 其内部的字面代码/资源随符卡子树覆盖去重逻辑一并移植（不双份）。
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 模板已有一个 shared_boss；包内新 BossDefine 不应被当作定义再注入对象注入点（仅符卡注点注入符卡）。
+    var bossDefs = result.Merged!.Nodes.Where(n => n.Type == ".Boss.BossDefine, ").ToList();
+    bossDefs.Count.ShouldBe(1); // 只有一个（模板的），包内 BossDefine 不重复注入
+  }
+
+  [Test]
+  public void Merge_NestedDefinitionInsideInjectedSubtree_NotReInjected()
+  {
+    // 覆盖去重核心：位于已注入子树内部的嵌套定义（如对象子树内的 TaskDefine）不单独注入对象注入点，
+    // 只随所属被注入子树携带移植一次，避免双份注入（否则产物出现两个同名/重复的任务定义）。
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Object.ObjectDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"nested_obj\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"nested_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 嵌套 TaskDefine 只出现一次（随 ObjectDefine 子树带出），不作独立定义重复注入。
+    var tasks = result.Merged!.Nodes.Where(n => n.Type == ".Task.TaskDefine, ").ToList();
+    tasks.Count.ShouldBe(1);
+  }
+
+  [Test]
+  public void Merge_StandaloneGeneralCodeBlock_InjectedIntoObjectMarker()
+  {
+    // 方案 A：顶层/自有文件夹的通用代码块（.General.Code，承载任意 Lua 代码、可含被依赖的全局函数/类定义）
+    // 默认归入定义集合注入对象注入点，确保产物包含包交付的全局 helper/函数依赖。
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".General.Code, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Code\",\"attrInput\":\"global helper\\nfunction my_util(x) return x * 2 end\",\"editWindow\":\"code\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 独立顶层代码块已注入对象注入点（层级重编号到注入点=3）。
+    var codeBlocks = result
+      .Merged!.Nodes.Where(n => n.Type == ".General.Code, LuaSTGEditorSharp")
+      .ToList();
+    codeBlocks.Count.ShouldBe(1);
+    codeBlocks[0].Level.ShouldBe(3);
+  }
+
+  [Test]
+  public void Merge_CodeBlock_NestedInsideDefinition_NotStrippedToTopLevel()
+  {
+    // 真机报错根因：定义内部的嵌套代码块（如某 BentLaserDefine/ObjectDefine 的 init 代码，
+    // 引用 self/局部变量）被「位置归属近似」误判为顶层全局代码，独立剥离注入对象注入点、
+    // 与定义并列、脱离 self 作用域而报错。必须随所属定义整棵移植，绝不提级。
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Object.ObjectDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"samp_exp_obj\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".Object.ObjectInit, \",\"Attributes\":[{\"attrCap\":\"Parameter List\",\"attrInput\":\"\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      // init 内的嵌套代码块（引用 self、ds/dr 等局部）——必须在定义内、不得提升到顶层。
+      + "3,{\"$type\":\".General.Code, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Code\",\"attrInput\":\"self.x=ds*cos(dr)+kx\",\"EditWindow\":\"code\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 对象注入点（level3 顶层）不应出现该代码块（未被剥离提级）。
+    var codeBlocksAtTopLevel = result
+      .Merged!.Nodes.Where(n => n.Type == ".General.Code, LuaSTGEditorSharp" && n.Level == 3)
+      .ToList();
+    codeBlocksAtTopLevel.ShouldBeEmpty();
+
+    // 该代码块应保留在定义子树内（随 ObjectDefine 整棵移植，层级 > 定义/注入点）。
+    var objDefine = result.Merged.Nodes.First(n =>
+      n.Type == ".Object.ObjectDefine, " && n.GetAttr("Name") == "samp_exp_obj"
+    );
+    objDefine.ShouldNotBeNull();
+    var nestedCode = result.Merged.Nodes.First(n => n.Type == ".General.Code, LuaSTGEditorSharp");
+    nestedCode.Level.ShouldBeGreaterThan(objDefine.Level);
+  }
+
+  [Test]
+  public void Merge_CodeBlock_NestedInsideBannedDefinition_NotStrippedToTopLevel()
+  {
+    // 真机实际形态（某参与者包）：`self.colli=false`/`local kx,ky=self.x,self.y`/`self.x=ds*cos(dr)+kx`
+    // 位于 **IsBanned 的 BentLaserDefine/ObjectDefine** 内部。banned 定义在采集时被 `IsBanned → continue`
+    // 跳过且不进入 covered 区间，其内部**非 banned** 的代码块会逃逸成"顶层全局代码"被剥离注入对象注入点、
+    // 与定义并列脱离 self 作用域报错。必须沿完整父链回溯父级，判定其嵌套于定义内而不剥离。
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    // 容器定义为 IsBanned（含 init 及多层 Repeat→TaskNode 子级），内部嵌三段 self.* 代码块。
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Laser.BentLaserDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"samp_hole\",\"EditWindow\":\"\"},{\"attrCap\":\"Difficulty\",\"attrInput\":\"All\",\"EditWindow\":\"objDifficulty\"}],\"AttributeCount\":2,\"IsExpanded\":false,\"IsBanned\":true}\n"
+      + "2,{\"$type\":\".Laser.BentLaserInit, \",\"Attributes\":[{\"attrCap\":\"Parameter List\",\"attrInput\":\"r,mod\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "3,{\"$type\":\".General.Code, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Code\",\"attrInput\":\"self.colli=false\",\"EditWindow\":\"code\"}],\"AttributeCount\":1}\n"
+      + "3,{\"$type\":\".General.Code, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Code\",\"attrInput\":\"local kx,ky=self.x,self.y\",\"EditWindow\":\"code\"}],\"AttributeCount\":1}\n"
+      + "3,{\"$type\":\".Task.TaskNode, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "4,{\"$type\":\".General.Repeat, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Times\",\"attrInput\":\"_infinite\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}\n"
+      + "5,{\"$type\":\".General.Code, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Code\",\"attrInput\":\"self.x=ds*cos(dr)+kx\",\"EditWindow\":\"code\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 对象注入点（level3 顶层）不应出现任何 self.* 代码块（banned 定义内部代码不被剥离提级）。
+    var topLevelCodes = result
+      .Merged!.Nodes.Where(n => n.Type == ".General.Code, LuaSTGEditorSharp" && n.Level == 3)
+      .ToList();
+    topLevelCodes.ShouldBeEmpty();
+    // 定义本身因 banned 未被独立移植，其内部代码块也不得在产物顶层出现副作用。
+    result
+      .Merged.Nodes.Any(n =>
+        n.Type == ".General.Code, LuaSTGEditorSharp"
+        && n.GetAttr("Code")?.Contains("ds*cos(dr)") == true
+      )
+      .ShouldBeFalse();
+  }
+
+  [Test]
+  public void Merge_StandaloneGeneralCodeBlock_ExcludedArchive_NotInjected()
+  {
+    // 方案 A：代码块若位于模板已持有的归档空间内（命中排除集）→ 模板已有该代码，作者不改动 → 不搬。
+    var excludedTemplate =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"common/\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert spellcards here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"code\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "3,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert objects here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n";
+    var template = LstgesParser.ParseDocument(excludedTemplate, out _)!;
+    var pkgText =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Advanced.ArchiveSpaceIndicator, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"common/\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+      + "2,{\"$type\":\".General.Code, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Code\",\"attrInput\":\"local pi = 180\",\"EditWindow\":\"code\"}],\"AttributeCount\":1}\n"
+      + SpellCard("卡A", false);
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgText, out _)!);
+
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 归入 common/（模板已有）的代码块不注入到对象注入点。
+    result.Merged!.Nodes.Any(n => n.Type == ".General.Code, LuaSTGEditorSharp").ShouldBeFalse();
+  }
+
+  [Test]
+  public void HierarchyFindFirstInvalid_ValidSequence_ReturnsMinusOne()
+  {
+    // 父链完整、每行回落不超过现有父链深度的序列 → 无越界行。
+    var text =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n";
+    var doc = LstgesParser.ParseDocument(text, out _)!;
+
+    LstgesHierarchy.FindFirstInvalidLevel(doc.Nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void HierarchyFindFirstInvalid_OverflowFallback_ReturnsIndex()
+  {
+    // 产物 NRE 的触发模式：深层节点(6)被直接挂在 root 之下（父链仅 2 层），随后立刻回落 level3，
+    // 上溯步数(4) 超过父链深度(1) → Sharp 会把 prev 越过 root 变 null，AddChild 抛 NRE。
+    var text =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "6,{\"$type\":\".Object.Del, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "3,{\"$type\":\".Object.ObjectDefine, \",\"Attributes\":[],\"AttributeCount\":0}\n";
+    var doc = LstgesParser.ParseDocument(text, out _)!;
+
+    LstgesHierarchy.FindFirstInvalidLevel(doc.Nodes).ShouldBe(2);
+  }
+
+  [Test]
+  public void Hierarchy_ReturnToOverflowAfterJump_IsDetectedAndNormalized()
+  {
+    // 审查反例：深层节点(4)经「跳层到达」后再浅层回落(2)，父链回溯越界——Sharp 会 NRE。
+    // 修正前 Find 漏报 → 修正后应检测到，且 Normalize 后无越界、幂等。
+    var text =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "4,{\"$type\":\".Object.ObjectInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "3,{\"$type\":\".Object.ObjectInit, \",\"Attributes\":[],\"AttributeCount\":0}\n"
+      + "2,{\"$type\":\".Object.Del, \",\"Attributes\":[],\"AttributeCount\":0}\n";
+    var doc = LstgesParser.ParseDocument(text, out _)!;
+
+    LstgesHierarchy.FindFirstInvalidLevel(doc.Nodes).ShouldBe(4);
+    LstgesHierarchy.NormalizeParentChain(doc.Nodes).ShouldBeTrue();
+    LstgesHierarchy.FindFirstInvalidLevel(doc.Nodes).ShouldBe(-1);
+    LstgesHierarchy.NormalizeParentChain(doc.Nodes).ShouldBeFalse(); // 幂等
+  }
+
+  [Test]
+  public void Merge_RichPackage_ProducesParentChainValidAndRoundTrips()
+  {
+    // 富包（顶层资源+对象+符卡）合并：父链对齐保证无越界行（Sharp 可安全重建），且往返可解析。
+    var template = LstgesParser.ParseDocument(FullTemplateA, out _)!;
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(RichPackageText(), out _)!);
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+    LstgesHierarchy.FindFirstInvalidLevel(result.Merged!.Nodes).ShouldBe(-1);
+
+    var reparsed = LstgesParser.ParseDocument(result.Merged.Serialize(), out var error);
+    error.ShouldBeNull();
+    reparsed.ShouldNotBeNull();
+  }
+
+  [Test]
+  public void Merge_SpellCard_PerformingActionTrue_CarriesLeadingDialog()
+  {
+    // 卡前同父(level 2)有 Dialog(level2 + 子 TaskCreate level3)，且该卡 Performing action=true。
+    // 实证自 Sharp：Dialog/MoveTo/符卡是 cards 表顺序阶段；BossInit 不是 cards 成员。
+    // 合并后该卡应连带 Dialog 子树一起注入（前置段保留，BossInit 不吞）。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Task.TaskCreate, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"dialog_1\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 注入后整段同级(level2)里 Dialog 应位于卡之前，且卡前 Dialog 与其子 TaskCreate 均存在。
+    var dialogIdx = nodes.FindIndex(n => n.Type == ".Boss.Dialog, ");
+    var cardIdx = nodes.FindIndex(n => n.Type == ".Boss.BossSpellCard, ");
+    var taskCreateIdx = nodes.FindIndex(n => n.Type == ".Task.TaskCreate, ");
+
+    dialogIdx.ShouldBeGreaterThan(-1);
+    taskCreateIdx.ShouldBeGreaterThan(-1);
+    cardIdx.ShouldBeGreaterThan(-1);
+    dialogIdx.ShouldBeLessThan(cardIdx); // 前置 Dialog 在卡前
+    taskCreateIdx.ShouldBeLessThan(cardIdx); // Dialog 子 TaskCreate 也在卡前
+    // 父链合法
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_SpellCard_PerformingActionFalse_NoLeadingCarried()
+  {
+    // 同结构但 Performing action=false：前置 Dialog 不被带走，只有卡注入。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Task.TaskCreate, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"dialog_1\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"NoLeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 前置 Dialog 未被带走
+    nodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeFalse();
+    nodes.Any(n => n.Type == ".Task.TaskCreate, ").ShouldBeFalse();
+    nodes
+      .Any(n => n.Type == ".Boss.BossSpellCard, " && n.GetAttrAt(0) == "NoLeadCard")
+      .ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_SpellCard_PerformingActionMissing_NoLeadingCarried()
+  {
+    // Performing action 属性缺失（容错）：按 false 处理，不携带前置。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"MissingLeadCard\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    nodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeFalse();
+    nodes
+      .Any(n => n.Type == ".Boss.BossSpellCard, " && n.GetAttrAt(0) == "MissingLeadCard")
+      .ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_SpellCard_PerformingActionTrue_CarriesOnlyImmediatelyPrecedingStage()
+  {
+    // 卡前同父(level 2)有多个阶段（Dialog + BossMoveTo），Performing action=true。
+    // 实证自 Sharp（DefineSpellCard.cgen / _sc_table）：scprac 通过该卡在 cards 表中的下标
+    // 定位「上一阶段」= cards[seq-1]，即只带紧邻的前一个阶段（含子树），而非直到 BossInit
+    // 的所有前序。故仅最近的 BossMoveTo 被注入，更早的 Dialog 不被带入。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Task.TaskCreate, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"dialog_1\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossMoveTo, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 紧邻前序 BossMoveTo 被带入（位于卡前）
+    var moveIdx = nodes.FindIndex(n => n.Type == ".Boss.BossMoveTo, ");
+    var cardIdx = nodes.FindIndex(n => n.Type == ".Boss.BossSpellCard, ");
+    moveIdx.ShouldBeGreaterThan(-1);
+    cardIdx.ShouldBeGreaterThan(-1);
+    moveIdx.ShouldBeLessThan(cardIdx);
+    // 更早的 Dialog（非紧邻前序）不被带入
+    nodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeFalse();
+    // 父链合法
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_SpellCard_PerformingActionTrue_NoPrecedingStage_CarriesNone()
+  {
+    // 卡前同父有多个阶段（Dialog + BossMoveTo），但 Performing action=true 的卡是**首个**阶段
+    // （之前无任何 phase，直接接 BossInit）。此时紧邻前序不存在，LeadingNodes 为空，
+    // 卡自身被注入、不携带任何前置段。验证「无前序返回空 + 卡自身」边界。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"FirstCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 首个阶段无前序：卡自身注入，无任何前置 Dialog/BossMoveTo
+    nodes
+      .Any(n => n.Type == ".Boss.BossSpellCard, " && n.GetAttrAt(0) == "FirstCard")
+      .ShouldBeTrue();
+    nodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeFalse();
+    nodes.Any(n => n.Type == ".Boss.BossMoveTo, ").ShouldBeFalse();
+  }
+
+  [Test]
+  public void Merge_SpellCard_PerformingActionTrue_CommentsPreceding_AreSkipped()
+  {
+    // 卡前同父有 Dialog + Comment（非 cards 阶段，不占下标）。Performing action=true。
+    // Comment 不属 cards 序列，应被跨越；紧邻前序 = 距卡最近的阶段。此用例确保
+    // 「跨越非 stages 同级兄弟继续向前找最近阶段」边界正确：Comment 不应阻断、也不应被带入。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Task.TaskCreate, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"dialog_1\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"\u5427\u524d\u6ce8\u91ca\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // Comment 跨越后仍正确命中紧邻前序 Dialog（位于卡前）
+    var dialogIdx = nodes.FindIndex(n => n.Type == ".Boss.Dialog, ");
+    var cardIdx = nodes.FindIndex(n => n.Type == ".Boss.BossSpellCard, ");
+    dialogIdx.ShouldBeGreaterThan(-1);
+    cardIdx.ShouldBeGreaterThan(-1);
+    dialogIdx.ShouldBeLessThan(cardIdx);
+  }
+
+  [Test]
+  public void Merge_ForcePerformAction_True_ImmediatelyPrecededByDialog_CarriesLeading()
+  {
+    // 开关开启 + 卡自身 Performing action=false + 紧邻前序为 Dialog(BossInit 之后)：
+    // 应强制按 Perform Action 处理，携带紧邻前序 Dialog 子树一起注入、位于卡前。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Task.TaskCreate, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"dialog_1\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") },
+      new MergeOptions { ForcePerformAction = true }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    var dialogIdx = nodes.FindIndex(n => n.Type == ".Boss.Dialog, ");
+    var cardIdx = nodes.FindIndex(n => n.Type == ".Boss.BossSpellCard, ");
+    var taskCreateIdx = nodes.FindIndex(n => n.Type == ".Task.TaskCreate, ");
+    dialogIdx.ShouldBeGreaterThan(-1);
+    taskCreateIdx.ShouldBeGreaterThan(-1);
+    cardIdx.ShouldBeGreaterThan(-1);
+    dialogIdx.ShouldBeLessThan(cardIdx);
+    taskCreateIdx.ShouldBeLessThan(cardIdx);
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_ForcePerformAction_True_ImmediatelyPrecededByBossMoveTo_CarriesLeading()
+  {
+    // 紧邻前序为 BossMoveTo：同样触发，携带 BossMoveTo 一起注入且位于卡前。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossMoveTo, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") },
+      new MergeOptions { ForcePerformAction = true }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    var moveIdx = nodes.FindIndex(n => n.Type == ".Boss.BossMoveTo, ");
+    var cardIdx = nodes.FindIndex(n => n.Type == ".Boss.BossSpellCard, ");
+    moveIdx.ShouldBeGreaterThan(-1);
+    cardIdx.ShouldBeGreaterThan(-1);
+    moveIdx.ShouldBeLessThan(cardIdx);
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_ForcePerformAction_True_ImmediatelyPrecededBySpellCard_NotForced()
+  {
+    // 紧邻前序为前一张符卡（不含符卡进判定范围）：不触发强制，普通整合、不携带前置卡。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"PrevCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 1, "A") }, // 选第二张 LeadCard
+      new MergeOptions { ForcePerformAction = true }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // LeadCard 的紧邻前序是 PrevCard（符卡，不在判定范围）→ 不携带任何前置；
+    // 注入产物应只有 LeadCard 一张卡（PrevCard 未被带入）。
+    var cardNodes = nodes.Where(n => n.Type == ".Boss.BossSpellCard, ").ToList();
+    cardNodes.Count.ShouldBe(1);
+    cardNodes[0].GetAttrAt(0).ShouldBe("LeadCard");
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_ForcePerformAction_True_NoImmediatelyPreceding_NotForced()
+  {
+    // 卡为首个阶段（紧邻前序只有 BossInit）：无前置可带 → 普通整合，不携带。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"FirstCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") },
+      new MergeOptions { ForcePerformAction = true }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    nodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeFalse();
+    nodes.Any(n => n.Type == ".Boss.BossMoveTo, ").ShouldBeFalse();
+    nodes
+      .Any(n => n.Type == ".Boss.BossSpellCard, " && n.GetAttrAt(0) == "FirstCard")
+      .ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_ForcePerformAction_True_ImmediatelyPrecededByLegacyMoveTo_CarriesLeading()
+  {
+    // 紧邻前序为旧版 .Boss.MoveTo：同样触发强制，携带 MoveTo 一起注入且位于卡前（双候选覆盖）。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.MoveTo, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") },
+      new MergeOptions { ForcePerformAction = true }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    var moveIdx = nodes.FindIndex(n => n.Type == ".Boss.MoveTo, ");
+    var cardIdx = nodes.FindIndex(n => n.Type == ".Boss.BossSpellCard, ");
+    moveIdx.ShouldBeGreaterThan(-1);
+    cardIdx.ShouldBeGreaterThan(-1);
+    moveIdx.ShouldBeLessThan(cardIdx);
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_ForcePerformAction_False_NoChange()
+  {
+    // 开关关闭：与现状一致。卡 perform=false 且紧邻前序为 Dialog → 不携带（验证零回归）。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossInit, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.Dialog, \",\"Attributes\":[{\"attrCap\":\"Can skip\",\"attrInput\":\"true\",\"EditWindow\":\"bool\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"LeadCard\",\"EditWindow\":\"\"},{\"attrCap\":\"Performing action\",\"attrInput\":\"false\",\"EditWindow\":\"bool\"}],\"AttributeCount\":2}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "4,{\"$type\":\".Task.TaskWait, \",\"Attributes\":[{\"attrCap\":\"Time\",\"attrInput\":\"60\",\"EditWindow\":\"yield\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") } // 默认 MergeOptions{ForcePerformAction=false}
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    nodes.Any(n => n.Type == ".Boss.Dialog, ").ShouldBeFalse();
+    nodes
+      .Any(n => n.Type == ".Boss.BossSpellCard, " && n.GetAttrAt(0) == "LeadCard")
+      .ShouldBeTrue();
+  }
+
+  [Test]
+  public void Merge_Definition_SameNameAsTemplate_Skipped()
+  {
+    // 需求1：定义不允许重名（同名会告警）——判据为「名字」：模板已存在同名可移植定义 → 命中跳过（不搬）。
+    // 注意：判据是名字而非归档，避免「归档口径把所有创作者定义误跳过」（用户实测反馈修正）。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"卡A\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    // 模板自身也含同名 TaskDefine "shared_task"（对象注点之后作为既有内容）
+    var template = LstgesParser.ParseDocument(
+      FullTemplateA
+        + "2,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n",
+      out _
+    )!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 产物仅模板原有的 1 个 TaskDefine；创作者同名定义命中 → 未注入（无第二份）
+    nodes.Count(n => n.Type == ".Task.TaskDefine, ").ShouldBe(1);
+    nodes.Any(n => n.Type == ".Boss.BossSpellCard, ").ShouldBeTrue();
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_Definition_DifferentNameFromTemplate_Injected()
+  {
+    // 需求1负例：模板已有 shared_task，创作者定义不同名 custom_task → 未命中 → 照常注入。
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"卡A\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"custom_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    // 模板含同名 shared_task（不同名即不命中）
+    var template = LstgesParser.ParseDocument(
+      FullTemplateA
+        + "2,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"shared_task\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n",
+      out _
+    )!;
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 模板 shared_task + 注入 custom_task 共 2 个 TaskDefine；custom_task 已注入（对象注点）
+    nodes.Count(n => n.Type == ".Task.TaskDefine, ").ShouldBe(2);
+    nodes
+      .Any(n => n.Type == ".Task.TaskDefine, " && n.GetAttrAt(0) == "custom_task")
+      .ShouldBeTrue();
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_GroupByCreatorFolders_True_CreatesFolderPerCreator()
+  {
+    // 需求2：开关开启 = 每人一个专属 .General.Folder（Name=创作者名），对象与资源分居各自文件夹。
+    var pkgA =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm_A\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"卡A\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"resource\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"images/a.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"code\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"task_a\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkgB =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm_B\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"卡B\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"resource\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"images/b.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"code\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"task_b\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n";
+
+    var template = LstgesParser.ParseDocument(FullTemplateA, out _)!;
+    var pkgAObj = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgA, out _)!);
+    var pkgBObj = new CreatorPackageDoc("B", LstgesParser.ParseDocument(pkgB, out _)!);
+    var mapping = new[]
+    {
+      new MergeMappingEntry(0, 0, "Alice"),
+      new MergeMappingEntry(1, 0, "Bob"),
+    };
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgAObj, pkgBObj },
+      mapping,
+      new MergeOptions { GroupByCreatorFolders = true },
+      new[] { "Alice", "Bob" }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    var aliceFolders = FolderIndexes(nodes, "Alice");
+    var bobFolders = FolderIndexes(nodes, "Bob");
+    aliceFolders.Count.ShouldBe(2); // 资源注入点 + 对象注入点各一个
+    bobFolders.Count.ShouldBe(2);
+
+    // 每人的对象进入各自文件夹、资源进入各自文件夹（归属不串包）
+    aliceFolders.Any(f => FolderContainsTask(nodes, f, "task_a")).ShouldBeTrue();
+    aliceFolders.Any(f => FolderContainsImage(nodes, f, "images/a.png")).ShouldBeTrue();
+    aliceFolders.Any(f => FolderContainsTask(nodes, f, "task_b")).ShouldBeFalse();
+    bobFolders.Any(f => FolderContainsTask(nodes, f, "task_b")).ShouldBeTrue();
+    bobFolders.Any(f => FolderContainsImage(nodes, f, "images/b.png")).ShouldBeTrue();
+    bobFolders.Any(f => FolderContainsTask(nodes, f, "task_a")).ShouldBeFalse();
+
+    // 文件夹头 = 注入点同级；内容在其下一层（父链合法）
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  [Test]
+  public void Merge_GroupByCreatorFolders_False_NoCreatorFolders()
+  {
+    // 需求2回归：开关关闭 = 与旧行为一致，对象/资源平铺到注入点旁，不产生按人文件夹。
+    var template = LstgesParser.ParseDocument(FullTemplateA, out _)!;
+    var pkgDoc =
+      "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"卡A\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}"
+      + "\n"
+      + "1,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"images/x.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}"
+      + "\n"
+      + "1,{\"$type\":\".Task.TaskDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"task_x\",\"EditWindow\":\"\"}],\"AttributeCount\":1}"
+      + "\n";
+    var pkg = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgDoc, out _)!);
+    var result = new Merger().Merge(
+      template,
+      new[] { pkg },
+      new[] { new MergeMappingEntry(0, 0, "A") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    var nodes = result.Merged!.Nodes.ToList();
+    // 不出现创作者名命名的文件夹（模板自身 references/code 仍在）
+    FolderIndexes(nodes, "Alice").ShouldBeEmpty();
+    FolderIndexes(nodes, "Bob").ShouldBeEmpty();
+    // 对象/资源平铺到注入点同龄：层级 = 注点注释层级(2)
+    var taskIdx = nodes.FindIndex(n => n.Type == ".Task.TaskDefine, ");
+    var imgIdx = nodes.FindIndex(n => n.Type == ".Graphics.LoadImage, ");
+    taskIdx.ShouldBeGreaterThan(-1);
+    imgIdx.ShouldBeGreaterThan(-1);
+    nodes[taskIdx].Level.ShouldBe(2);
+    nodes[imgIdx].Level.ShouldBe(2);
+    LstgesHierarchy.FindFirstInvalidLevel(nodes).ShouldBe(-1);
+  }
+
+  private static System.Collections.Generic.List<int> FolderIndexes(
+    System.Collections.Generic.List<LstgesNode> nodes,
+    string name
+  )
+  {
+    var result = new System.Collections.Generic.List<int>();
+    for (int i = 0; i < nodes.Count; i++)
+    {
+      if (nodes[i].Type == ".General.Folder, LuaSTGEditorSharp" && nodes[i].GetAttr("Name") == name)
+        result.Add(i);
+    }
+    return result;
+  }
+
+  private static bool FolderContainsTask(
+    System.Collections.Generic.List<LstgesNode> nodes,
+    int folderIdx,
+    string taskName
+  )
+  {
+    int level = nodes[folderIdx].Level;
+    for (int i = folderIdx + 1; i < nodes.Count && nodes[i].Level > level; i++)
+    {
+      if (nodes[i].Type == ".Task.TaskDefine, " && nodes[i].GetAttrAt(0) == taskName)
+        return true;
+    }
+    return false;
+  }
+
+  private static bool FolderContainsImage(
+    System.Collections.Generic.List<LstgesNode> nodes,
+    int folderIdx,
+    string path
+  )
+  {
+    int level = nodes[folderIdx].Level;
+    for (int i = folderIdx + 1; i < nodes.Count && nodes[i].Level > level; i++)
+    {
+      if (nodes[i].Type == ".Graphics.LoadImage, " && nodes[i].GetAttrAt(0) == path)
+        return true;
+    }
+    return false;
+  }
+}

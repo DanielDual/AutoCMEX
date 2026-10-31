@@ -1,0 +1,146 @@
+namespace AutoCMEX;
+
+using System;
+using System.Collections.Generic;
+using AutoCMEX.Core.Storage;
+using AutoCMEX.UI.Settings;
+using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
+using Chickensoft.GoDotTest;
+using Godot;
+using Moq;
+using Shouldly;
+
+/// <summary>
+/// SettingsPanel 单元测试
+/// </summary>
+public class SettingsPanelTest : TestClass
+{
+  private SettingsPanel _panel = default!;
+  private DataManager _dm = default!;
+  private Mock<IItemList> _categoryList = default!;
+  private InfoConfigPanel _infoConfigPanel = default!;
+  private readonly List<Node> _toCleanup = new();
+
+  public SettingsPanelTest(Node testScene)
+    : base(testScene) { }
+
+  [Setup]
+  public void Setup()
+  {
+    _dm = new DataManager(
+      System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"AutoCMEX_Test_{Guid.NewGuid():N}"),
+      new AesEncryptor("test-key")
+    );
+    _dm.LoadAll();
+
+    _panel = new SettingsPanel();
+    (_panel as IAutoInit).IsTesting = true;
+    _toCleanup.Add(_panel);
+
+    var searchBar = new Mock<ILineEdit>();
+    searchBar.SetupProperty(m => m.PlaceholderText);
+    _categoryList = new Mock<IItemList>();
+    var configArea = new Mock<IControl>();
+
+    _panel.FakeNodeTree(
+      new()
+      {
+        ["%SearchBar"] = searchBar.Object,
+        ["%CategoryList"] = _categoryList.Object,
+        ["%ConfigArea"] = configArea.Object,
+      }
+    );
+
+    // 配置子面板使用真实实例直接赋给 [Node] 属性（已赋值属性会被 AutoConnect 跳过）。
+    _panel.AiModelConfigPanel = new AiModelConfigPanel();
+    _panel.ChatConfigPanel = new ChatConfigPanel();
+    _infoConfigPanel = new InfoConfigPanel();
+    _panel.InfoConfigPanel = _infoConfigPanel;
+    _toCleanup.Add(_infoConfigPanel);
+
+    _panel.FakeDependency<DataManager>(_dm);
+    _panel._Notification((int)Node.NotificationEnterTree);
+    _panel._Notification((int)Node.NotificationReady);
+  }
+
+  [Cleanup]
+  public void Cleanup()
+  {
+    foreach (var node in _toCleanup)
+    {
+      if (node != null && !node.IsQueuedForDeletion())
+        node.QueueFree();
+    }
+    _toCleanup.Clear();
+  }
+
+  [Test]
+  public void SettingsPanel_LoadsSuccessfully()
+  {
+    _panel.ShouldNotBeNull();
+  }
+
+  [Test]
+  public void SettingsPanel_SearchBar_Exists()
+  {
+    _panel.SearchBar.ShouldNotBeNull();
+  }
+
+  [Test]
+  public void SettingsPanel_CategoryList_Exists()
+  {
+    _panel.CategoryList.ShouldNotBeNull();
+  }
+
+  [Test]
+  public void SettingsPanel_ConfigArea_Exists()
+  {
+    _panel.ConfigArea.ShouldNotBeNull();
+  }
+
+  [Test]
+  public void SettingsPanel_CategoryList_HasSevenCategories()
+  {
+    _categoryList.Verify(
+      m => m.AddItem(It.IsAny<string>(), It.IsAny<Texture2D>(), It.IsAny<bool>()),
+      Times.Exactly(7)
+    );
+  }
+
+  [Test]
+  public void SettingsPanel_AiModelConfigPanel_IsInterface()
+  {
+    _panel.AiModelConfigPanel.ShouldNotBeNull();
+    _panel.AiModelConfigPanel.ShouldBeAssignableTo<IAiModelConfigPanel>();
+  }
+
+  [Test]
+  public void SettingsPanel_ChatConfigPanel_IsInterface()
+  {
+    _panel.ChatConfigPanel.ShouldNotBeNull();
+    _panel.ChatConfigPanel.ShouldBeAssignableTo<IChatConfigPanel>();
+  }
+
+  [Test]
+  public void SettingsPanel_InfoConfigPanel_IsInterface()
+  {
+    _panel.InfoConfigPanel.ShouldNotBeNull();
+    _panel.InfoConfigPanel.ShouldBeAssignableTo<IInfoConfigPanel>();
+  }
+
+  [Test]
+  public void SettingsPanel_InfoCategory_ShowsInfoConfigPanelOnly()
+  {
+    // 「信息」是 _categories 的第 5 项（下标 4）
+    _infoConfigPanel.Visible.ShouldBeFalse();
+
+    _categoryList.Raise(m => m.ItemSelected += null, 4L);
+    _infoConfigPanel.Visible.ShouldBeTrue();
+    ((Control)_panel.AiModelConfigPanel).Visible.ShouldBeFalse();
+
+    // 切回「AI模型」应重新隐藏「信息」页
+    _categoryList.Raise(m => m.ItemSelected += null, 0L);
+    _infoConfigPanel.Visible.ShouldBeFalse();
+  }
+}
