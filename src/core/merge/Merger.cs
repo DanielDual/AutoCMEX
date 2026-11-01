@@ -15,7 +15,7 @@ public readonly record struct MergeMappingEntry(
   string Creator
 );
 
-/// <summary>一份创作者包文档与其（从包名推导出的）创作者名。</summary>
+/// <summary>一份创作者包（包名 + 已解析文档）；创作者名由调用方另行传入。</summary>
 public readonly record struct CreatorPackageDoc(string PackageName, LstgesDocument Doc);
 
 /// <summary>合并选项。</summary>
@@ -33,13 +33,13 @@ public sealed class MergeOptions
   /// <summary>
   /// 注入资源/对象节点时是否按创作者分组：为每个有贡献的包建立一个专属
   /// <c>.General.Folder</c> 文件夹（Name=创作者名），把该包节点放进各自文件夹；
-  /// 默认 false 时全部平铺到注入点旁（与旧行为一致）。符卡注入点不受影响。
+  /// 默认 false 时全部平铺到注入点旁（与旧行为一致）。符卡注入点不受影响；仅提取式 Merger 生效（TopFolderCarry 忽略本开关）。
   /// </summary>
   public bool GroupByCreatorFolders { get; set; }
 
   /// <summary>
-  /// 额外排除的归档空间清单（用户配置兜底）。源包资源的最内层归属归档空间命中
-  /// 「模板已有归档空间 ∪ 本清单」时，该资源不检测、不导入、不搬迁。
+  /// 额外排除的归档空间清单（用户配置兜底）。源包资源与 .General.Code 代码块的最内层归属归档空间命中
+  /// 「模板已有归档空间 ∪ 本清单」时，均不检测、不导入、不搬迁；仅提取式 Merger 生效（TopFolderCarry 忽略本项）。
   /// </summary>
   public IReadOnlyCollection<string>? ExcludedArchiveSpaces { get; set; }
 }
@@ -68,7 +68,7 @@ public sealed class MergeResult
 /// 抽取 BossSpellCard 子树重编号注入符卡注入点；
 /// 抽取 Object/Task/Bullet 定义子树注入对象注入点；
 /// 抽取顶层资源加载节点注入资源注入点；
-/// 重写资源路径（折为纯文件名，冲突可选自动改名）；
+/// 重写资源文件名（保留源目录相对位置，冲突可选自动改名）；
 /// 收集命名冲突。
 /// </summary>
 public class Merger

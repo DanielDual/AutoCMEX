@@ -453,7 +453,7 @@ public partial class MergePanel : Control, IMergePanel
   /// 按右上「对应表」所选「打乱模式」重排 <see cref="Models.MergeConfig.Mapping"/>
   /// （顺序即注入顺序，同时决定对应表导出顺序）。
   /// <para>
-  /// 三种模式**每次都产生不同排列**：随机 = 整体 Fisher-Yates；
+  /// 三种模式在非退化输入下通常产生不同排列（单元素/每组仅 1 项时结果不变）：随机 = 整体 Fisher-Yates；
   /// 交替 = 形态由规则（非符/符卡块长）决定、两类内容各自随机；
   /// 按创作者分组 = 分组与组序确定、组内随机。
   /// </para>
@@ -490,7 +490,7 @@ public partial class MergePanel : Control, IMergePanel
   #region 右下 · 导出功能
 
   /// <summary>
-  /// 把导出控件的当前值写回模型（输出目录/输出名），使导出落盘目录与 UI 一致（事件只写模型）。
+  /// 把导出区全部控件值（输出目录/输出名 + 5 个开关 + 合并算法）写回模型，使导出与 UI 一致（事件只写模型）。
   /// </summary>
   private void SyncOutputToModel()
   {
@@ -509,7 +509,7 @@ public partial class MergePanel : Control, IMergePanel
   }
 
   /// <summary>
-  /// 调起 Sharp Cli 把当前目录下的 .lstgproj 编译打包为 mod zip；返回成功与否。
+  /// 调起 Sharp Cli 把合并产生的工作工程（临时目录下的 .lstgproj）编译打包为 mod zip；返回成功与否。
   /// </summary>
   private bool TryBuildModZip(MergeEngine engine, out string message)
   {
@@ -575,7 +575,7 @@ public partial class MergePanel : Control, IMergePanel
     foreach (var c in result.Conflicts)
       ConflictList.AddItem($"[{c.Kind}] {c.Name}（{c.Packages}）");
 
-    // Sharp 打包（可选）：配置了 Sharp 则打包 mod zip，否则仅提示（不阻塞工程/对应表生成）
+    // Sharp 打包（可选）：配置了 Sharp 路径与插件 dll 才打包 mod zip，否则仅提示（不阻塞工程/对应表生成）
     TryBuildModZip(engine, out var buildMessage);
     ConflictList.AddItem($"[打包] {buildMessage}");
 

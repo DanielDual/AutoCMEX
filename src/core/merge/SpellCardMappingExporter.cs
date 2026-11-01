@@ -32,8 +32,7 @@ public class SpellCardMappingExporter
   /// <param name="bossName">完整项目包中的共通 Boss 名。</param>
   /// <param name="rows">按映射顺序排列的对应表行。</param>
   /// <param name="outputPath">输出 CSV 文件路径。</param>
-  /// <param name="nonSpellName">非符在导出表中的表示（默认"非符"）。</param>
-  /// <returns>生成的 CSV 文件内容（用于往返校验）；写入失败时返回空串。</returns>
+  /// <returns>生成的 CSV 文件内容（用于往返校验）；参数非法或写入失败时抛异常。</returns>
   public string Export(
     string bossName,
     IReadOnlyList<SpellCardMappingRow> rows,

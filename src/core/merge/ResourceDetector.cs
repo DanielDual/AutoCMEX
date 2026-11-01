@@ -26,7 +26,7 @@ public sealed class ResourceInfo
 /// </summary>
 public static class ResourceDetector
 {
-  /// <summary>被视为资源引用的节点类型集合（与既有一致）。</summary>
+  /// <summary>被视为资源引用的节点类型集合（合并链路唯一来源）。</summary>
   public static readonly HashSet<string> ResourceTypes = new()
   {
     ".General.AddFile, LuaSTGEditorSharp",

@@ -14,7 +14,7 @@ public sealed class SpellCardInfo
   /// <summary>整棵子树的节点（含 BossSpellCard 根及 SCStart/SCFinish/任务节点）。</summary>
   public IReadOnlyList<LstgesNode> Subtree { get; init; } = new List<LstgesNode>();
 
-  /// <summary>符卡名（SCName）。非符为空、[] 或 null。</summary>
+  /// <summary>符卡名（SCName）。非符为空串或 []（不存在 null 值）。</summary>
   public string Name { get; init; } = string.Empty;
 
   /// <summary>是否非符（SCName 空 或 []）。</summary>
@@ -26,7 +26,7 @@ public sealed class SpellCardInfo
   /// <summary>
   /// 该卡是否设置 `Performing action`（Sharp 中为 `opening_performance`）。
   /// 为 true 时，Sharp 在符卡练习时会「把练习入口重定向到上一阶段」，故其前序阶段
-  /// （同父 `BossDefine` 下的 `Boss.Dialog`/`Boss.MoveTo`/前一张 `BossSpellCard`）
+  /// （同父 `BossDefine` 下的 `Boss.Dialog`/`Boss.MoveTo`（旧版）或 `Boss.BossMoveTo`（V2）/前一张 `BossSpellCard`）
   /// 必须与该卡一起注入，否则练习产物流转时会引用缺失的前序节点。
   /// </summary>
   public bool HasPerformingAction { get; init; }

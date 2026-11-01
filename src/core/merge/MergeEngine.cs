@@ -112,7 +112,7 @@ public class MergeEngine
       PersistMergedProject(result.Merged!);
 
       // 物理资源必须随合并 .lstgproj 落在同一目录（Sharp 依相对基准找文件打包）。
-      // 工作目录（Sharp 输入）始终复制；若同时交付到输出目录，也一并复制。
+      // 工作目录（Sharp 输入）始终复制；只要配置了输出目录也会复制（与是否交付 .lstgproj 无关）。
       CopyResources(result.Merged!, Path.GetDirectoryName(_workProjectPath) ?? string.Empty);
       if (_dm.MergeConfig.OutputDir.Value.Length > 0)
         CopyResources(result.Merged!, _dm.MergeConfig.OutputDir.Value);
@@ -169,7 +169,7 @@ public class MergeEngine
   /// <summary>
   /// 导出「符卡—创作者对应表」三列 CSV（供猜测模块导入）。
   /// </summary>
-  /// <returns>导出的 CSV 内容；失败返回空串。</returns>
+  /// <returns>导出的 CSV 内容；无映射时返回空串，写入失败时抛异常。</returns>
   public string ExportMapping(string outputDir)
   {
     var mapping = _dm.MergeConfig.Mapping;
@@ -297,7 +297,7 @@ public class MergeEngine
       return null;
     }
 
-    // 解压目录的生命周期须持续到解析完成（FindLstges 不再删除），
+    // 解压目录的生命周期须持续到解析完成（旧 FindLstges 已移除，不再提前删除），
     // 否则返回的 .lstges 路径在 LoadFile 前已指向已删除目录。
     using var work = ExtractPackageToTemp(sourcePath);
     if (work.TempDir == null)

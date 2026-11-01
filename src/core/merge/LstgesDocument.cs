@@ -49,7 +49,7 @@ public sealed class LstgesDocument
   public int GetRootIndex(int nodeIndex) => nodeIndex;
 
   /// <summary>
-  /// 在指定位置插入一组节点（按给定根层级重新编号后的节点）。
+  /// 在指定位置插入一组节点（调用方已按目标层级重编号；本方法不修改层级）。
   /// </summary>
   public void InsertRange(int index, IEnumerable<LstgesNode> nodes)
   {
@@ -59,7 +59,7 @@ public sealed class LstgesDocument
     _nodes.InsertRange(index, list);
   }
 
-  /// <summary>从文档移除 [start, end) 的连续节点。</summary>
+  /// <summary>从文档移除 [start, start+count) 的连续节点。</summary>
   public void RemoveRange(int start, int count)
   {
     if (start < 0 || start >= _nodes.Count || count <= 0)

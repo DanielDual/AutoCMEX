@@ -23,7 +23,7 @@ public sealed class TopFolderCarryMerger
   /// <summary>整文件夹搬运认的容器文件夹节点类型。</summary>
   private const string FolderType = ".General.Folder, LuaSTGEditorSharp";
 
-  /// <summary>模板共享的 BossDefine 类型（符卡抽取时用于定位 Boss 子树）。</summary>
+  /// <summary>模板共享的 BossDefine 类型（当前未使用，保留以标注语义）。</summary>
   private static readonly string BossDefineType = ".Boss.BossDefine, ";
 
   /// <summary>整文件夹判定的强制整合例外名。</summary>

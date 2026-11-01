@@ -53,7 +53,7 @@ public class AiFuzzifier
   /// 执行模糊化处理
   /// </summary>
   /// <param name="rawText">原始猜测文本</param>
-  /// <returns>严格格式文本</returns>
+  /// <returns>AI 输出（严格格式文本或 NOT_A_GUESS 标记，未做格式校验）；最多重试 3 次，耗尽后抛 InvalidOperationException。</returns>
   public async Task<string> FuzzifyAsync(string rawText)
   {
     _log.Print($"AiFuzzifier.FuzzifyAsync: input_len={rawText?.Length ?? 0}");
