@@ -7,12 +7,10 @@
 .codebuddy/skills/
 .codebuddy/plans/
 .codebuddy/memory/
-**/addons/auto_reload/
-**/addons/godot_mcp_editor/
-**/addons/godot_mcp_runtime/
 *.old*
 test-key
 skills-lock.json
+builds/
 
 
 # [Coverage]
