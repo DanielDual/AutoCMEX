@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="AutoCMEX">
+  <title>AutoCMEX stencil mark (plate solid, shapes knocked out)</title>
+  <defs>
+    <mask id="knockout">
+      <rect width="512" height="512" fill="#FFFFFF"/>
+      <g fill="#000000">
+      <circle cx="384.2" cy="193" r="46"/>
+      <circle cx="384.2" cy="341" r="46"/>
+      <circle cx="256" cy="415" r="46"/>
+      <circle cx="127.8" cy="341" r="46"/>
+      <circle cx="127.8" cy="193" r="46"/>
+      <rect x="208" y="71" width="96" height="96" transform="rotate(45 256 119)"/>
+      </g>
+    </mask>
+  </defs>
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="#2B2B33" mask="url(#knockout)"/>
+</svg>

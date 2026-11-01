@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512" role="img" aria-label="AutoCMEX">
+  <title>AutoCMEX icon (16-32px simplification, side bullets at y=266)</title>
+  <rect x="16" y="16" width="480" height="480" rx="108" fill="#2B2B33"/>
+  <circle cx="120" cy="266" r="56" fill="#F7F5EF"/>
+  <circle cx="392" cy="266" r="56" fill="#F7F5EF"/>
+  <circle cx="256" cy="405" r="56" fill="#F7F5EF"/>
+  <rect x="202" y="73.37" width="108" height="108" transform="rotate(45 256 127.37)" fill="#E8642C"/>
+</svg>
