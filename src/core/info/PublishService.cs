@@ -102,7 +102,7 @@ internal sealed record PublishAck(
 public sealed class PublishService
 {
   /// <summary>
-  /// 等待单条合并转发回执的默认超时（毫秒）。
+  /// 等待一次发布（一条 info_publish_forward 事件，含合并转发与直接发图两种模式）回执的默认超时（毫秒）。
   /// </summary>
   /// <remarks>
   /// 图片需经 NapCat 逐张上传，不能用偏小的超时；但也不能无限等，否则界面会永久卡在"发布中"。
@@ -237,7 +237,7 @@ public sealed class PublishService
   /// </summary>
   /// <param name="payload">事件 payload。</param>
   /// <remarks>
-  /// 按 <c>requestId</c> 精确配对：同一次发布可能对多 个群并发（不同项）或连续发送，
+  /// 按 <c>requestId</c> 精确配对：同一次发布会对多个群、多个项依次连续发送（均为串行），
   /// 只按 kind 配对会在连续发布时串台。
   /// </remarks>
   public void HandlePublishResult(JsonElement payload)

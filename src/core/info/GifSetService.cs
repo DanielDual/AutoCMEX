@@ -356,7 +356,7 @@ public class GifSetService
   /// <summary>
   /// 注册集记录；同一路径重复导入时原地更新，避免产生重复条目。
   /// </summary>
-  /// <param name="setId">预生成的集 Id（压缩包导入用；文件夹导入用目录名作展示回退）。</param>
+  /// <param name="setId">预生成的集 Id（压缩包导入为 8 位随机串；文件夹导入用目录名作 Id）。</param>
   /// <param name="rootPath">集根目录绝对路径。</param>
   /// <param name="manifest">已校验通过的清单。</param>
   /// <returns>注册后的集记录。</returns>

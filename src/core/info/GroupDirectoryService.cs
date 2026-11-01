@@ -25,8 +25,8 @@ public sealed record GroupListEntry(string ChannelId, string GuildId, string Nam
 /// </summary>
 /// <remarks>
 /// <para>
-/// 目标是"不让人手输群 ID"：拉取成功后按 <see cref="TargetGroup.ChannelId"/> 去重合并，已存在的只更新
-/// 展示名，不覆盖用户已勾选的 <see cref="TargetGroup.Enabled"/>。
+/// 目标是"不让人手输群 ID"：拉取成功后按 <see cref="TargetGroup.ChannelId"/> 去重合并，已存在的更新
+/// 展示名与服务器 ID（GuildId），不覆盖用户已勾选的 <see cref="TargetGroup.Enabled"/>。
 /// </para>
 /// <para>
 /// 新发现的群默认不勾选：避免"刷新一次群列表"就把内容群发到全部群。

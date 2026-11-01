@@ -50,7 +50,7 @@ public static class PublishOrder
   };
 
   /// <summary>
-  /// 取发布项的群内呈现方式：只有 GIF 集需要合并转发，两张表直接发图。
+  /// 取发布项的群内呈现方式：两张表改为直接发图，GIF 集与活动规则仍走合并转发。
   /// </summary>
   /// <param name="kind">发布项类别。</param>
   /// <returns>呈现方式。</returns>

@@ -23,7 +23,7 @@ public static class InfoProtocol
   public const string GroupListResultEvent = "info_group_list_result";
 
   /// <summary>
-  /// 出站：请求 Koishi 向指定群发送一段发布内容（整条只能由 node 组成）。
+  /// 出站：请求 Koishi 向指定群发送一段发布内容（合并转发时整条只能由 node 组成；直接发图时逐节点各发一条消息）。
   /// </summary>
   /// <remarks>
   /// 群内呈现方式由 payload 的 <see cref="SendModeField"/> 决定：<see cref="SendModeForward"/> 合并转发、

@@ -86,7 +86,7 @@ public partial class GifSetPanel : VBoxContainer
   /// <summary>已手选、等待接着选输出目录的工程包；两步选择之间的中间态。</summary>
   private string? _pendingModPackZip;
 
-  /// <summary>一次性状态提示（如导入成功）；由下一次 <see cref="RebuildCards"/> 渲染后清空。</summary>
+  /// <summary>一次性状态提示（如导入成功）；不在 <see cref="RebuildCards"/> 时清空，由下一次用户动作（切集/起录/失败）清除。</summary>
   private string? _pendingStatus;
 
   private bool _isRebuilding;
@@ -602,7 +602,7 @@ public partial class GifSetPanel : VBoxContainer
     }
   }
 
-  /// <summary>把本轮结果拼成一行计数说明。</summary>
+  /// <summary>把本轮结果拼成多行汇总说明（首行计数，随后追加取消/告警说明）。</summary>
   /// <param name="result">本轮结果。</param>
   /// <returns>汇总文本。</returns>
   private static string DescribeRun(RecordingRunResult result)

@@ -59,7 +59,7 @@ public sealed class InfoTableSnapshot
   /// <summary>当前是否存在可用 Boss（false 时两张表都没有数据，UI 应给出提示）。</summary>
   public bool HasBoss { get; init; }
 
-  /// <summary>当前 Boss 名称（出图标题与界面提示用）。</summary>
+  /// <summary>当前 Boss 名称（快照附带信息；当前两表标题使用固定常量，未消费该字段）。</summary>
   public string BossName { get; init; } = string.Empty;
 
   /// <summary>当前 Boss 的符卡总数。</summary>
