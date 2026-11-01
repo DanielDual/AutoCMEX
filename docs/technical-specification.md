@@ -2,16 +2,16 @@
 
 ## 技术栈
 
-| 层级     | 技术                           |
-| -------- | ------------------------------ |
-| GUI 框架 | Godot 4.x + .NET 8             |
-| 脚本语言 | C#                             |
-| UI 方案  | Godot 原生 Control 节点        |
-| 外部通信 | WebSocket（AutoCMEX 为服务端） |
-| 群聊集成 | Koishi v4 插件                 |
-| 本地存储 | JSON 文件                      |
-| 加密方案 | AES，密钥文件存放于用户目录    |
-| 日志     | 文件日志 + 控制台输出          |
+| 层级     | 技术                                                                   |
+| -------- | ---------------------------------------------------------------------- |
+| GUI 框架 | Godot 4.x + .NET 8                                                     |
+| 脚本语言 | C#                                                                     |
+| UI 方案  | Godot 原生 Control 节点                                                |
+| 外部通信 | WebSocket（默认 Server 模式监听端口，也支持 Client 模式主动连 Koishi） |
+| 群聊集成 | Koishi v4 插件                                                         |
+| 本地存储 | JSON 文件                                                              |
+| 加密方案 | AES，密钥文件存放于用户目录                                            |
+| 日志     | 文件日志 + 控制台输出                                                  |
 
 ---
 
@@ -47,12 +47,13 @@ AI 模型用于猜测板块的以下功能：
 
 每个 AI 模型配置包含以下字段：
 
-| 字段     | 说明                |
-| -------- | ------------------- |
-| API 格式 | OpenAI 或 Anthropic |
-| 请求地址 | API 端点 URL        |
-| 模型 ID  | 模型标识符          |
-| API 密钥 | 用于认证的密钥      |
+| 字段     | 说明                                             |
+| -------- | ------------------------------------------------ |
+| API 格式 | OpenAI 或 Anthropic                              |
+| 请求地址 | API 端点 URL                                     |
+| 模型 ID  | 模型标识符                                       |
+| API 密钥 | 用于认证的密钥                                   |
+| 请求超时 | **全局项**（不属于单个模型）：1~600 秒，默认 100 |
 
 除上表的单模型字段外，另有一个**全局**的「请求超时（秒）」设置（1~600，默认 100）：
 
@@ -77,7 +78,7 @@ AI 模型用于猜测板块的以下功能：
 ### 异常处理
 
 - AI 调用失败时返回错误并通知用户，不自动重试。
-- 未配置 AI 模型时，模糊化处理按钮禁用，hover 提示"请先配置 AI 模型"。
+- 未配置 AI 模型时，模糊化处理按钮禁用，hover 提示「请先在设置中选择一个有效的 AI 模型」（运行时由代码设置）。
 - 别名表为空时，模糊化处理完全依赖 AI 推断。
 
 ---
@@ -164,11 +165,11 @@ Koishi v4。
 
 采用策略模式，`IGuessResponseHandler` 接口抽象，便于替换和扩展：
 
-| 猜测符卡数 | 回应                   |
-| ---------- | ---------------------- |
-| ≥ 3 张     | 返回猜对的个数         |
-| = 2 张     | 全对回"对"，有错回"错" |
-| ≤ 1 张     | 不回应                 |
+| 猜测符卡数 | 回应                                                                 |
+| ---------- | -------------------------------------------------------------------- |
+| ≥ 3 张     | 回「猜对/总数」                                                      |
+| = 2 张     | 全对回 ✔️，有错回 ❌️                                                |
+| ≤ 1 张     | 回「必须猜两个以上」；0 张且全部已猜出回「所有猜测的符卡均已被猜出」 |
 
 - 已揭晓的符卡跳过不参与判断，回应中注明已揭晓。
 - 猜测符卡数仅计未揭晓的符卡。
@@ -195,14 +196,14 @@ Koishi v4。
 
 ### 存储内容
 
-| 数据              | 存储方式     | 格式           |
-| ----------------- | ------------ | -------------- |
-| 符卡—创作者对应表 | 本地文件     | CSV / Excel    |
-| 创作者别名表      | 本地文件     | CSV / Excel    |
-| AI 模型配置       | 本地加密存储 | JSON，AES 加密 |
-| 群聊机器人配置    | 本地配置文件 | JSON           |
-| 应用设置          | 本地配置文件 | JSON           |
-| 录制配置          | 本地配置文件 | JSON           |
+| 数据              | 存储方式          | 格式                                              |
+| ----------------- | ----------------- | ------------------------------------------------- |
+| 符卡—创作者对应表 | 用户数据目录 JSON | `spellcard_table.json`；导入/导出支持 CSV / Excel |
+| 创作者别名表      | 用户数据目录 JSON | `alias_table.json`；导入/导出支持 CSV / Excel     |
+| AI 模型配置       | 本地加密存储      | JSON，AES 加密                                    |
+| 群聊机器人配置    | 本地配置文件      | JSON                                              |
+| 应用设置          | 本地配置文件      | JSON                                              |
+| 录制配置          | 本地配置文件      | JSON                                              |
 
 ### 保存策略
 
@@ -258,7 +259,7 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 ### 单卡录制闭环（P2）
 
-`RecordingOrchestrator.RecordCardAsync(engineDir, modPackName, card, outputDir, config, token, timeout)` 把一张卡录成集内文件 `{序号}.gif`，产物命名与序号在归集时**重写**，与录制器自报的秒级时间戳产物名解耦。
+`RecordingOrchestrator.RecordCardAsync(engineDir, modPackName, card, config, cancellationToken, timeout, onAttemptStarted)` 把一张卡录成录制器产物（单卡只录不归集）；`{序号}.gif` 的命名与序号在 `RunAsync` 归集时统一重写，与录制器自报的秒级时间戳产物名解耦。
 
 - **「录两遍」是常态而非补救**：`config.MaxFrame` 默认 350 帧，`interval=3`（20 fps）只覆盖 17.5 秒，长卡必然录满被截断；故首次 `result.complete == true`**或首次产物已达 QQ 的动图体积上限**（`GifSizeLimitBytes` = **30,000,000 字节**，即 30MB 按十进制取——这是两种可能口径里**保守**的那个：若 QQ 实际按 1024 进制限流，十进制阈值只会更早触发换挡、不会漏放；反之取 1024 进制则会放过 30,000,000..31,457,280 字节这一段，而真机上确有一张 30,291,854 字节的产物落在该带内）即换 `config.SecondInterval`（默认 5，12 fps）重录一次，并**采用第二次的产物**，`RecordingCardOutcome.Attempts` 记为 2。两条触发条件共用同一段重录逻辑（判据集中在 `DescribeSecondAttempt`）：截断的日志沿用「录满 N 帧被截断」，体积的日志给「产物 X MiB 已达 30MB 上限」；重录失败的原因按触发条件区分为「首次截断后重录失败」与「首次产物超限后重录失败」。换挡后仍 `>= 30MB` 时**不做第三次尝试**：产物本身可用，故照常采用，只补一条带卡号与体积的 `WARN` 日志供真机定位；每张卡收尾时也会把产物实际体积（MiB，与资源管理器显示同口径）打进日志。
 - **截断即视为不完整**：凡触发重录的卡（含体积超限触发的换挡）一律回 `Complete = false`（保守口径），实际帧数与间隔照实回传，由调用方决定是否接受。
@@ -272,7 +273,7 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 一轮的入口是 `RecordingOrchestrator.RunAsync(request, progress?, token)`：清扫残留沙箱 → 前置检查 → 枚举 → 并行逐卡录制 → 串行归集 → 写报告 → 删沙箱。
 
-**沙箱隔离**（`RecordingSandbox`）：真引擎目录全程只读——每轮把工程包与运行必需的引擎文件复制进 `<沙箱根>/sb_<轮次>_<worker>/` 的独立副本，任务、结果、`engine.log` 与录制器产物全落在沙箱里，归集时才往输出目录写。原因是录制器把 `danmaku_recorder/tmp` 当进程级工作区（`recorder:init()` 会清空它）、产物名又是秒级时间戳，多实例共用同一引擎目录必然互相破坏。沙箱清单只含运行必需项：`packages/`、`plugins/`（含 `autocmex` 与弹幕录制器插件）、`userdata/`、启动文件与 `*.dll`；`mod/` 只放本轮手选的工程包。
+**沙箱隔离**（`RecordingSandbox`）：真引擎目录全程只读——每轮把工程包与运行必需的引擎文件复制进 `<沙箱根>/sb_<yyyyMMdd_HHmmss_fff>_<4位随机>_w<worker 序号>/` 的独立副本，任务、结果、`engine.log` 与录制器产物全落在沙箱里，归集时才往输出目录写。原因是录制器把 `danmaku_recorder/tmp` 当进程级工作区（`recorder:init()` 会清空它）、产物名又是秒级时间戳，多实例共用同一引擎目录必然互相破坏。沙箱清单只含运行必需项：`packages/`、`plugins/`（含 `autocmex` 与弹幕录制器插件）、`userdata/`、启动文件与 `*.dll`；`mod/` 只放本轮手选的工程包。
 
 - 沙箱根默认取系统临时目录下的固定子目录，可由 `config.SandboxRoot` 覆盖。
 - 每轮开始清扫**超 1 小时**的 `sb_*` 残留（上次崩溃留下的）；建沙箱前按「引擎 + 工程包 + exe」估算单份占用，剩余空间不足直接中止（不半途失败）。
@@ -286,7 +287,7 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 - **报告**：`RecordingReport` 落 `<输出目录>/recording_report.json`；写盘失败只作为 `Warning` 回传，不把整轮判失败。
 - **进度**：`IProgress<RecordingProgress>` 按「阶段（枚举 / 录制 / 归集）+ 总数 + 已完成 + 已失败 + 各 worker 正在录的卡」发快照，内部加锁聚合。
-- **返回值**：`RecordingRunResult` 含 `Error`（前置失败原因）、`Report`、`OutputDir`、`Warning`（并行度被压缩等非致命提示）与 `EngineLogTail`（前置失败时附）。
+- **返回值**：`RecordingRunResult` 含 `Error`（前置失败原因）、`Report`、`OutputDir`、`ManifestPath`（本轮清单路径；`null` = 无可导入内容）、`Warning`（并行度被压缩等非致命提示）与 `EngineLogTail`（前置失败时附）。
 
 真机验收（2026-09-25，`sample_pre_project`，4 张战斗卡）：2 worker 并行跑通全流程——沙箱各自独立、产物按序号归集 4 个、报告落盘、临时目录无残留沙箱；`t3` 封顶的「耐久符」与串行轮的产物帧数/帧率一致（274 帧 / 12 fps，抽样比对内容近似度 84~85%）。按既定裁定「截断属正常产物」：玩家不干预时 45~60 秒的长卡在 350 帧预算下两档都会截断并标 `complete = false`。
 
@@ -294,10 +295,10 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 设置板块「信息」类别页底部挂一组「符卡 GIF 录制设置」（`RecordingConfigPanel`，默认折叠）：引擎目录、并行度、沙箱根、插件状态、高级参数五段。该类别页没有独立场景（节点直接写在 `SettingsPanel.tscn` 里），故分组按本页既有的「C# 构建行」范式在依赖解析后创建（`InfoConfigPanel.EnsureRecordingSection`），并在该页每次被切显时刷新一次状态（`VisibilityChanged`）。
 
-配置项一律复用 `DataManager.RecordingConfig` 的既有字段（引擎目录 / 并行度 / 沙箱根 / 帧数上限 / 两个抽帧间隔 / 上次输出目录），**不新增持久化字段**，写入走既有防抖自动保存。写回纪律：
+配置项一律复用 `DataManager.RecordingConfig` 的既有字段（引擎目录 / 并行度 / 沙箱根 / 帧数上限 / 两个抽帧间隔 / 放缩比 / 上次输出目录），写入走既有防抖自动保存。写回纪律：
 
 - **非法值不落盘**：引擎目录经 `EngineLocator.TryValidate`、沙箱根经 `RecordingSandbox.TryValidateRoot` 校验，不通过则保留原值、只把原因写在状态行上——提示与配置分离，避免「面板提示已改、实际没改」的错觉。
-- **越界收敛**：并行度 1~32、帧数上限 1~1000、抽帧间隔 1~60，由 `RecordingConfig.ClampParallelism`/`ClampMaxFrame`/`ClampInterval` 收敛后写回。
+- **越界收敛**：并行度 1~32、帧数上限 1~1000、抽帧间隔 1~60、放缩比 10~100（步进 5，百分比），由 `RecordingConfig.ClampParallelism`/`ClampMaxFrame`/`ClampInterval`/`ClampScalePercent` 收敛后写回。
 - **推断只作建议**：「从 Sharp 目录推断」复用 `EngineLocator.TryInferFromSharpDir`（沿「整合」板块的 Editor Sharp 目录上溯找 `game/launch`），结果仍走同一套校验，不隐式改写用户配置。
 
 **插件部署**（`PluginDeployer`）：判定与动作收在一处，UI 与沙箱共用同一判据（`TryValidateForRecording`），避免出现「面板显示就绪、起录却被拒」的两套口径；`RecordingSandbox.ValidateSource` 不再自己判插件，只转述该判据的原因串（原异常文案逐字不变）。
@@ -312,9 +313,9 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 - **零写入约束**：用户没点任何按钮时，面板只做只读检查（`Inspect`），不碰引擎目录。
 - 沙箱侧新增 `TryValidateRoot`（沙箱根存在性 + 一次性写入探针；配置为空时允许就地创建默认目录，用户手选的目录必须已存在）；`EstimateFootprint` 允许工程包路径为空（设置页刚配引擎时还没有包），缺失项按 0 计。
 
-验证：编译 0 错误，GoDotTest **588 通过 / 0 失败**（带窗口运行；新增 `PluginDeployerTest`（三态判定、清单损坏、清单缺失、同名前缀目录不误命中、禁用条目、只读检查不写盘、安装幂等与备份、启用最小改动、缺件原因串逐字比对）、`RecordingConfigPanelTest`（配置回填、非法值不落盘、越界收敛、推断失败不写配置、状态渲染与按钮启停、一键部署联动与失败原因、无引擎目录时误点不改盘）与 `RecordingSandboxTest` 的 `TryValidateRoot` 与四种插件缺件拒绝建副本）。
+验证（当时）：编译 0 错误，GoDotTest **588 通过 / 0 失败**（带窗口运行；新增 `PluginDeployerTest`（三态判定、清单损坏、清单缺失、同名前缀目录不误命中、禁用条目、只读检查不写盘、安装幂等与备份、启用最小改动、缺件原因串逐字比对）、`RecordingConfigPanelTest`（配置回填、非法值不落盘、越界收敛、推断失败不写配置、状态渲染与按钮启停、一键部署联动与失败原因、无引擎目录时误点不改盘）与 `RecordingSandboxTest` 的 `TryValidateRoot` 与四种插件缺件拒绝建副本）。
 
-### 录制入口、`manifest.json` 与自动导入（P5，进行中）
+### 录制入口、`manifest.json` 与自动导入（P5，已完成）
 
 入口复用信息板块 GIF 集栏里既有的「录制」按钮（`GifSetPanel.%RecordButton`，此前为占位禁用），不新增类别页、不改 `GifSetPanel.tscn`。点击后按序执行：**前置检查**（引擎目录、插件状态、沙箱根，复用 `PluginDeployer` 与 `RecordingSandbox.TryValidateRoot`；不通过则不起任何进程并在原处说明原因）→ **手选工程包 zip** → **手选输出目录** → `RecordingOrchestrator.RunAsync`；进度以 C# 构建的模态对话框呈现（阶段 + 已完成/总数 + 各 worker 正在录的卡 + 取消），取消沿用既有语义。
 
@@ -336,9 +337,9 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 ### 实施阶段
 
-P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完成）→ P3 批量并行录制 + 沙箱隔离（已完成）→ P4 配置与设置面板（已完成）→ P5 `manifest.json`、录制入口与自动导入（进行中）→ P6 单测补齐与真机验收（待 P5 交付后另行评审）。
+P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完成）→ P3 批量并行录制 + 沙箱隔离（已完成）→ P4 配置与设置面板（已完成）→ P5 `manifest.json`、录制入口与自动导入（已完成）→ P6 单测补齐与真机验收（单测已补齐，真机录制验收待用户执行）。
 
-- C# 侧（`src/core/recording/`）：`EngineLocator` 校验引擎目录并定位 exe；`RecordingJobWriter` 写任务文件并维护运行期目录；`GameProcessRunner` 构造参数串、启动进程、超时杀进程、校验并读回结果、回收 `engine.log` 尾部；`GifNaming` 承载序号与命名规则；`GifSetBuilder` 归集产物（拷贝改名 + 读 GIF 头尺寸）；`RecordingSandbox` 造/清沙箱并清扫残留；`RecordingScheduler` 分配 worker 与抢卡；`RecordingOrchestrator` 串起「校验引擎 → 写任务 → 启动进程 → 校验结果 → 派生序号」的枚举闭环与「截断换挡重录 → 归集产物」的单卡录制闭环，并在 `RunAsync` 里编排整轮（并行录制 → 串行归集 → 写报告）。
+- C# 侧（`src/core/recording/`）：`EngineLocator` 校验引擎目录并定位 exe；`RecordingJobWriter` 写任务文件并维护运行期目录；`GameProcessRunner` 构造参数串、启动进程、超时杀进程、校验并读回结果、回收 `engine.log` 尾部；`GifNaming` 承载序号与命名规则；`GifSetBuilder` 归集产物（拷贝改名 + 读 GIF 头尺寸）；`RecordingSandbox` 造/清沙箱并清扫残留；`RecordingScheduler` 分配 worker 与抢卡；`RecordingOrchestrator` 串起「校验引擎 → 写任务 → 启动进程 → 校验结果 → 派生序号」的枚举闭环与「截断换挡重录 → 归集产物」的单卡录制闭环，并在 `RunAsync` 里编排整轮（并行录制 → 串行归集 → 写报告）；`PluginDeployer` 负责插件三态判定与部署，`GifSetManifestWriter` 负责写 `manifest.json`。其中 `RecordingOrchestrator` 由 `RecordingOrchestrator.cs`（枚举/单卡）与 `RecordingOrchestrator.Run.cs`（整轮编排）两部分组成。
 - 游戏侧插件（`src/plugin/luastg/autocmex/`）：`__init__` 入口（无任务时零副作用）、`job` 任务校验与结果写出、`cards` 卡表枚举、`record` 跳卡/起录/收尾/退出、`log` 诊断日志。
 
 ---
@@ -354,19 +355,28 @@ AutoCMEX/
 │   │   ├── guessing/       # 猜测板块
 │   │   ├── info/           # 信息板块（四栏 + 下栏目标群与发布）
 │   │   ├── settings/       # 设置板块
-│   │   └── help/           # 帮助板块（Markdown 渲染）
+│   │   ├── logging/        # 日志板块
+│   │   ├── websocket/      # WebSocket 状态面板
+│   │   └── help/           # 帮助板块（仅占位场景，待开发）
 │   ├── core/               # 核心业务逻辑
+│   │   ├── merge/          # 整合：创作者包导入、注入式合并、对应表重排、导出
 │   │   ├── guessing/       # 猜测处理引擎（策略模式）
 │   │   ├── info/           # 信息板块：两表推导、GIF 集导入、离屏出图、发布编排
 │   │   ├── recording/      # 符卡 GIF 录制：引擎定位、插件部署、沙箱隔离、并行调度、进程运行、归集与报告
 │   │   ├── ai/             # AI 模型调用（OpenAI / Anthropic）
-│   │   └── storage/        # 数据存储与 AES 加密
+│   │   ├── storage/        # 数据存储与 AES 加密
+│   │   ├── logging/        # 日志服务与滚动落盘
+│   │   └── websocket/      # WebSocket 服务端/客户端与协议
+│   ├── models/             # 数据模型（AutoValue / AutoList 配置与报告模型）
+│   ├── services/           # 应用级服务（Koishi 插件安装等）
+│   ├── helpers/            # 通用小工具
 │   └── plugin/             # 外部插件
 │       ├── koishi/         # Koishi v4 插件代码
 │       └── luastg/         # LuaSTG 引擎侧插件
 │           └── autocmex/   # 符卡录制插件（随应用分发到 game/plugins/autocmex/）
 ├── docs/                   # 项目文档
-└── assets/                 # 静态资源（Logo 等）
+├── test/                   # GoDotTest 测试
+└── icon.png                # 应用图标（Logo）
 ```
 
 场景管理：所有板块场景在启动时预加载，切换时显隐控制。
@@ -375,12 +385,12 @@ AutoCMEX/
 
 ## 当前任务状态
 
-| 板块 | 状态     | 说明                                                                                                        |
-| ---- | -------- | ----------------------------------------------------------------------------------------------------------- |
-| 整合 | 暂不开发 | 细节待补充                                                                                                  |
-| 猜测 | 已实现   | 核心板块，需求已明确                                                                                        |
-| 信息 | 已实现   | 四栏展示 + 一键转发；符卡录制模块已到 P4（配置与插件部署），P5（`manifest.json`、录制入口与自动导入）进行中 |
-| 设置 | 部分实现 | AI 模型与群聊配置已实现；「信息」类别页含目标群与录制设置                                                   |
-| 帮助 | 待开发   | 内置 Markdown 渲染                                                                                          |
+| 板块 | 状态     | 说明                                                                                                                    |
+| ---- | -------- | ----------------------------------------------------------------------------------------------------------------------- |
+| 整合 | 已实现   | 创作者包导入、注入点检测、对应表重排、合并导出（两种算法）与三列对应表                                                  |
+| 猜测 | 已实现   | 核心板块，需求已明确                                                                                                    |
+| 信息 | 已实现   | 四栏展示 + 一键转发 + 猜测表自动推送；录制已到 P5（`manifest.json`、录制入口与自动导入），P6 单测已补齐、真机验收待执行 |
+| 设置 | 部分实现 | 仅 AI 模型 / 群聊 / 信息三类有配置页（其余类别为占位）；「信息」类别页含目标群与录制设置                                |
+| 帮助 | 待开发   | 内置 Markdown 渲染                                                                                                      |
 
-**当前阶段**：核心功能（猜测引擎、AI 模糊化、数据存储、WebSocket 服务）已实现，设置板块 AI 模型与群聊配置、信息板块四栏展示与发布已完成；符卡 GIF 录制模块进行中，已完成引擎侧插件、枚举最小闭环（P1）、单卡录制闭环（P2）、批量并行录制与沙箱隔离（P3）以及配置与插件部署（P4）；P5（`manifest.json`、录制入口与自动导入）进行中，P6（单测补齐与真机验收）待 P5 交付后另行评审。
+**当前阶段**：整合板块（创作者包导入、模板注入点检测、对应表重排、合并导出）、猜测引擎与 AI 模糊化、信息板块四栏展示与发布、数据存储与 WebSocket 服务、设置板块 AI 模型/群聊/录制配置均已实现；符卡 GIF 录制模块已交付到 P5（`manifest.json` 产物、录制入口与自动导入），P6 单测已补齐，真机录制验收待用户执行。帮助板块仍为占位。
