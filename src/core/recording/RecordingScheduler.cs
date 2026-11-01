@@ -30,8 +30,9 @@ public sealed record RecordingScheduleResult(
 /// 先建沙箱再领卡，就不会出现「沙箱建失败 → 那张卡被认领后没人录」的空洞。
 /// </para>
 /// <para>
-/// <b>失败隔离</b>：worker 准备失败或处理项抛异常都只记进 <see cref="RecordingScheduleResult.WorkerErrors"/>
-/// 并让该 worker 退出，其余 worker 照常把待办项做完。
+/// <b>失败隔离</b>：worker 准备失败只记进 <see cref="RecordingScheduleResult.WorkerErrors"/>
+/// 并让该 worker 退出；处理项抛异常同样记进该列表，但该 worker 不退出、继续领取下一项，
+/// 其余 worker 照常把待办项做完。
 /// </para>
 /// </remarks>
 public sealed class RecordingScheduler

@@ -12,7 +12,7 @@ using System.Linq;
 /// 本文件的全部方法都是纯查询（不写盘、不起进程），便于 UI 侧随时调用做状态提示。
 /// </para>
 /// <para>
-/// 「引擎目录」= 含 <c>game/</c> 与 <c>doc/</c> 的 LuaSTG 根目录；可执行文件位于 <c>game/</c> 内
+/// 「引擎目录」= 含 <c>game/</c>（且 <c>game/</c> 内有 <c>launch</c>）的 LuaSTG 根目录；可执行文件位于 <c>game/</c> 内
 /// （根目录下没有 exe），且进程的工作目录必须是 <c>game/</c> —— 这一点由
 /// <c>GameProcessRunner</c> 保证。
 /// </para>

@@ -531,7 +531,7 @@ function record.install_hook()
     return true
 end
 
---- 入口：读任务 → 建上下文 → 装钩子。任何异常都转成结果文件，避免静默失败。
+--- 入口：读任务 → 建上下文 → 装钩子；进入上下文后的失败都写成结果文件，任务文件本身不合法时只在控制台报错返回。
 ---@param job_path string 相对 game/ 的 job.json 路径
 function record.run(job_path)
     local spec, err = jobspec.load(job_path)

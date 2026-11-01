@@ -504,9 +504,9 @@ public sealed partial class RecordingOrchestrator
     return affordable > int.MaxValue ? int.MaxValue : (int)affordable;
   }
 
-  /// <summary>字节数转 MB（向上取整，便于日志展示）。</summary>
+  /// <summary>字节数转 MiB（向上取整，便于日志展示）。</summary>
   /// <param name="bytes">字节数；负数原样返回。</param>
-  /// <returns>MB 数。</returns>
+  /// <returns>MiB 数。</returns>
   private static long ToMegabytes(long bytes) => bytes < 0 ? bytes : (bytes + 1048575) / 1048576;
 
   /// <summary>

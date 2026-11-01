@@ -97,7 +97,7 @@ public static class GifNaming
   /// <summary>按下标升序枚举到目标卡（含目标卡）为止。</summary>
   /// <param name="cards">卡表。</param>
   /// <param name="absoluteIndex">目标卡绝对下标。</param>
-  /// <returns>可枚举序列；目标卡不存在时为空序列。</returns>
+  /// <returns>下标不大于目标的卡序列；目标卡不存在时仍返回该前缀（序号由调用方的 <c>Find</c> 判空后返回 <see cref="NoOrdinal"/>）。</returns>
   private static IEnumerable<RecordingCardInfo> EnumerateUntil(
     IReadOnlyList<RecordingCardInfo>? cards,
     int absoluteIndex

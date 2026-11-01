@@ -85,7 +85,7 @@ public sealed class RecordingSandbox
     WorkerIndex = workerIndex;
   }
 
-  /// <summary>沙箱根目录（其下有 <c>game/</c>）；可直接当作既有接口里的 <paramref name="engineDir"/> 用。</summary>
+  /// <summary>沙箱根目录（其下有 <c>game/</c>）；可直接当作既有接口里的 <c>engineDir</c> 用。</summary>
   public string EngineDir { get; }
 
   /// <summary>沙箱内的 <c>game/</c> 目录（进程工作目录）。</summary>
@@ -341,6 +341,13 @@ public sealed class RecordingSandbox
   }
 
   /// <summary>同步构建沙箱（复制耗时故由 <see cref="CreateAsync"/> 放到线程池）。</summary>
+  /// <param name="engineDir">真实引擎根目录（只读）。</param>
+  /// <param name="modPackZipPath">用户手选的工程包（复制进沙箱 <c>mod/</c>）。</param>
+  /// <param name="engineExeFileName">引擎可执行文件名（各 worker 复制同一个）。</param>
+  /// <param name="rootDir">沙箱根目录。</param>
+  /// <param name="workerIndex">worker 序号（1 基，进目录名）。</param>
+  /// <param name="log">日志。</param>
+  /// <param name="cancellationToken">取消令牌。</param>
   private static RecordingSandbox Build(
     string engineDir,
     string modPackZipPath,
@@ -457,6 +464,9 @@ public sealed class RecordingSandbox
   }
 
   /// <summary>递归复制目录（先建全部子目录，保住空目录语义）。</summary>
+  /// <param name="sourceDir">源目录（须已存在）。</param>
+  /// <param name="targetDir">目标目录（不存在则创建）。</param>
+  /// <param name="cancellationToken">取消令牌（每个文件复制前检查）。</param>
   private static void MirrorTree(
     string sourceDir,
     string targetDir,

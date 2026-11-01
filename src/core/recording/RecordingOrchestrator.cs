@@ -131,7 +131,7 @@ public sealed record RecordingCardOutcome(
 /// 它**只录不归集**——产物留在沙箱里，由 <see cref="RunAsync"/> 统一改名进集。
 /// </para>
 /// <para>
-/// 并发约束：同一 <paramref name="engineDir"/> 不得被两个进程共用——录制器临时目录在启动时被
+/// 并发约束：同一 <c>engineDir</c> 不得被两个进程共用——录制器临时目录在启动时被
 /// 清空，产物名又是秒级时间戳。并行靠「一个 worker 一份沙箱」满足该约束，而不是靠串行化。
 /// </para>
 /// </remarks>
@@ -179,7 +179,7 @@ public sealed partial class RecordingOrchestrator
   /// <summary>
   /// 枚举指定引擎目录下当前 Boss 的完整卡表（含对话阶段），并补全 CMEX 侧序号。
   /// </summary>
-  /// <param name="engineDir">已选定的引擎根目录（其下须有 <c>game/LuaSTGSub.exe</c>）。</param>
+  /// <param name="engineDir">已选定的引擎根目录（其下须有 <c>game/launch</c>；可执行文件按 <c>LuaSTGSub*.exe</c> 通配定位）。</param>
   /// <param name="modPackName">工程包名（引擎 <c>mod/</c> 下的包名）。</param>
   /// <param name="cancellationToken">取消令牌，用于中止用户已放弃的枚举。</param>
   /// <param name="timeout">超时；传 <c>null</c> 用 <see cref="EnumerateTimeout"/>。</param>
@@ -267,7 +267,7 @@ public sealed partial class RecordingOrchestrator
   /// <para>
   /// 换挡还有第二条触发条件——**产物体积**：QQ 发不出 <c>&gt;= 30MB</c> 的动图（<c>GifSizeLimitBytes</c>，30MB 取十进制），
   /// 故首次产物已达该体积时同样换 <c>SecondInterval</c> 重录一次（间隔更疏 ⇒ 帧更少 ⇒ 体积更小）。
-  /// 第二次若仍超限只留一条 <c>WARN</c> 日志、照常采用该产物：产物本身可用，发不发得出去由调用方判断。
+  /// 第二次若仍超限只留一条日志（当前实现为 <c>_log.Print</c> 信息级，非 <c>WARN</c>）、照常采用该产物：产物本身可用，发不发得出去由调用方判断。
   /// </para>
   /// <para>
   /// <see cref="RecordingCardOutcome.Complete"/> 取保守口径：凡触发重录的卡一律记 <c>false</c>，
@@ -425,7 +425,7 @@ public sealed partial class RecordingOrchestrator
         + $"（{Mebibytes(sizeBytes):F1} MiB）"
     );
 
-    // 换挡后仍超限：不做第三次尝试，留一条 WARN 让真机一眼看到哪张卡发不出去
+    // 换挡后仍超限：不做第三次尝试，留一条日志（_log.Print，信息级）让真机一眼看到哪张卡发不出去
     if (attempts > 1 && sizeBytes >= GifSizeLimitBytes)
     {
       _log.Print(
@@ -659,7 +659,7 @@ public sealed partial class RecordingOrchestrator
 
   /// <summary>读取产物 GIF 的字节数。</summary>
   /// <param name="engineDir">引擎根目录。</param>
-  /// <param name="gifPath">结果文件里的 <c>gif_path</c>（相对引擎根）。</param>
+  /// <param name="gifPath">结果文件里的 <c>gif_path</c>（相对 <c>game/</c>）。</param>
   /// <returns>文件字节数；文件不存在时为 0（产物落盘由 <see cref="EvaluateAttempt"/> 负责判定）。</returns>
   private static long GifSizeBytes(string engineDir, string gifPath)
   {

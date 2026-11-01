@@ -74,7 +74,7 @@ end
 
 --- 枚举整张卡表。
 ---@param class_name string
----@return table[] 每项 `{absolute_index, name, is_sc, is_combat, t3}`
+---@return table[] 每项 `{absolute_index, name, is_sc, is_combat, t3}`；t3 已由帧换算为秒（帧/60），对话阶段为 0
 function cards.enumerate(class_name)
     local class_type = type(_editor_class) == "table" and _editor_class[class_name] or nil
     if type(class_type) ~= "table" or type(class_type.cards) ~= "table" then

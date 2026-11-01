@@ -9,11 +9,12 @@ using System.Text;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 本阶段（单卡录制闭环）只落「取件改名」与「读 GIF 头」两步：录制器的产物名是秒级
+/// 单卡录制闭环负责「取件改名」与「读 GIF 头」两步：录制器的产物名是秒级
 /// 时间戳且带 <c>task_</c> 前缀，必须改成集内约定的 <c>{序号}.gif</c> 才能被信息板块复用。
 /// </para>
 /// <para>
-/// 清单 <c>manifest.json</c> 与报告由后续阶段在同一入口下补齐。
+/// 集清单 <c>manifest.json</c> 与报告分别由 <see cref="GifSetManifestWriter"/> / <see cref="RecordingOrchestrator"/>
+/// 在 <see cref="RecordingOrchestrator.RunAsync"/> 的本轮收尾时补齐。
 /// </para>
 /// </remarks>
 public static class GifSetBuilder
