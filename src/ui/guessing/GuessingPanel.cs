@@ -369,7 +369,7 @@ public partial class GuessingPanel : Control, IGuessingPanel
   /// </summary>
   /// <param name="outcomes">重试结局（按丢包记录顺序）。</param>
   /// <remarks>
-  /// 重试不再只是「数成功率」：没回帖的原因（非猜测 / 链路未运行 / 原消息已过期）必须让用户看见，
+  /// 重试不再只是「数成功率」：没回帖的原因（非猜测 / 链路未运行 / 结果未送达）必须让用户看见，
   /// 否则「记录了去留却说不清为什么」。
   /// </remarks>
   private void ShowRetryOutcomes(IReadOnlyList<DroppedRetryOutcome> outcomes)

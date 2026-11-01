@@ -17,7 +17,7 @@ public enum DroppedRetryStatus
   /// <summary>重放判定为非猜测，记录保留待用户处置。</summary>
   NotGuess,
 
-  /// <summary>重放失败（AI 仍不可用等），记录保留。</summary>
+  /// <summary>重放过程中出错（记录不存在、推送异常），记录保留；AI 不可用等重放失败按 <see cref="DroppedRetryStatus.NotGuess"/> 归类。</summary>
   Failed,
 
   /// <summary>链路没在跑、没有对端或推送失败，结果没能送达，记录保留。</summary>

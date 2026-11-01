@@ -21,7 +21,7 @@ using Godot;
 /// <summary>
 /// 符卡表面板 — 独立场景，管理符卡表的展示、编辑和 CRUD。
 /// UI 由 Sync 绑定驱动（AutoList/AutoValue 的 Bind() 自动推送变更），
-/// 事件处理器只写数据模型，不做手动刷新。
+/// 事件处理器只写数据模型（唯一例外：Boss 重命名时同步刷新下拉项文本），不自建刷新链路。
 /// 符卡列表增删重建整棵树；符卡自身的属性（符卡名 / 创作者 / 是否已猜出）
 /// 变化只改写对应行，不打断滚动位置与选中项。
 /// </summary>
@@ -383,7 +383,7 @@ public partial class SpellCardPanel : VBoxContainer
     _cardBindings.Clear();
   }
 
-  // ==================== 事件处理器（只写数据模型） ====================
+  // ==================== 事件处理器（只写数据模型；Boss 重命名例外，需同步下拉项） ====================
 
   private void OnBossSelected(long index)
   {

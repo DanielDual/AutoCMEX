@@ -13,7 +13,7 @@ public static partial class GuessParser
   private static ILog _log => AppLogs.GetOrCreate().GetLogger(nameof(GuessParser));
 
   /// <summary>
-  /// 严格格式正则：数字+非空白字符，空格分隔
+  /// 严格格式正则：数字+非空白字符，分隔符为任意空白（<c>\s+</c>）；注意 Parse 后续只按半角空格切分
   /// </summary>
   [GeneratedRegex(@"^(\d+\S+)(\s+\d+\S+)*$", RegexOptions.Compiled)]
   private static partial Regex StrictFormatRegex();
