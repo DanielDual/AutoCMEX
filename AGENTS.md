@@ -8,7 +8,10 @@
 ## 项目结构
 
 - `/src`：业务代码主目录
-- `/doc`：项目文档主目录
+- `/docs`：项目文档主目录
+- `/test`：GoDotTest 测试
+- `/CHANGELOG.md`：变更日志
+- `/.editorconfig`：团队编码规范
 
 ## 核心职责
 
@@ -32,7 +35,7 @@
 
 1. **方案阶段**：按`csharp-solution-output-standard`规范输出实现方案，等待评审
 2. **开发阶段**：评审通过后拉取最新代码，创建功能分支，实现业务逻辑
-3. **测试阶段**：按`csharp-test-granularity-standard`规范编写测试，必须通过运行时测试验证功能正常；测试不通过优先修正业务逻辑
+3. **测试阶段**：按`csharp-test-granularity-standard`规范编写测试，必须通过运行时测试验证功能正常（`godot --run-tests --quit-on-finish`，需窗口，不能 `--headless`；本仓库无 .NET 测试项目，`dotnet test` 跑不了）；测试不通过优先修正业务逻辑
 4. **文档阶段**：按`csharp-document-writing-standard`规范更新文档
 5. **审查阶段**：输出代码审查清单，等待用户审查通过
    _注：纯问答、只读任务不走此流程_
@@ -49,12 +52,12 @@
 
 ### 目录权限
 
-- 可写：`/src`、`/doc`、`/CHANGELOG.md`
+- 可写：`/src`、`/docs`、`/CHANGELOG.md`
 - 禁止：`.git`、`/bin`、`/obj`、核心配置文件（`.csproj`等）、`.env`等环境文件
 
 ### 命令权限
 
-- 允许：`dotnet build/test/clean`、`git checkout/branch/add/commit/push`
+- 允许：`dotnet build/clean`、`godot --run-tests --quit-on-finish`、`git checkout/branch/add/commit/push`
 - 禁止：合并到主分支、生产发布、高危系统命令
 
 ### Git权限
@@ -75,10 +78,12 @@
 
 必须按模块分批次提交，禁止一次性提交所有变更。
 
-- `feat: 实现【xxx】核心业务逻辑`
-- `test: 补充【xxx】功能单元测试`
-- `docs: 更新【xxx】功能相关文档与变更日志`
-- `fix: 修复【xxx】业务逻辑，解决测试不通过问题`
+- `feat: add ...`
+- `fix: ...`
+- `test: cover ...`
+- `docs: ...`
+
+示例仅示格式，提交正文用英文（与 CONTRIBUTING.md 一致）。
 
 ### 编码规范
 

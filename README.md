@@ -54,13 +54,13 @@ bash coverage.sh
 2. 在 Koishi 控制台启用 `adapter-autocmex`；
 3. 配一个 OneBot 适配器（如 NapCat）把消息送到 QQ。
 
-AutoCMEX 作为 WebSocket 服务端，默认监听 `5140` 端口；Koishi 侧填同一个地址。
+AutoCMEX 默认作为 WebSocket 服务端监听 `5140` 端口（设置 → 群聊里也可切到 Client 模式，主动连接 Koishi 地址）；Koishi 侧填同一个地址。
 
 ## 目录结构
 
 ```
 src/
-  core/        业务逻辑：merge / guessing / info / recording / ai / storage / websocket
+  core/        业务逻辑：merge / guessing / info / recording / ai / storage / websocket / logging
   ui/          各板块界面（一个板块一个 .tscn）
   plugin/      Koishi 插件与 LuaSTG 录制插件
 docs/          功能、技术、UI 文档
