@@ -8,6 +8,7 @@
 [ext_resource type="PackedScene" uid="uid://xa0vkqnpj1n0" path="res://src/ui/merge/MergePanel.tscn" id="6_merge"]
 [ext_resource type="PackedScene" uid="uid://cmb8ndpqvxtot" path="res://src/ui/info/InfoPanel.tscn" id="7_info"]
 [ext_resource type="PackedScene" uid="uid://lpqr6wef3tj8" path="res://src/ui/help/HelpPanel.tscn" id="8_help"]
+[ext_resource type="Texture2D" uid="uid://vy3jnr6nuosn" path="res://src/assets/brand/logo-lockup.svg" id="9_logo"]
 
 [node name="Control2" type="Control" unique_id=764712909]
 layout_mode = 3
@@ -33,10 +34,13 @@ unique_name_in_owner = true
 custom_minimum_size = Vector2(200, 0)
 layout_mode = 2
 
-[node name="LogoLabel" type="Label" parent="MainContainer/LeftPanel" unique_id=1068289771]
+[node name="Logo" type="TextureRect" parent="MainContainer/LeftPanel" unique_id=1068289772]
+custom_minimum_size = Vector2(184, 56)
+size_flags_horizontal = 4
 layout_mode = 2
-text = "AutoCMEX"
-horizontal_alignment = 1
+texture = ExtResource("9_logo")
+expand_mode = 1
+stretch_mode = 5
 
 [node name="LogoSeparator" type="HSeparator" parent="MainContainer/LeftPanel" unique_id=708768049]
 layout_mode = 2
