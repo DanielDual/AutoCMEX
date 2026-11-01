@@ -26,8 +26,6 @@ AutoCMEX 把一场 CMEX 活动从收稿到公布串起来：合并参与者提�
 
 程序数据保存在用户数据目录的 JSON 文件中，AI Key 用 AES 加密后落盘。
 
-仓库不包含 `addons/` 下的编辑器内 MCP 工具（本地开发用，未跟踪）。首次打开时若提示插件或 autoload 缺失，可忽略，不影响主程序运行。
-
 ## 构建
 
 ```sh
@@ -45,6 +43,18 @@ godot --run-tests --quit-on-finish
 ```sh
 bash coverage.sh
 ```
+
+## 导出
+
+导出预设随仓库提供（`export_presets.cfg`，预设名 `Windows Desktop`），产物输出到 `builds/windows/AutoCMEX.exe`（`builds/` 已忽略）：
+
+```sh
+godot --headless --export-release "Windows Desktop" builds/windows/AutoCMEX.exe
+```
+
+版本号以 `project.godot` 的 `application/config/version` 为唯一来源，Windows 文件版本与产品版本留空时会自动取它。
+
+`addons/` 下的编辑器/运行时插件只在本地开发用，导出时由 `exclude_filter` 排除。
 
 ## 配合 Koishi
 
@@ -65,6 +75,7 @@ src/
   plugin/      Koishi 插件与 LuaSTG 录制插件
 docs/          功能、技术、UI 文档
 test/          GoDotTest 测试
+addons/        开发期编辑器/运行时插件
 ```
 
 ## 文档
