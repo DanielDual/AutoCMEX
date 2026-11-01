@@ -9,7 +9,7 @@ public enum RecordingPluginState
   /// <summary>已安装且已启用，录制可用。</summary>
   Ready,
 
-  /// <summary>已安装，但在 <c>plugins.json</c> 里被显式禁用（引擎不会加载它）。</summary>
+  /// <summary>已安装但引擎不会加载：在 <c>plugins.json</c> 里被显式禁用，或 <c>plugins.json</c> 缺失。</summary>
   InstalledDisabled,
 
   /// <summary>未安装到引擎目录。</summary>
@@ -34,13 +34,13 @@ public sealed class RecordingPluginStatus
   /// <summary>是否已安装（目录与入口文件已在引擎目录里）。</summary>
   public bool Installed { get; init; }
 
-  /// <summary>引擎是否会加载它（<c>plugins.json</c> 未禁用或无条目）。</summary>
+  /// <summary>引擎是否会加载它（清单缺失时为 false；清单存在时未被禁用或无条目为 true）。</summary>
   public bool Enabled { get; init; }
 
   /// <summary>是否可执行「一键安装」（仅自带插件；第三方插件永远为 false）。</summary>
   public bool CanInstall { get; init; }
 
-  /// <summary>是否可执行「一键启用」（仅在清单里存在该条目的前提下、条目被禁用时为 true）。</summary>
+  /// <summary>是否可执行「一键启用」（条目被禁用时为 true；本插件在清单缺失时也置 true——一键安装会新建清单并登记）。</summary>
   public bool CanEnable { get; init; }
 }
 

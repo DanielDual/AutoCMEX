@@ -12,8 +12,8 @@ using Chickensoft.Log;
 /// </summary>
 /// <remarks>
 /// <para>写入当前文件 <c>app.log</c>；每次 <see cref="RotateIfNeeded"/> 检查目录，
-/// 若文件数量超过 <see cref="LogConfig.MaxFileCount"/>，将最旧的文件删除，
-/// 并将 <c>app.log</c> 重命名为 <c>app.1.log</c>，<c>app.1.log</c> 重命名为 <c>app.2.log</c>，依此类推。</para>
+/// 若文件数量达到 <see cref="LogConfig.MaxFileCount"/>（含当前文件）即轮转：先删除最旧的 (数量 − MaxFileCount + 1) 个文件，
+/// 再把剩余文件按同一位移重新编号（例如计数恰为 MaxFileCount 时 <c>app.log</c> → <c>app.1.log</c>、<c>app.1.log</c> → <c>app.2.log</c>），依此类推。</para>
 /// <para>线程安全；自动对敏感字段（API Key、密码、Token 等）做脱敏。</para>
 /// </remarks>
 public sealed partial class RotatingFileWriter : ILogWriter, IDisposable
@@ -50,7 +50,7 @@ public sealed partial class RotatingFileWriter : ILogWriter, IDisposable
   public void WriteError(string message) => WriteInternal(message);
 
   /// <summary>
-  /// 检查并执行轮转（删除超过 <see cref="LogConfig.MaxFileCount"/> 的旧文件）。
+  /// 检查并执行轮转（文件数达到 <see cref="LogConfig.MaxFileCount"/> 时删除最旧的多余文件，并把剩余文件按位移重新编号）。
   /// </summary>
   public void RotateIfNeeded()
   {

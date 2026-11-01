@@ -21,7 +21,7 @@ public class LogConfig
   /// <summary>默认内存缓冲区条数。</summary>
   public const int DefaultInMemoryBufferSize = 1000;
 
-  /// <summary>最低记录日志级别。低于此级别的日志不输出。</summary>
+  /// <summary>内存日志缓冲区的最低记录级别（低于此级别只从 UI 内存缓冲中过滤；日志文件与 Godot 控制台仍记录全部级别）。</summary>
   public LogLevel MinLevel { get; set; } = LogLevel.Info;
 
   /// <summary>日志根目录（绝对路径）。默认为 <c>%TEMP%/AutoCMEX/logs</c>。</summary>
@@ -30,7 +30,7 @@ public class LogConfig
   /// <summary>当前日志文件名（不含路径）。</summary>
   public string FileName { get; set; } = DefaultLogFileName;
 
-  /// <summary>最大保留日志文件数量（含当前文件），超过将自动轮转删除最旧文件。</summary>
+  /// <summary>最大保留日志文件数量（含当前文件）；需显式调用 <c>RotateIfNeeded</c> 才会轮转（当前只在日志设置面板点「Apply Config」时触发），不会自动发生。</summary>
   public int MaxFileCount { get; set; } = DefaultMaxFileCount;
 
   /// <summary>内存缓冲区条目上限，超出后丢弃最旧条目。</summary>

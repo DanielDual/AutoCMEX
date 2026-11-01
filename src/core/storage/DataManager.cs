@@ -58,7 +58,7 @@ public class DataManager : IDisposable
   private AutoValue<string>.Binding? _koishiWebSocketUrlBinding;
 
   /// <summary>
-  /// UI 刷新由 AutoList/AutoValue 的 Bind().OnModify() / Bind().OnValue() 自动驱动
+  /// 订阅若干设置项变化，仅用于打印变更日志（UI 刷新由各面板自身的 Bind().OnModify() / Bind().OnValue() 驱动）
   /// </summary>
   private void BindSettingsChanges()
   {
@@ -136,7 +136,7 @@ public class DataManager : IDisposable
     _settings = LoadJson<AppSettings>("app_settings.json") ?? new();
     // 回填被 JSON 显式 null 覆盖的 AutoValue/AutoList 属性，保证同步绑定链路非空
     _settings.EnsureIntegrity();
-    // Subscribe to AutoValue changes to notify UI components
+    // Subscribe to AutoValue changes only for change logging (UI refresh is driven by each panel's own Bind())
     BindSettingsChanges();
 
     var loadedCreatorPackages = LoadJson<List<CreatorPackage>>("creator_packages.json") ?? new();

@@ -79,7 +79,7 @@ public sealed record RecordingRunResult(
 /// <param name="WorkerIndex">worker 序号（1 基）。</param>
 /// <param name="CombatOrdinal">战斗阶段序号（1 基）。</param>
 /// <param name="EntryName">清单名（符卡名或「普通攻击 N」）。</param>
-/// <param name="Attempt">当前尝试序号（1 = 首次；2 = 截断后换挡重录）。</param>
+/// <param name="Attempt">当前尝试序号（1 = 首次；2 = 首次截断或产物超限（≥30MB）后换挡重录）。</param>
 public sealed record RecordingWorkerProgress(
   int WorkerIndex,
   int CombatOrdinal,
@@ -148,7 +148,7 @@ public sealed class RecordingCardReport
   [JsonPropertyName("complete")]
   public bool Complete { get; set; }
 
-  /// <summary>区间尝试次数（1 = 首次即录完；2 = 首次截断后重录）。</summary>
+  /// <summary>区间尝试次数（1 = 首次即录完；2 = 首次截断或产物超限（≥30MB）后换挡重录）。</summary>
   [JsonPropertyName("attempts")]
   public int Attempts { get; set; }
 
@@ -156,7 +156,7 @@ public sealed class RecordingCardReport
   [JsonPropertyName("runs")]
   public int Runs { get; set; }
 
-  /// <summary>承载这张卡的 worker 序号（1 基）；未录制时为 0。</summary>
+  /// <summary>承载这张卡的 worker 序号（1 基）——当前实现未回填，恒为 0；未录制时同样为 0。</summary>
   [JsonPropertyName("worker")]
   public int Worker { get; set; }
 

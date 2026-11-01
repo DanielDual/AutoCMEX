@@ -13,7 +13,7 @@ using Chickensoft.Sync.Primitives;
 /// <c>Bind().OnValue()</c> 驱动刷新。
 /// </para>
 /// <para>
-/// 「引擎目录」指含 <c>game/</c> 与 <c>doc/</c> 的 LuaSTG 根目录（可执行文件在 <c>game/</c> 内），
+/// 「引擎目录」指含 <c>game/</c> 且 <c>game/</c> 内有 <c>launch</c> 的 LuaSTG 根目录（可执行文件在 <c>game/</c> 内），
 /// 与合并板块的 Sharp 编辑器目录不是同一个概念，故单独配置。
 /// </para>
 /// </remarks>
@@ -44,7 +44,7 @@ public class RecordingConfig
   /// </remarks>
   public AutoValue<int> ScalePercent { get; set; } = new(DefaultScalePercent);
 
-  /// <summary>上次选择的输出目录，用作下次对话框的默认值。</summary>
+  /// <summary>上次录制产物的输出目录（仅记录并在设置页展示，不复用为下次目录选择的默认值）。</summary>
   public AutoValue<string> LastOutputDir { get; set; } = new(string.Empty);
 
   /// <summary>

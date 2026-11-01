@@ -91,7 +91,7 @@ public sealed class RecordingJobSpec
 /// </summary>
 /// <remarks>
 /// 两个阶段共用同一模型：枚举阶段只填 <see cref="Cards"/> 等字段，录制阶段追加产物相关字段。
-/// 全部可空，以便区分「字段缺失」与「字段为假」，由调用方按阶段校验。
+/// 数值/布尔字段可空，以便区分「字段缺失」与「字段为假」；<c>job_id</c>/<c>status</c> 为不可空字符串，由调用方按阶段校验。
 /// </remarks>
 public sealed class RecordingJobResult
 {
@@ -113,7 +113,7 @@ public sealed class RecordingJobResult
   [JsonPropertyName("error")]
   public string? Error { get; set; }
 
-  /// <summary>非致命告警（如插件补设了无敌开关）。</summary>
+  /// <summary>非致命告警（插件只在录制超预算强制收尾时写 <c>record_timeout</c>）。</summary>
   [JsonPropertyName("warning")]
   public string? Warning { get; set; }
 

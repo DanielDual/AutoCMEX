@@ -25,7 +25,7 @@ public class AesEncryptor
   private readonly byte[] _iv;
 
   /// <summary>
-  /// 从密钥文件初始化加密器
+  /// 从密钥文件初始化加密器；文件不存在或不足两行时生成新密钥（256 位）并写回该路径（必要时先创建目录）
   /// </summary>
   /// <param name="keyFilePath">密钥文件路径</param>
   public AesEncryptor(string keyFilePath)
