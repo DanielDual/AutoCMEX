@@ -47,7 +47,7 @@ public class WebSocketInitializer
   /// 根据设置创建 WebSocket 服务器或客户端实例。
   /// </summary>
   /// <param name="settings">应用设置。</param>
-  /// <returns>配置好的 WebSocket 服务器实例。</returns>
+  /// <returns>配置好的 WebSocket 实例（Server 模式的 WebSocketServer 或 Client 模式的 WebSocketClient）。</returns>
   public IWebSocketServer CreateServer(AppSettings settings)
   {
     var protocolHandler = new ProtocolHandler();

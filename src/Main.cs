@@ -112,7 +112,7 @@ public partial class Main : Node2D
 
   public override void _Notification(int what)
   {
-    // Godot 退出通知：WM_CLOSE_REQUEST、CRASH、PREDELETE 等
+    // Godot 退出通知：WM_CLOSE_REQUEST 与 EXIT_TREE 时关闭日志
     if (what == NotificationWMCloseRequest || what == NotificationExitTree)
     {
       ShutdownLogs();

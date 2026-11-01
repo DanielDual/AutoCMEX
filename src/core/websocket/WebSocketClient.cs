@@ -11,7 +11,7 @@ using AutoCMEX.Models;
 using Chickensoft.Log;
 
 /// <summary>
-/// WebSocket 客户端（ws-reserve 模式）：主动连接 Koishi WebSocket 服务
+/// WebSocket 客户端（Client 模式）：主动连接 Koishi WebSocket 服务
 /// </summary>
 public class WebSocketClient : IWebSocketServer, IDisposable
 {
@@ -432,7 +432,8 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   }
 
   /// <summary>
-  /// 心跳循环：按间隔向本次连接的 socket 发 ping，直到连接失效或被取消。
+  /// 心跳循环：按间隔向本次连接的 socket 发一条 type=ack、status=ping 的 JSON 文本消息（不校验回包，仅用于保活），
+  /// 直到连接失效或被取消。
   /// </summary>
   /// <param name="connectionId">连接标识（仅用于日志）。</param>
   /// <param name="ws">本次连接的 socket（不读共享字段，避免重连后旧心跳往新 socket 上发 ping）。</param>

@@ -8,7 +8,7 @@ using AutoCMEX.Core.Guessing;
 using Chickensoft.Log;
 
 /// <summary>
-/// 命令消息处理器：处理 command 类型消息，替代旧 MessageHandler
+/// 命令消息处理器：处理 command 类型消息
 /// </summary>
 public class CommandHandler : IMessageHandler
 {

@@ -217,7 +217,7 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
     // 不再沿用场景里硬编码的「端口: 5140」
     PortLabel.Text = isClient ? $"地址: {_server.Url}" : $"端口: {_server.Port}";
 
-    // Client 只有一条链路，「连接数」与状态行重复，且会变成一行没有前缀的裸文本；直接隐藏整行
+    // Client 只有一条链路，「连接数」与状态行重复；直接隐藏整行
     ConnectionCountLabel.Visible = !isClient;
     ConnectionCountLabel.Text = $"连接数: {_server.ConnectionCount}";
 

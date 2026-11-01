@@ -340,7 +340,9 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     AddChild(SectionBody);
     SectionBody.AddChild(new HSeparator());
 
-    SectionBody.AddChild(new Label { Text = "引擎目录（LuaSTG 根目录，含 game/ 与 doc/）" });
+    SectionBody.AddChild(
+      new Label { Text = "引擎目录（LuaSTG 根目录，需含 game/，且 game/ 内有 launch 文件）" }
+    );
     var engineRow = new HBoxContainer();
     EngineDirEdit = new LineEdit
     {
@@ -447,7 +449,8 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     EnableRecorderButton = new Button
     {
       Text = "启用弹幕录制器",
-      TooltipText = "只把插件清单里弹幕录制器条目的 enable 置 true，不动任何文件",
+      TooltipText =
+        "只把插件清单里弹幕录制器条目的 enable 置 true（会重写清单并留 .bak 备份），不复制或删除插件目录里的文件",
     };
     EnableRecorderButton.Pressed += EnableRecorder;
     pluginRow.AddChild(EnableRecorderButton);
@@ -496,7 +499,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
       Text =
         "间隔 3 ≈ 20 fps、5 ≈ 12 fps；玩家不干预时长卡会在帧数上限处截断，属正常产物（报告里标 complete = false）。"
         + "产物达到 30MB 时 QQ 发不出去，同样会自动换第二档间隔重录一次。"
-        + "放缩比决定产物分辨率：50% 即捕获区域的一半像素（录制器默认），100% 为原始像素，越大越清晰、体积也越大。",
+        + "放缩比决定产物分辨率：50% 即捕获区域的宽高各减半（像素总数为 1/4，录制器默认），100% 为原始像素，越大越清晰、体积也越大。",
       AutowrapMode = TextServer.AutowrapMode.WordSmart,
     };
     SectionBody.AddChild(AdvancedHintLabel);
@@ -653,7 +656,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     {
       SetStatus(
         EngineStatusLabel,
-        "未设置引擎目录：请选择 LuaSTG 根目录（需含 game/ 与 doc/）。",
+        "未设置引擎目录：请选择 LuaSTG 根目录（需含 game/，且 game/ 内有 launch 文件）。",
         false
       );
       return;

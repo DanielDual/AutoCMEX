@@ -8,7 +8,7 @@ using System.Text.Json;
 /// </summary>
 public class ProtocolHandler : IProtocolHandler
 {
-  private const int MaxMessageSizeBytes = 65536; // 64KB
+  private const int MaxMessageSizeBytes = 65536; // 上限按 string.Length（字符数）判定，非字节数；常量名/错误文案里的 bytes 为历史措辞
 
   private static readonly string[] ValidTypes = { "command", "event", "ack" };
 

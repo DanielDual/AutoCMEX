@@ -8,7 +8,7 @@ using AutoCMEX.Core.Info;
 using Chickensoft.Log;
 
 /// <summary>
-/// 事件消息处理器：处理 event 类型消息，管理连接/断开事件和状态变更通知
+/// 事件消息处理器：处理 event 类型消息中的 status_query 与信息板块入站回执；连接/断开事件由 WebSocketServer 直接触发，不经此处
 /// </summary>
 public class EventHandler : IMessageHandler
 {
@@ -25,7 +25,7 @@ public class EventHandler : IMessageHandler
   /// 创建事件处理器（带信息板块事件总线）
   /// </summary>
   /// <param name="log">日志接口。</param>
-  /// <param name="infoEvents">信息板块入站事件总线；为 null 时信息板块事件会被记为未知事件。</param>
+  /// <param name="infoEvents">信息板块入站事件总线；为 null 时信息板块事件被丢弃并记一条 warn（不回 error，也不当作未知事件）。</param>
   public EventHandler(ILog log, InfoEventBus? infoEvents)
   {
     _log = log;

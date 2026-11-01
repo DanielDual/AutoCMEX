@@ -404,7 +404,7 @@ module.exports.Config = Schema.object({
   port: Schema.number()
     .default(DEFAULT_PORT)
     .description(
-      "Client 模式：AutoCMEX 端口（Server 模式使用 Koishi 自身端口）",
+      "Client 模式：AutoCMEX 端口；Server 模式优先挂到 Koishi 自身 HTTP 服务器，挂不上时监听独立端口 5141（此时本项 port 不生效）",
     ),
   token: Schema.string().default("").description("鉴权 Token（留空不启用）"),
 }).description("AutoCMEX 配置");

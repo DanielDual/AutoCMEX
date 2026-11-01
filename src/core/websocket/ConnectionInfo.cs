@@ -23,6 +23,6 @@ public class ConnectionInfo
   /// <summary>客户端 IP 地址</summary>
   public string RemoteEndPoint { get; set; } = string.Empty;
 
-  /// <summary>是否已通过鉴权</summary>
+  /// <summary>是否已通过鉴权（当前未被维护：全仓无赋值处、恒为 false；鉴权在握手阶段判定，不写回本字段）</summary>
   public bool IsAuthenticated { get; set; } = false;
 }

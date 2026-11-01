@@ -13,7 +13,7 @@ using Chickensoft.Log;
 using Godot;
 
 /// <summary>
-/// 群聊配置面板 — 独立场景，管理 WebSocket 和消息筛选配置
+/// 群聊配置面板 — 独立场景，管理 WebSocket 端口/模式/Koishi 地址、消息筛选与 Koishi 插件一键安装
 /// </summary>
 [Meta(typeof(IAutoNode))]
 public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel

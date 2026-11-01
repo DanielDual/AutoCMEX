@@ -141,7 +141,7 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
     var enabled = new CheckBox
     {
       ButtonPressed = group.Enabled.Value,
-      TooltipText = "启用后可在「信息」板块下栏勾选发布",
+      TooltipText = "与「信息」板块下栏的勾选是同一个开关，任一处置位都会同步到另一处",
     };
     enabled.Toggled += pressed =>
     {
@@ -255,7 +255,7 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
 
   private void OnTargetGroupsChanged() => CallDeferred(nameof(Refresh));
 
-  /// <summary>本页被切显示时刷新录制分组状态（引擎目录可能在「整合」板块刚改过）。</summary>
+  /// <summary>本页被切显示时刷新录制分组状态（「整合」板块的 Editor Sharp 目录可能刚改过，影响「从 Sharp 目录推断」是否可用）。</summary>
   private void OnVisibilityChanged()
   {
     if (Visible)

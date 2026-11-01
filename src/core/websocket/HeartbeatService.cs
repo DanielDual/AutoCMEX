@@ -8,7 +8,8 @@ using System.Threading.Tasks;
 using Chickensoft.Log;
 
 /// <summary>
-/// WebSocket 心跳服务：独立管理每连接的 Ping/Pong，超时自动断开
+/// WebSocket 心跳服务：每连接按间隔发送一个空文本帧；发送超时或发送失败即触发心跳超时事件并停止该连接的心跳
+/// （不发送 WebSocket Ping 帧，也不校验对端 Pong；timeoutMs 是单次心跳发送的超时）
 /// </summary>
 public class HeartbeatService : IDisposable
 {
