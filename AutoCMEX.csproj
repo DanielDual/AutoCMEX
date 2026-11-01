@@ -18,7 +18,10 @@
     <DebugType>portable</DebugType>
     <DebugSymbols>true</DebugSymbols>
     <Title>AutoCMEX</Title>
-    <Version>0.0.1</Version>
+    <!-- Version comes from project.godot (application/config/version) - the single source of truth. -->
+    <_GodotProjectText>$([System.IO.File]::ReadAllText('$(MSBuildProjectDirectory)/project.godot'))</_GodotProjectText>
+    <_GodotVersion>$([System.Text.RegularExpressions.Regex]::Match('$(_GodotProjectText)', 'config/version="([^"]+)"').Groups[1].Value)</_GodotVersion>
+    <Version>$(_GodotVersion)</Version>
     <Description>AutoCMEX</Description>
     <Copyright>© 2026 AutoCMEX</Copyright>
     <Authors>AutoCMEX</Authors>
@@ -73,4 +76,16 @@
     <None Remove="test/**/*" />
     <EmbeddedResource Remove="test/**/*" />
   </ItemGroup>
+
+  <!-- Fail fast if the version cannot be read from project.godot. -->
+  <Target Name="EnsureVersion" BeforeTargets="PrepareForBuild">
+    <Error
+      Condition="'$(_GodotVersion)' == ''"
+      Text="project.godot has no config/version; cannot derive the assembly version."
+    />
+    <Error
+      Condition="!$([System.Text.RegularExpressions.Regex]::IsMatch('$(_GodotVersion)', '^[0-9]+(.[0-9]+)*$'))"
+      Text="project.godot config/version '$(_GodotVersion)' is not numeric (expected e.g. 1.2.3)."
+    />
+  </Target>
 </Project>

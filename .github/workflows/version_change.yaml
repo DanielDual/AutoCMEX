@@ -15,10 +15,9 @@ jobs:
         uses: actions/checkout@v6
 
       - name: "📝 Change Version"
-        uses: vers-one/dotnet-project-version-updater@v1.8
-        with:
-          file: "AutoCMEX.csproj"
-          version: ${{ github.event.inputs.version }}
+        run: |
+          sed -i -E 's|^config/version="[^"]*"$|config/version="${{ github.event.inputs.version }}"|' project.godot
+          grep -n '^config/version=' project.godot
 
       - name: "⤴️ Create Pull Request"
         uses: peter-evans/create-pull-request@v8
