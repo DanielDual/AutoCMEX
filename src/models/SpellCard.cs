@@ -11,11 +11,8 @@ public class SpellCard
   /// <summary>符卡名称</summary>
   public AutoValue<string> Name { get; set; } = new(string.Empty);
 
-  /// <summary>创作者（答案），可为空</summary>
+  /// <summary>创作者（答案）；空串表示尚未填写，不构成猜测判定上的特殊状态</summary>
   public AutoValue<string> Creator { get; set; } = new(string.Empty);
-
-  /// <summary>是否已揭晓</summary>
-  public AutoValue<bool> IsRevealed { get; set; } = new(false);
 
   /// <summary>是否已被猜出（猜测全部正确后标记）</summary>
   public AutoValue<bool> IsGuessedOut { get; set; } = new(false);

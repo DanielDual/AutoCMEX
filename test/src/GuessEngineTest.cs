@@ -340,7 +340,7 @@ public class GuessEngineTest : TestClass
   }
 
   [Test]
-  public void Pipeline_RevealedCard_Skipped()
+  public void Pipeline_EmptyCreator_GuessIsWrongNotPending()
   {
     var boss = new Boss
     {
@@ -350,11 +350,36 @@ public class GuessEngineTest : TestClass
         new()
         {
           Name = new AutoValue<string>("Card1"),
-          Creator = new AutoValue<string>("Alice"),
-          IsRevealed = new AutoValue<bool>(true),
+          Creator = new AutoValue<string>(string.Empty),
         },
         new() { Name = new AutoValue<string>("Card2"), Creator = new AutoValue<string>("Bob") },
-        new() { Name = new AutoValue<string>("Card3"), Creator = new AutoValue<string>("Charlie") },
+      },
+    };
+
+    var pipeline = new GuessPipeline(new GuessResponseHandler(), new List<CreatorAlias>());
+    var result = pipeline.Process("1Alice 2Bob", boss);
+
+    result.IsSuccess.ShouldBeTrue();
+    result.Response.ShouldBe("❌️");
+    // 创作者栏为空只表示「尚未填写」：空值不可能等于非空猜测，必定猜错，不是「无法验证」
+    result.Details.ShouldContain(d => d.Contains("猜错") && d.Contains("实际为空"));
+    result.Details.ShouldNotContain(d => d.Contains("待揭晓后验证"));
+    // 含未填写创作者的一批猜测不可能全对，不得标记已猜出
+    boss.SpellCards[0].IsGuessedOut.Value.ShouldBeFalse();
+    boss.SpellCards[1].IsGuessedOut.Value.ShouldBeFalse();
+  }
+
+  [Test]
+  public void Pipeline_AllEmptyCreators_CountsAsWrong()
+  {
+    var boss = new Boss
+    {
+      Name = "TestBoss",
+      SpellCards = new AutoList<SpellCard>
+      {
+        new() { Name = new AutoValue<string>("Card1") },
+        new() { Name = new AutoValue<string>("Card2") },
+        new() { Name = new AutoValue<string>("Card3") },
       },
     };
 
@@ -362,8 +387,10 @@ public class GuessEngineTest : TestClass
     var result = pipeline.Process("1Alice 2Bob 3Charlie", boss);
 
     result.IsSuccess.ShouldBeTrue();
-    // Card1 is revealed, so only 2 unrevealed cards are guessed
-    result.Details.ShouldContain(d => d.Contains("已揭晓"));
+    result.Response.ShouldBe("0/3");
+    result.Details.Count.ShouldBe(3);
+    foreach (var card in boss.SpellCards)
+      card.IsGuessedOut.Value.ShouldBeFalse();
   }
 
   [Test]
