@@ -371,7 +371,9 @@ public partial class SpellCardPanel : VBoxContainer
   {
     item.SetText(0, card.Name.Value);
     // 创作者栏就是答案本身：留空即尚未填写，不显示占位符（占位符会被当成创作者名抄进猜测）
-    item.SetText(1, card.Creator.Value);
+    // 数据文件显式 null 时 AutoValue 里可能装 null（见 AutoValueJsonConverter），与信息板块
+    // 同一口径兜底为空串，避免把 null 交给 SetText
+    item.SetText(1, card.Creator.Value ?? string.Empty);
     item.SetChecked(2, card.IsGuessedOut.Value);
   }
 
