@@ -21,31 +21,19 @@ public class AiFuzzifier
 
   private readonly AiServiceFactory _aiServiceFactory;
   private readonly IReadOnlyList<CreatorAlias> _aliasTable;
-  private readonly Boss _currentBoss;
   private readonly ILog _log;
 
-  public AiFuzzifier(
-    AiServiceFactory aiServiceFactory,
-    IReadOnlyList<CreatorAlias> aliasTable,
-    Boss currentBoss
-  )
-    : this(
-      aiServiceFactory,
-      aliasTable,
-      currentBoss,
-      AppLogs.GetOrCreate().GetLogger(nameof(AiFuzzifier))
-    ) { }
+  public AiFuzzifier(AiServiceFactory aiServiceFactory, IReadOnlyList<CreatorAlias> aliasTable)
+    : this(aiServiceFactory, aliasTable, AppLogs.GetOrCreate().GetLogger(nameof(AiFuzzifier))) { }
 
   public AiFuzzifier(
     AiServiceFactory aiServiceFactory,
     IReadOnlyList<CreatorAlias> aliasTable,
-    Boss currentBoss,
     ILog log
   )
   {
     _aiServiceFactory = aiServiceFactory;
     _aliasTable = aliasTable;
-    _currentBoss = currentBoss;
     _log = log;
   }
 
@@ -190,19 +178,6 @@ public class AiFuzzifier
       }
       sb.AppendLine();
     }
-
-    // 当前 Boss 符卡列表
-    // sb.Append(CultureInfo.InvariantCulture, $"当前 Boss：{_currentBoss.Name}");
-    // sb.AppendLine();
-    // sb.AppendLine("符卡列表：");
-    // for (int i = 0; i < _currentBoss.SpellCards.Count; i++)
-    // {
-    //   var card = _currentBoss.SpellCards[i];
-    //   var creator = string.IsNullOrEmpty(card.Creator) ? "未揭晓" : card.Creator;
-    //   sb.Append(CultureInfo.InvariantCulture, $"  {i + 1}. {card.Name}（创作者：{creator}）");
-    //   sb.AppendLine();
-    // }
-    // sb.AppendLine();
 
     sb.AppendLine("输出规则：");
     sb.AppendLine("- 如果输入是可处理的猜测文本，只输出转换后的严格格式文本");

@@ -252,7 +252,7 @@ public partial class GuessingPanel : Control, IGuessingPanel
     ResponseDisplay.Text = "[color=gray]正在调用 AI...[/color]";
     try
     {
-      var fuzzifier = new AiFuzzifier(AiServiceFactory, _dm.Aliases, currentBoss);
+      var fuzzifier = new AiFuzzifier(AiServiceFactory, _dm.Aliases);
       var result = await fuzzifier.FuzzifyAsync(text);
       if (AiFuzzifier.IsNotAGuessResult(result))
       {
