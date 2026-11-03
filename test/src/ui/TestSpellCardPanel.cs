@@ -260,7 +260,19 @@ public class TestSpellCardPanel : TestClass
     await SettleAsync();
 
     boss.SpellCards[0].Creator.Value.ShouldBe("(未揭晓)");
-    CardRow(0).GetText(1).ShouldBe("(未揭晓)");
+  }
+
+  /// <summary>数据文件显式 null 会装进 AutoValue：符卡名与创作者两列都必须兜底为空串，不能把 null 交给 SetText。</summary>
+  [Test]
+  public async Task NullCardFields_RenderAsEmptyCells()
+  {
+    AddBoss((null!, null!));
+    _panel.SelectBoss(0);
+    _panel.Refresh();
+    await SettleAsync();
+
+    CardRow(0).GetText(0).ShouldBe(string.Empty);
+    CardRow(0).GetText(1).ShouldBe(string.Empty);
   }
 
   /// <summary>一次猜测可能标掉多张符卡：同一帧内的多次变化不许漏刷。</summary>
