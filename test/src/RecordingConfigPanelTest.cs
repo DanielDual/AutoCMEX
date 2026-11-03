@@ -126,16 +126,22 @@ public class RecordingConfigPanelTest : TestClass
   }
 
   [Test]
-  public void Section_StartsCollapsedThenExpandsOnDemand()
+  public void Section_ShowsAllSettingsWithoutCollapseToggle()
   {
-    _panel.SectionBody.Visible.ShouldBeFalse();
-    _panel.IsExpanded.ShouldBeFalse();
+    // 整组常显：标题是普通文本，面板里没有任何折叠用的复选框
+    _panel.SectionTitle.Text.ShouldBe("符卡 GIF 录制设置");
+    _panel.SectionTitle.ShouldNotBeAssignableTo<BaseButton>();
 
-    _panel.SetExpanded(true);
+    for (var i = 0; i < _panel.GetChildCount(); i++)
+    {
+      _panel.GetChild(i).ShouldNotBeAssignableTo<CheckBox>();
+    }
 
-    _panel.IsExpanded.ShouldBeTrue();
-    _panel.SectionBody.Visible.ShouldBeTrue();
-    // 展开即刷新：引擎目录可能在「整合」板块刚改过
+    _panel.EngineDirEdit.Visible.ShouldBeTrue();
+    _panel.EngineStatusLabel.Visible.ShouldBeTrue();
+    _panel.ParallelismBox.Visible.ShouldBeTrue();
+    _panel.MaxFrameBox.Visible.ShouldBeTrue();
+    // 状态在构造时已渲染，不需要先「展开」一次
     _panel.EngineStatusLabel.Text.ShouldNotBeEmpty();
   }
 

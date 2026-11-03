@@ -29,6 +29,7 @@ public class InfoConfigPanelTest : TestClass
   private Button _addButton = default!;
   private Label _statusLabel = default!;
   private Label _hintLabel = default!;
+  private VBoxContainer _pageBody = default!;
 
   public InfoConfigPanelTest(Node testScene)
     : base(testScene) { }
@@ -52,6 +53,7 @@ public class InfoConfigPanelTest : TestClass
     _addButton = new Button();
     _statusLabel = new Label();
     _hintLabel = new Label();
+    _pageBody = new VBoxContainer();
 
     _panel = new InfoConfigPanel();
     (_panel as IAutoInit).IsTesting = true;
@@ -60,6 +62,7 @@ public class InfoConfigPanelTest : TestClass
       new()
       {
         ["%GroupRows"] = new VBoxContainerAdapter(_groupRows),
+        ["%PageBody"] = new VBoxContainerAdapter(_pageBody),
         ["%AddGroupButton"] = new ButtonAdapter(_addButton),
         ["%HintLabel"] = new LabelAdapter(_hintLabel),
         ["%StatusLabel"] = new LabelAdapter(_statusLabel),
@@ -79,6 +82,7 @@ public class InfoConfigPanelTest : TestClass
     _addButton?.QueueFree();
     _statusLabel?.QueueFree();
     _hintLabel?.QueueFree();
+    _pageBody?.QueueFree();
 
     _dataManager?.Dispose();
 
@@ -219,5 +223,24 @@ public class InfoConfigPanelTest : TestClass
     input.EmitSignal(LineEdit.SignalName.TextSubmitted, "  示例群  ");
 
     _dataManager.Settings.TargetGroups[0].DisplayName.Value.ShouldBe("示例群");
+  }
+
+  [Test]
+  public void OnResolved_MountsRecordingSectionAtEndOfPageBody()
+  {
+    _panel.RecordingSection.ShouldNotBeNull();
+    _pageBody.GetChildCount().ShouldBeGreaterThan(0);
+    _pageBody.GetChild(_pageBody.GetChildCount() - 1).ShouldBe(_panel.RecordingSection);
+  }
+
+  [Test]
+  public void EnsureRecordingSection_IsIdempotent()
+  {
+    var section = _panel.RecordingSection.ShouldNotBeNull();
+    var count = _pageBody.GetChildCount();
+
+    _panel.EnsureRecordingSection().ShouldBeSameAs(section);
+
+    _pageBody.GetChildCount().ShouldBe(count);
   }
 }
