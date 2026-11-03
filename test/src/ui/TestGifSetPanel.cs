@@ -402,6 +402,39 @@ public class TestGifSetPanel : TestClass
     players[1].SourcePath.ShouldBe(sets.GetEntryPath(set, set.Manifest.Entries[1]));
   }
 
+  /// <summary>回归（信息页 GIF 空白）：视口内相交的卡超过旧的 3 张上限时，每一张可见卡都要驻留解码。</summary>
+  [Test]
+  public async Task RefreshPlayback_KeepsEveryVisibleCardBeyondOldLimit()
+  {
+    var root = CreateSetFolder("sample_many", "SamplePkg", 5);
+    var sets = new GifSetService(_dm, _dm.DataDir);
+    sets.ImportFolder(root).IsSuccess.ShouldBeTrue();
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var column = GetGifColumn(panel);
+    var cards = GetCardList(column).GetChildren().OfType<Control>().ToList();
+    var scroll = GetCardScroll(column);
+    var players = cards.Select(GetPlayer).ToList();
+
+    cards.Count.ShouldBe(5, "回归夹具需要 5 张卡，否则断言会随清单条数静默变弱");
+
+    // 5 张卡全部落在同一视口内（每张 90 高、步进 100）：旧实现只会给前 3 张派发解码
+    for (var i = 0; i < cards.Count; i++)
+    {
+      cards[i].Position = new Vector2(0, i * 100);
+      cards[i].Size = new Vector2(260, 90);
+    }
+    scroll.ScrollVertical = 0;
+    scroll.Size = new Vector2(280, 500);
+    column.RefreshPlayback();
+
+    var set = sets.GetActiveSet()!;
+    for (var i = 0; i < players.Count; i++)
+      players[i].SourcePath.ShouldBe(sets.GetEntryPath(set, set.Manifest.Entries[i]));
+  }
+
   [Test]
   public async Task BrokenGif_SurfacesReasonOnCardInsteadOfSilentBlank()
   {

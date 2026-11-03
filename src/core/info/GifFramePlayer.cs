@@ -158,8 +158,13 @@ public sealed class GifFrameSequence : IDisposable
 }
 
 /// <summary>
-/// 可见项范围计算（纯逻辑，可单测）：从纵向范围列表中挑出与视口相交的项，并按上限截断。
+/// 可见项范围计算（纯逻辑，可单测）：从纵向范围列表中挑出与视口相交的项。
 /// </summary>
+/// <remarks>
+/// 不按数量截断：只要与视口有交集（哪怕只露出 1 像素）就必须驻留，否则会出现
+/// "卡片明明在视口里、动图却是空的"；视口能同时容纳的卡片数天然有限，
+/// 内存上界由"视口高度 ÷ 卡片高度"决定，不需要额外上限兜底。
+/// </remarks>
 public static class GifVisibility
 {
   /// <summary>
@@ -168,13 +173,11 @@ public static class GifVisibility
   /// <param name="itemBounds">各项在内容坐标系中的纵向范围（Top, Bottom）。</param>
   /// <param name="viewTop">视口上沿在内容坐标系中的位置。</param>
   /// <param name="viewBottom">视口下沿在内容坐标系中的位置。</param>
-  /// <param name="maxConcurrent">最多驻留的项数（≤0 视为不限）。</param>
-  /// <returns>需要驻留的项下标（按内容顺序；与视口相交优先，超出上限时取靠前者）。</returns>
+  /// <returns>需要驻留的项下标（按内容顺序；凡与视口相交者全部返回）。</returns>
   public static IReadOnlyList<int> Compute(
     IReadOnlyList<(float Top, float Bottom)> itemBounds,
     float viewTop,
-    float viewBottom,
-    int maxConcurrent
+    float viewBottom
   )
   {
     var result = new List<int>();
@@ -189,12 +192,8 @@ public static class GifVisibility
       var (top, bottom) = itemBounds[i];
       // 视口上沿与项下沿重合也算可见，避免滚动到底部时最后一张被判为不可见
       var intersects = bottom >= viewTop && top <= viewBottom;
-      if (!intersects)
-        continue;
-
-      result.Add(i);
-      if (maxConcurrent > 0 && result.Count >= maxConcurrent)
-        break;
+      if (intersects)
+        result.Add(i);
     }
 
     return result;
@@ -215,26 +214,13 @@ public sealed class GifCardBinding
 }
 
 /// <summary>
-/// 按可见性调度 GIF 解码与释放，常驻帧缓存不超过上限。
+/// 按可见性调度 GIF 解码与释放：与视口相交的卡片全部驻留，其余立即释放。
 /// </summary>
 /// <remarks>
 /// 面板每次滚动/布局变化时调用一次 <see cref="Update"/> 即可；未被选中的卡片会被立即释放纹理。
 /// </remarks>
 public sealed class GifPlaybackCoordinator
 {
-  /// <summary>默认常驻上限（张）。</summary>
-  public const int DefaultMaxResident = 3;
-
-  /// <summary>创建调度器。</summary>
-  /// <param name="maxResident">最多同时驻留解码结果的卡片数（≤0 视为不限）。</param>
-  public GifPlaybackCoordinator(int maxResident = DefaultMaxResident)
-  {
-    MaxResident = maxResident;
-  }
-
-  /// <summary>常驻上限（张）。</summary>
-  public int MaxResident { get; }
-
   /// <summary>
   /// 按视口范围更新各卡片的解码状态。
   /// </summary>
@@ -256,7 +242,7 @@ public sealed class GifPlaybackCoordinator
     foreach (var card in cards)
       bounds.Add((card.ContentRect.Position.Y, card.ContentRect.End.Y));
 
-    var visible = GifVisibility.Compute(bounds, viewTop, viewBottom, MaxResident);
+    var visible = GifVisibility.Compute(bounds, viewTop, viewBottom);
     var keep = new HashSet<int>(visible);
 
     for (var i = 0; i < cards.Count; i++)
