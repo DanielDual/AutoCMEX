@@ -27,6 +27,8 @@ using SixLabors.ImageSharp.PixelFormats;
 /// 卡片可见性用<b>手工指定几何</b>（<c>Position</c>/<c>Size</c>/<c>ScrollVertical</c>）后同步调用
 /// <c>RefreshPlayback()</c> 来断言：这样不依赖窗口布局结果，<c>SourcePath</c> 在 <c>Play()</c>/<c>Release()</c>
 /// 里同步赋值，断言是确定性的；真实解码与出帧由 <c>GifFramePlayerTest</c> 覆盖。
+/// 布局/显隐信号路径则相反：手工改几何后只 <c>EmitSignal</c>（不调用 <c>RefreshPlayback()</c>），
+/// 等待数帧再断言，以验证「信号 → 调度 → 刷新」整链。
 /// </remarks>
 public class TestGifSetPanel : TestClass
 {
@@ -433,6 +435,81 @@ public class TestGifSetPanel : TestClass
     var set = sets.GetActiveSet()!;
     for (var i = 0; i < players.Count; i++)
       players[i].SourcePath.ShouldBe(sets.GetEntryPath(set, set.Manifest.Entries[i]));
+  }
+
+  /// <summary>回归（根因一）：视口尺寸/布局变化必须自己触发驻留刷新，不能等滚动。</summary>
+  [Test]
+  public async Task ViewportResize_TriggersRefreshWithoutScrolling()
+  {
+    var root = CreateSetFolder("sample_resize", "SamplePkg", 2);
+    var sets = new GifSetService(_dm, _dm.DataDir);
+    sets.ImportFolder(root).IsSuccess.ShouldBeTrue();
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var column = GetGifColumn(panel);
+    var list = GetCardList(column);
+    var cards = list.GetChildren().OfType<Control>().ToList();
+    var scroll = GetCardScroll(column);
+    var players = cards.Select(GetPlayer).ToList();
+
+    var set = sets.GetActiveSet()!;
+    var firstPath = sets.GetEntryPath(set, set.Manifest.Entries[0]);
+    var secondPath = sets.GetEntryPath(set, set.Manifest.Entries[1]);
+
+    cards[0].Position = new Vector2(0, 0);
+    cards[0].Size = new Vector2(260, 290);
+    cards[1].Position = new Vector2(0, 300);
+    cards[1].Size = new Vector2(260, 290);
+
+    void AssertSecondCardInViewport(string step)
+    {
+      var viewTop = scroll.ScrollVertical;
+      var viewBottom = viewTop + scroll.Size.Y;
+      cards[1]
+        .Position.Y.ShouldBeLessThanOrEqualTo(
+          viewBottom,
+          step + "：用例前提是第二张仍在视口下沿之上（容器重排后的真实几何）"
+        );
+      (cards[1].Position.Y + cards[1].Size.Y).ShouldBeGreaterThanOrEqualTo(
+        viewTop,
+        step + "：用例前提是第二张仍在视口上沿之下（容器重排后的真实几何）"
+      );
+    }
+
+    scroll.ScrollVertical = 0;
+    scroll.Size = new Vector2(280, 200);
+    column.RefreshPlayback(); // 初始：只有第一张可见
+    players[0].SourcePath.ShouldBe(firstPath);
+    players[1].SourcePath.ShouldBe(string.Empty);
+
+    // (1) 视口尺寸变化（窗口拉高）：第二张已移入视口，只发 Resized 信号，不滚动、不手动刷新
+    cards[1].Position = new Vector2(0, 100);
+    scroll.EmitSignal(Control.SignalName.Resized);
+    await SettleAsync(panel, 4);
+
+    // 几何前提与业务断言分开：容器重排后第二张必须真的落在视口内，
+    // 这条若失败说明"真实布局高度变了"，而不是接线坏了
+    AssertSecondCardInViewport("视口变化后");
+
+    players[0].SourcePath.ShouldBe(firstPath, "视口变化不应把仍可见的第一张挤掉");
+    players[1]
+      .SourcePath.ShouldBe(
+        secondPath,
+        "视口尺寸变化后新进入视口的卡必须自动派发解码，不能再等滚动"
+      );
+
+    // 卡片列表尺寸与面板显隐共用同一处理器，这里只验证信号→调度不漏（触发后再刷新一次，
+    // 已可见的卡不应被挤掉；三种信号同源，代表性用例由上面的视口尺寸路径覆盖）
+    list.EmitSignal(Control.SignalName.Resized);
+    column.EmitSignal(Control.SignalName.VisibilityChanged);
+    await SettleAsync(panel, 4);
+
+    AssertSecondCardInViewport("二次信号后");
+
+    players[0].SourcePath.ShouldBe(firstPath, "卡片列表/显隐信号不应把仍可见的卡挤掉");
+    players[1].SourcePath.ShouldBe(secondPath, "卡片列表/显隐信号不应把仍可见的卡挤掉");
   }
 
   [Test]

@@ -303,8 +303,11 @@ public sealed partial class GifFramePlayer : TextureRect
   private int _frameIndex;
   private double _elapsed;
 
-  /// <summary>当前已加载的 GIF 路径；未加载时为空串。</summary>
+  /// <summary>当前已加载的 GIF 路径；未加载时为空串；解码失败时保留路径以便重试。</summary>
   public string SourcePath { get; private set; } = string.Empty;
+
+  /// <summary>测试用：实际启动的解码次数（验证同路径在途复用不会重复解码）。</summary>
+  internal int DecodeStartCount { get; private set; }
 
   /// <summary>是否已加载帧序列。</summary>
   public bool IsLoaded => _sequence is not null;
@@ -316,7 +319,7 @@ public sealed partial class GifFramePlayer : TextureRect
   public int CurrentFrameIndex => _frameIndex;
 
   /// <summary>
-  /// 加载并播放指定 GIF；同一路径重复调用不会重复解码。
+  /// 加载并播放指定 GIF；同一路径已加载或在途解码时直接复用，不重复解码。
   /// </summary>
   /// <param name="path">GIF 文件绝对路径。</param>
   public void Play(string path)
@@ -327,14 +330,22 @@ public sealed partial class GifFramePlayer : TextureRect
       return;
     }
 
-    if (string.Equals(path, SourcePath, StringComparison.Ordinal) && _sequence is not null)
+    // 同路径：已加载、或解码仍在途都直接复用。布局事件密集（拖拽分栏/缩放）时
+    // 每帧重开解码会让可见卡一直空白并放大 CPU 抖动；解码失败后 _cts 已清空，
+    // 下一次 Play 仍会重新尝试。
+    if (
+      string.Equals(path, SourcePath, StringComparison.Ordinal)
+      && (_sequence is not null || _cts is not null)
+    )
       return;
 
     Release();
     SourcePath = path;
 
-    _cts = new CancellationTokenSource();
-    _ = LoadAsync(path, _cts.Token);
+    var cts = new CancellationTokenSource();
+    _cts = cts;
+    DecodeStartCount++;
+    _ = LoadAsync(path, cts);
   }
 
   /// <summary>释放帧缓存并停止播放。</summary>
@@ -383,50 +394,64 @@ public sealed partial class GifFramePlayer : TextureRect
   /// <inheritdoc/>
   public override void _ExitTree() => Release();
 
-  private async Task LoadAsync(string path, CancellationToken token)
+  private async Task LoadAsync(string path, CancellationTokenSource cts)
   {
-    GifFrameData data;
+    var token = cts.Token;
     try
     {
-      data = await Task.Run(() => GifDecoder.Decode(path), token);
-    }
-    catch (OperationCanceledException)
-    {
-      return;
-    }
-    catch (Exception ex)
-    {
-      if (!token.IsCancellationRequested && GodotObject.IsInstanceValid(this))
+      GifFrameData data;
+      try
       {
-        EmitSignal(SignalName.LoadFailed, $"GIF 解码失败：{ex.Message}");
+        data = await Task.Run(() => GifDecoder.Decode(path), token);
+      }
+      catch (OperationCanceledException)
+      {
+        return;
+      }
+      catch (Exception ex)
+      {
+        if (!token.IsCancellationRequested && GodotObject.IsInstanceValid(this))
+        {
+          EmitSignal(SignalName.LoadFailed, $"GIF 解码失败：{ex.Message}");
+        }
+
+        return;
       }
 
-      return;
-    }
+      // 解码期间可能已被释放或切换到其它 GIF
+      if (
+        token.IsCancellationRequested
+        || !GodotObject.IsInstanceValid(this)
+        || !string.Equals(path, SourcePath, StringComparison.Ordinal)
+      )
+      {
+        return;
+      }
 
-    // 解码期间可能已被释放或切换到其它 GIF
-    if (
-      token.IsCancellationRequested
-      || !GodotObject.IsInstanceValid(this)
-      || !string.Equals(path, SourcePath, StringComparison.Ordinal)
-    )
+      var sequence = GifFrameSequence.CreateFrom(data);
+      if (sequence.FrameCount == 0)
+      {
+        sequence.Dispose();
+        EmitSignal(SignalName.LoadFailed, "GIF 不含任何帧。");
+        return;
+      }
+
+      _sequence = sequence;
+      _frameIndex = 0;
+      _elapsed = 0;
+      Texture = sequence.Frames[0];
+      SetProcess(true);
+      EmitSignal(SignalName.FramesLoaded, sequence.FrameCount);
+    }
+    finally
     {
-      return;
+      // 只清理仍属于本次调用的 CTS：Release 或后续 Play 已换掉时不要动。
+      // 清空后同路径 Play 才会重新解码（失败重试依赖这一点）。
+      if (ReferenceEquals(_cts, cts))
+      {
+        _cts = null;
+        cts.Dispose();
+      }
     }
-
-    var sequence = GifFrameSequence.CreateFrom(data);
-    if (sequence.FrameCount == 0)
-    {
-      sequence.Dispose();
-      EmitSignal(SignalName.LoadFailed, "GIF 不含任何帧。");
-      return;
-    }
-
-    _sequence = sequence;
-    _frameIndex = 0;
-    _elapsed = 0;
-    Texture = sequence.Frames[0];
-    SetProcess(true);
-    EmitSignal(SignalName.FramesLoaded, sequence.FrameCount);
   }
 }

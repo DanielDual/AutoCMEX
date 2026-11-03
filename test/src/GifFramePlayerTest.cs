@@ -264,6 +264,47 @@ public class GifFramePlayerTest : TestClass
     player.IsLoaded.ShouldBeFalse();
   }
 
+  /// <summary>同路径解码失败后必须允许重新尝试：失败会清空 CTS，下一次 Play 重新解码。</summary>
+  [Test]
+  public async Task Player_RetriesAfterFailure()
+  {
+    var broken = Path.Combine(_dir, "broken_retry.gif");
+    File.WriteAllText(broken, "not a gif at all");
+
+    var player = CreatePlayer();
+    var failures = 0;
+    player.LoadFailed += _ => failures++;
+
+    player.Play(broken);
+    (await WaitUntil(player, () => failures == 1)).ShouldBeTrue("首次解码失败必须回报");
+    player.SourcePath.ShouldBe(broken, "失败后保留路径，供下一次重试");
+    player.IsLoaded.ShouldBeFalse();
+
+    // 同路径再次点播：失败后 CTS 已清空，不能被"同路径在途复用"挡掉
+    player.Play(broken);
+    (await WaitUntil(player, () => failures == 2)).ShouldBeTrue("失败后同路径 Play 应重新尝试");
+    player.IsLoaded.ShouldBeFalse();
+  }
+
+  /// <summary>同路径在途解码必须复用：主线程内连续两次 Play 只启动一次解码。</summary>
+  [Test]
+  public async Task Player_ReusesInFlightDecodeForSamePath()
+  {
+    var path = WriteGif("sample_reuse.gif", 3);
+    var player = CreatePlayer();
+
+    player.Play(path);
+    player.Play(path); // 同一帧内第二次调用时，第一次的解码仍在途（continuation 抢不到主线程）
+
+    player.DecodeStartCount.ShouldBe(1, "同路径在途解码不应被第二次 Play 重启");
+
+    (await WaitUntil(player, () => player.IsLoaded)).ShouldBeTrue("第一次解码最终要完成");
+    player.DecodeStartCount.ShouldBe(1);
+
+    player.Play(path); // 已加载后再点播：仍不重解码
+    player.DecodeStartCount.ShouldBe(1);
+  }
+
   /// <summary>可见性判定：凡与视口相交的项全部返回，不按数量截断（含"相交 4 张"的回归断言）。</summary>
   [Test]
   public void GifVisibility_PicksEveryIntersectingItem()
