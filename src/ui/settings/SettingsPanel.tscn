@@ -71,31 +71,46 @@ grow_horizontal = 2
 grow_vertical = 2
 script = ExtResource("6_x2n56")
 
-[node name="HintLabel" type="Label" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel" unique_id=1661835361]
+[node name="PageScroll" type="ScrollContainer" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel" unique_id=2074100001]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+horizontal_scroll_mode = 0
+
+[node name="PageBody" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/PageScroll" unique_id=2074100002]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+theme_override_constants/separation = 8
+
+[node name="HintLabel" type="Label" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/PageScroll/PageBody" unique_id=1661835361]
 unique_name_in_owner = true
 layout_mode = 2
 text = "目标群是发布内容的接收方。"
 autowrap_mode = 3
 
-[node name="GroupScroll" type="ScrollContainer" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel" unique_id=540793043]
+[node name="GroupScroll" type="ScrollContainer" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/PageScroll/PageBody" unique_id=540793043]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(0, 600)
 layout_mode = 2
 size_flags_horizontal = 3
-size_flags_vertical = 3
+horizontal_scroll_mode = 0
 
-[node name="GroupRows" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/GroupScroll" unique_id=1608386998]
+[node name="GroupRows" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/PageScroll/PageBody/GroupScroll" unique_id=1608386998]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3
 
-[node name="ActionRow" type="HBoxContainer" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel" unique_id=953420434]
+[node name="ActionRow" type="HBoxContainer" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/PageScroll/PageBody" unique_id=953420434]
 layout_mode = 2
 
-[node name="AddGroupButton" type="Button" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/ActionRow" unique_id=1036681716]
+[node name="AddGroupButton" type="Button" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/PageScroll/PageBody/ActionRow" unique_id=1036681716]
 unique_name_in_owner = true
 layout_mode = 2
 text = "添加目标群"
 
-[node name="StatusLabel" type="Label" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/ActionRow" unique_id=1872937421]
+[node name="StatusLabel" type="Label" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/PageScroll/PageBody/ActionRow" unique_id=1872937421]
 unique_name_in_owner = true
 layout_mode = 2
 size_flags_horizontal = 3

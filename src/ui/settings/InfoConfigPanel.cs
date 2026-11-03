@@ -26,7 +26,12 @@ using Godot;
 /// 文本输入只在提交/失焦时写回模型：若每次按键都写回，绑定触发的重建会打断正在进行的输入。
 /// </para>
 /// <para>
-/// 录制设置分组（<see cref="RecordingConfigPanel"/>）挂在目标群列表下方：本页没有独立场景
+/// 本页是有意保留的双滚动结构：目标群列表固定高度、自己滚（行数随活动规模浮动，不能让它把页面撑长），
+/// 整页再套一层纵向滚动，往下翻即可看全常显的录制设置分组。滚轮到列表边界后由引擎默认冒泡给页面，
+/// 本页不额外接管。
+/// </para>
+/// <para>
+/// 录制设置分组（<see cref="RecordingConfigPanel"/>）挂在目标群列表下方（页面内容末尾）：本页没有独立场景
 /// （节点直接写在 <c>SettingsPanel.tscn</c> 里），而分组自带二十余个控件，写进共享场景既挤又难维护，
 /// 故按本页既有的「C# 构建行」范式在依赖解析后按需创建。
 /// </para>
@@ -48,6 +53,10 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
   [Node("%StatusLabel")]
   public ILabel StatusLabel { get; set; } = default!;
 
+  /// <summary>页面内容容器；录制设置分组挂在它的末尾（目标群列表与「添加目标群」行之后）。</summary>
+  [Node("%PageBody")]
+  public IVBoxContainer PageBody { get; set; } = default!;
+
   #endregion
 
   #region Dependencies
@@ -62,7 +71,7 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
   private AutoList<TargetGroup>.Binding? _binding;
   private RecordingConfigPanel? _recordingSection;
 
-  /// <summary>本页底部挂载的录制设置分组（依赖解析后创建，未解析时为 null）。</summary>
+  /// <summary>目标群列表下方挂载的录制设置分组（依赖解析后创建，未解析时为 null）。</summary>
   public RecordingConfigPanel? RecordingSection => _recordingSection;
 
   private readonly List<Control> _rows = new();
@@ -110,7 +119,7 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
       return _recordingSection;
 
     _recordingSection = new RecordingConfigPanel(_dm) { Name = "RecordingSection" };
-    AddChild(_recordingSection);
+    PageBody.AddChild(_recordingSection);
     return _recordingSection;
   }
 
