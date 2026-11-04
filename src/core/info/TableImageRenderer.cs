@@ -60,6 +60,35 @@ public sealed class TableImageResult
     new() { IsSuccess = false, ErrorMessage = message };
 }
 
+/// <summary>表格内存出图结果（不落盘，供拖拽/剪贴板等即时导出使用）。</summary>
+public sealed class TableImageRenderResult
+{
+  /// <summary>是否成功。</summary>
+  public bool IsSuccess { get; init; }
+
+  /// <summary>成功时的图片；失败时为 <c>null</c>。</summary>
+  public Image? Image { get; init; }
+
+  /// <summary>成功时的图片尺寸（像素）。</summary>
+  public Vector2I Size { get; init; }
+
+  /// <summary>失败原因（单行，可直接展示）。</summary>
+  public string ErrorMessage { get; init; } = string.Empty;
+
+  /// <summary>构造成功结果。</summary>
+  public static TableImageRenderResult Success(Image image) =>
+    new()
+    {
+      IsSuccess = true,
+      Image = image,
+      Size = new Vector2I(image.GetWidth(), image.GetHeight()),
+    };
+
+  /// <summary>构造失败结果。</summary>
+  public static TableImageRenderResult Error(string message) =>
+    new() { IsSuccess = false, ErrorMessage = message };
+}
+
 /// <summary>
 /// 表格出图：把 <see cref="TableModel"/> 画到 <see cref="SubViewport"/> 离屏画布，再取纹理转
 /// <see cref="Image"/> 存 PNG。
@@ -116,21 +145,43 @@ public static class TableImageRenderer
     string outputPath
   )
   {
-    if (host is null || !GodotObject.IsInstanceValid(host) || !host.IsInsideTree())
-      return TableImageResult.Error("出图失败：渲染宿主节点无效或不在场景树内。");
-
-    if (model is null)
-      return TableImageResult.Error("出图失败：表格模型为空。");
-
-    if (!model.HasContent)
-      return TableImageResult.Error("出图失败：表格没有可发布的数据行。");
-
     if (string.IsNullOrWhiteSpace(outputPath))
       return TableImageResult.Error("出图失败：输出路径为空。");
 
     var directory = Path.GetDirectoryName(outputPath);
     if (!string.IsNullOrEmpty(directory))
       Directory.CreateDirectory(directory);
+
+    var rendered = await RenderToImageAsync(host, model);
+    if (!rendered.IsSuccess)
+      return TableImageResult.Error(rendered.ErrorMessage);
+
+    var image = rendered.Image!;
+    var error = image.SavePng(outputPath);
+    if (error != Error.Ok)
+      return TableImageResult.Error($"出图失败：保存 PNG 出错（{error}）。");
+
+    var fileSize = new FileInfo(outputPath).Exists ? new FileInfo(outputPath).Length : 0L;
+    return TableImageResult.Success(outputPath, rendered.Size, fileSize);
+  }
+
+  /// <summary>
+  /// 把表格渲染为内存图片（不落盘），供拖拽/剪贴板等即时导出使用。
+  /// </summary>
+  /// <param name="host">宿主节点（需在场景树内）。</param>
+  /// <param name="model">表格渲染模型。</param>
+  /// <returns>内存出图结果；调用方持有图片引用。</returns>
+  /// <remarks>渲染参数与 <see cref="RenderToPngAsync"/> 完全一致，保证复制/拖拽/发布三者同源。</remarks>
+  public static async Task<TableImageRenderResult> RenderToImageAsync(Node host, TableModel model)
+  {
+    if (host is null || !GodotObject.IsInstanceValid(host) || !host.IsInsideTree())
+      return TableImageRenderResult.Error("出图失败：渲染宿主节点无效或不在场景树内。");
+
+    if (model is null)
+      return TableImageRenderResult.Error("出图失败：表格模型为空。");
+
+    if (!model.HasContent)
+      return TableImageRenderResult.Error("出图失败：表格没有可发布的数据行。");
 
     var viewport = new SubViewport
     {
@@ -148,7 +199,7 @@ public static class TableImageRenderer
 
       var (font, fontSize) = ResolveThemeFont();
       if (font is null)
-        return TableImageResult.Error("出图失败：无法取到主题字体。");
+        return TableImageRenderResult.Error("出图失败：无法取到主题字体。");
 
       var canvas = new TableGridCanvas(model, font, fontSize)
       {
@@ -169,18 +220,9 @@ public static class TableImageRenderer
 
       var image = viewport.GetTexture()?.GetImage();
       if (image is null)
-        return TableImageResult.Error("出图失败：离屏纹理为空（渲染未完成）。");
+        return TableImageRenderResult.Error("出图失败：离屏纹理为空（渲染未完成）。");
 
-      var error = image.SavePng(outputPath);
-      if (error != Error.Ok)
-        return TableImageResult.Error($"出图失败：保存 PNG 出错（{error}）。");
-
-      var fileSize = new FileInfo(outputPath).Exists ? new FileInfo(outputPath).Length : 0L;
-      return TableImageResult.Success(
-        outputPath,
-        new Vector2I(image.GetWidth(), image.GetHeight()),
-        fileSize
-      );
+      return TableImageRenderResult.Success(image);
     }
     finally
     {

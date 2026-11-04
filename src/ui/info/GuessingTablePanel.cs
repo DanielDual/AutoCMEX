@@ -1,7 +1,6 @@
 namespace AutoCMEX.UI.Info;
 
 using System;
-using System.Linq;
 using AutoCMEX.Core.Info;
 using AutoCMEX.Core.Storage;
 using Chickensoft.AutoInject;
@@ -33,6 +32,10 @@ public partial class GuessingTablePanel : VBoxContainer
   private BossDataWatcher? _watcher;
   private Action? _onTableChanged;
   private bool _isPublishing;
+  private TablePreviewExport? _previewExport;
+
+  /// <summary>表格预览的拖拽/复制交互（供面板级测试断言接线）。</summary>
+  internal TablePreviewExport? PreviewExport => _previewExport;
 
   /// <summary>上一次刷新时的表内容指纹；首次刷新只记基线，不视为「变化」。</summary>
   private string? _lastSignature;
@@ -45,6 +48,9 @@ public partial class GuessingTablePanel : VBoxContainer
   {
     _watcher?.Dispose();
     _watcher = null;
+
+    _previewExport?.Dispose();
+    _previewExport = null;
   }
 
   /// <summary>AutoInject 节点注入完成（依赖注入前，无需额外动作）。</summary>
@@ -75,6 +81,12 @@ public partial class GuessingTablePanel : VBoxContainer
 
     PublishButton.Pressed += OnPublishPressed;
     _watcher = new BossDataWatcher(dataManager, () => CallDeferred(nameof(Refresh)));
+    _previewExport = new TablePreviewExport(
+      this,
+      TableGrid,
+      model => TableImageRenderer.RenderToImageAsync(this, model),
+      new WindowsTableImageExportBackend()
+    );
 
     Refresh();
   }
@@ -93,28 +105,16 @@ public partial class GuessingTablePanel : VBoxContainer
     var model = TableModelBuilder.BuildGuessingTable(_dataService.BuildSnapshot());
     TitleLabel.Text = model.Title;
     TableModelView.Fill(TableGrid, model);
+    _previewExport?.Update(model);
     PublishButton.Disabled = _isPublishing || !model.HasContent;
 
-    var signature = BuildContentSignature(model);
+    var signature = TableModelSignature.Build(model);
     var changed = _lastSignature is not null && signature != _lastSignature;
     _lastSignature = signature;
 
     if (changed && model.HasContent)
       _onTableChanged?.Invoke();
   }
-
-  /// <summary>计算表内容指纹：标题 + 每行的高亮标记与单元格文本。</summary>
-  /// <param name="model">表格模型。</param>
-  /// <returns>可直接用 <c>!=</c> 比较的指纹字符串。</returns>
-  private static string BuildContentSignature(TableModel model) =>
-    string.Join(
-      '\n',
-      new[] { model.Title }.Concat(
-        model.Rows.Select(row =>
-          (row.IsHighlighted ? "1" : "0") + "\u001f" + string.Join('\u001f', row.Cells)
-        )
-      )
-    );
 
   private async void OnPublishPressed()
   {
