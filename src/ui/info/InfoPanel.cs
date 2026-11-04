@@ -471,7 +471,7 @@ public partial class InfoPanel : Control, IInfoPanel
     if (targets.Count == 0)
     {
       _autoPublishPending = false;
-      GD.Print("InfoPanel: 已跳过猜测表自动推送：未勾选任何目标群。");
+      GD.Print("InfoPanel: 已跳过猜测表自动推送：未启用任何目标群。");
       return;
     }
 

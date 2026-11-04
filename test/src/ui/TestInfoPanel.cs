@@ -21,7 +21,7 @@ using SharpImage = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.
 
 /// <summary>
 /// 信息板块面板级测试：实例化真实 <c>InfoPanel.tscn</c>，断言四栏装配顺序、两表预览与出图同源、
-/// 下栏目标群勾选与发布前置守卫。
+/// 顶部操作行布局与发布前置守卫。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -159,7 +159,7 @@ public class TestInfoPanel : TestClass
     new GifSetService(_dm, _dm.DataDir).ImportFolder(root).IsSuccess.ShouldBeTrue();
   }
 
-  /// <summary>加一个已勾选的目标群。</summary>
+  /// <summary>加一个已启用的目标群。</summary>
   private void EnableGroup(string channelId) =>
     _dm.Settings.TargetGroups.Add(
       new TargetGroup
