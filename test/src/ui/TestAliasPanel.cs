@@ -139,6 +139,7 @@ public class TestAliasPanel : TestClass
   [Test]
   public void ImportAliasTable_OpensPickerWithUnifiedSizePolicy()
   {
+    FileDialogSizing.ResetMemoryForTests();
     var expected = FileDialogSizing.Resolve(FileDialogSizing.FallbackParentSize);
 
     _importAliasBtn.Raise(m => m.Pressed += null);

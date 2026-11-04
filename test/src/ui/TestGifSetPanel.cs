@@ -50,6 +50,8 @@ public class TestGifSetPanel : TestClass
   [Setup]
   public void Setup()
   {
+    // 尺寸记忆是进程内全局的：每个用例开始前清空，避免用例间互相影响
+    FileDialogSizing.ResetMemoryForTests();
     _dir = Path.Combine(
       Path.GetTempPath(),
       "AutoCMEX_GifPanelTest_" + Guid.NewGuid().ToString("N")[..8]
