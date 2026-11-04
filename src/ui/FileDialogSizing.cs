@@ -16,7 +16,8 @@ using Godot;
 /// 尺寸记忆是<b>进程内全局</b>的，且只在用户真的把某个对话框拖成别的尺寸时才更新：之后所有文件对话框都用这个尺寸。
 /// 用户没改过尺寸时不会写记忆，仍按主窗口<b>视口尺寸</b> × <see cref="DefaultParentRatio"/> 打开
 /// （主窗口尺寸变化时跟着重算）。记忆尺寸在显示时按当前视口收敛，但不会把收敛后的值写回记忆
-/// （主窗口临时缩小后恢复，弹窗仍回到用户当初的尺寸）。跨重启不记忆。
+/// （主窗口临时缩小后恢复，弹窗仍回到用户当初的尺寸）；引擎把窗口抬到内容最小尺寸也不算用户改动。
+/// 跨重启不记忆。
 /// </para>
 /// <para>
 /// 父尺寸必须取 <c>Root.GetVisibleRect().Size</c>（内容缩放后的 UI 坐标），不能用 <c>Root.Size</c>（窗口像素尺寸）：
@@ -131,8 +132,21 @@ public static class FileDialogSizing
     if (size.X <= 0 || size.Y <= 0)
       return;
 
-    if (_applied.TryGetValue(instanceKey, out var applied) && size == (Vector2I)applied)
-      return;
+    if (_applied.TryGetValue(instanceKey, out var appliedObj))
+    {
+      var applied = (Vector2I)appliedObj;
+      if (size == applied)
+        return;
+
+      // 引擎在内容最小尺寸更大时会把窗口抬上去，这同样不是用户改的尺寸
+      var contentMin = dialog.GetContentsMinimumSize();
+      var engineAdjusted = new Vector2I(
+        Mathf.Max(applied.X, Mathf.CeilToInt(contentMin.X)),
+        Mathf.Max(applied.Y, Mathf.CeilToInt(contentMin.Y))
+      );
+      if (size == engineAdjusted)
+        return;
+    }
 
     _remembered = size;
   }
