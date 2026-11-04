@@ -70,7 +70,13 @@ public static class FileDialogSizing
   public static void Popup(FileDialog dialog)
   {
     if (GodotInterfaces.AdaptNode(dialog) is not IFileDialog adapted)
+    {
+      // 适配失败时静默返回会表现成「点了按钮没反应」，这里留下可诊断的错误
+      GD.PushError(
+        $"FileDialogSizing: 节点 {dialog?.GetPath()} 无法适配成 IFileDialog，文件选择窗口不会弹出。"
+      );
       return;
+    }
 
     // 以具体节点为记忆键：同一节点每次唤出都复用同一个尺寸，用户拖拽结果才留得住
     Open(adapted, dialog);
