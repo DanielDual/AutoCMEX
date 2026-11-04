@@ -74,6 +74,20 @@ public class FileDialogSizingTest : TestClass
   }
 
   [Test]
+  public void Popup_FirstOpen_RestoresSizeAfterPopupClamp()
+  {
+    // popup 时引擎会把嵌入子窗口钳到屏幕可用区域的像素值（内容缩放 < 1 时会钳小），
+    // helper 必须在弹完补回目标尺寸
+    var dialog = new Mock<IFileDialog>();
+    dialog.SetupProperty(d => d.Size, new Vector2I(640, 360));
+
+    FileDialogSizing.Popup(dialog.Object);
+
+    var expected = FileDialogSizing.Resolve(FileDialogSizing.FallbackParentSize);
+    dialog.Object.Size.ShouldBe(expected);
+  }
+
+  [Test]
   public void Popup_WithoutTree_UsesFallbackParentSizeAndDoesNotThrow()
   {
     // 未入树的 Mock：GetTree() 为 null，弹窗必须回落到兜底尺寸而不是抛异常

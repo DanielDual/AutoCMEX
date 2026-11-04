@@ -444,9 +444,9 @@ public class TestGifSetPanel : TestClass
     dialog.Visible.ShouldBeTrue("点导入文件夹后必须弹出选择器");
     dialog.Unresizable.ShouldBeFalse("选择文件窗口要能拖大");
 
-    // 统一尺寸策略：首次唤出按主窗口八成打开。断言用相对主窗口的宽松下限，
-    // 不依赖测试机的具体分辨率，又能拦住回退到引擎默认小窗（836×360）的改动。
-    var parent = panel.GetTree().Root.Size;
+    // 统一尺寸策略：首次唤出按主窗口八成打开。对话框尺寸用视口可见区域（内容缩放后的 UI 坐标）
+    // 比较，不用窗口像素；断言取宽松下限，不依赖测试机分辨率，又能拦住回退到引擎默认小窗的改动。
+    var parent = panel.GetTree().Root.GetVisibleRect().Size;
     dialog.Size.X.ShouldBeGreaterThanOrEqualTo((int)(parent.X * 0.7f));
     dialog.Size.Y.ShouldBeGreaterThanOrEqualTo((int)(parent.Y * 0.7f));
   }
