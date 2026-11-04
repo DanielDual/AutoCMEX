@@ -13,9 +13,10 @@ using Godot;
 /// （写死的像素值不随主窗口与主题缩放变化）。
 /// </para>
 /// <para>
-/// 尺寸记忆是<b>进程内全局</b>的：任一个文件对话框被拖动过并关闭后，之后所有文件对话框都用这个尺寸；
-/// 从未被改过时按主窗口<b>视口尺寸</b> × <see cref="DefaultParentRatio"/> 打开。记忆尺寸会按当前视口收敛
-/// （主窗口缩小后不会留下超出窗口的弹窗）。跨重启不记忆（后续统一做设置持久化时再补）。
+/// 尺寸记忆是<b>进程内全局</b>的，且只在用户真的把某个对话框拖成别的尺寸时才更新：之后所有文件对话框都用这个尺寸。
+/// 用户没改过尺寸时不会写记忆，仍按主窗口<b>视口尺寸</b> × <see cref="DefaultParentRatio"/> 打开
+/// （主窗口尺寸变化时跟着重算）。记忆尺寸在显示时按当前视口收敛，但不会把收敛后的值写回记忆
+/// （主窗口临时缩小后恢复，弹窗仍回到用户当初的尺寸）。跨重启不记忆。
 /// </para>
 /// <para>
 /// 父尺寸必须取 <c>Root.GetVisibleRect().Size</c>（内容缩放后的 UI 坐标），不能用 <c>Root.Size</c>（窗口像素尺寸）：
@@ -41,11 +42,14 @@ public static class FileDialogSizing
   /// <summary>拿不到主窗口信息（未入树、单元测试的 Mock）时的兜底主窗口尺寸。</summary>
   public static readonly Vector2I FallbackParentSize = new(1280, 720);
 
-  /// <summary>所有文件对话框共用的上次尺寸（视口 UI 坐标）；<c>null</c> 表示还没被用户改过。</summary>
+  /// <summary>所有文件对话框共用的上次尺寸（视口 UI 坐标，未经视口收敛）；<c>null</c> 表示还没被用户改过。</summary>
   private static Vector2I? _remembered;
 
   /// <summary>已挂过「隐藏时记住尺寸」的对话框实例（弱引用，避免重复订阅）。</summary>
   private static readonly ConditionalWeakTable<object, object> _hooked = new();
+
+  /// <summary>每个对话框实例本次弹出时采用的尺寸，用于判断隐藏时用户是否真的改过尺寸。</summary>
+  private static readonly ConditionalWeakTable<object, object> _applied = new();
 
   /// <summary>
   /// 按主窗口尺寸计算首次唤出的目标尺寸。
@@ -94,6 +98,7 @@ public static class FileDialogSizing
 
     var viewport = ViewportSize(dialog);
     var target = Clamp(_remembered ?? Resolve(viewport), viewport);
+    _applied.AddOrUpdate(instanceKey, target);
     dialog.PopupCentered(target);
     // popup 会把尺寸钳到屏幕可用区域的像素值，这里补回目标尺寸（位置已按 target 居中）
     dialog.Size = target;
@@ -108,19 +113,28 @@ public static class FileDialogSizing
       return;
 
     _hooked.AddOrUpdate(instanceKey, dialog);
-    dialog.VisibilityChanged += () => RememberSizeOnHide(dialog);
+    dialog.VisibilityChanged += () => RememberSizeOnHide(dialog, instanceKey);
   }
 
-  /// <summary>对话框隐藏时把最终尺寸记为全局「上次尺寸」；显示时的可见性变化忽略。</summary>
+  /// <summary>
+  /// 对话框隐藏时：只有用户真的把尺寸改成了别的值才更新全局记忆；
+  /// 与本次弹出设定的尺寸一致时视为「用户没改过」，不写记忆（保持 80% 动态策略）。
+  /// </summary>
   /// <param name="dialog">发生可见性变化的对话框。</param>
-  private static void RememberSizeOnHide(IFileDialog dialog)
+  /// <param name="instanceKey">该对话框的实例键。</param>
+  private static void RememberSizeOnHide(IFileDialog dialog, object instanceKey)
   {
     if (dialog.Visible)
       return;
 
     var size = dialog.Size;
-    if (size.X > 0 && size.Y > 0)
-      _remembered = size;
+    if (size.X <= 0 || size.Y <= 0)
+      return;
+
+    if (_applied.TryGetValue(instanceKey, out var applied) && size == (Vector2I)applied)
+      return;
+
+    _remembered = size;
   }
 
   /// <summary>取主窗口视口尺寸（内容缩放后的 UI 坐标）；拿不到时回落兜底尺寸。</summary>
@@ -142,10 +156,20 @@ public static class FileDialogSizing
   private static Vector2I Clamp(Vector2I size, Vector2I limit) =>
     new(Mathf.Min(size.X, limit.X), Mathf.Min(size.Y, limit.Y));
 
-  /// <summary>清空全局尺寸记忆与订阅记录（仅测试使用，保证用例之间互不影响）。</summary>
+  /// <summary>当前全局记忆尺寸（仅测试使用）。</summary>
+  internal static Vector2I? RememberedForTests => _remembered;
+
+  /// <summary>
+  /// 清空全局尺寸记忆与实例记录（仅测试使用，保证用例之间互不影响）。
+  /// </summary>
+  /// <remarks>
+  /// 只清表、不解绑已经挂上的 <c>VisibilityChanged</c>；测试都是在弹出前清空、且每个用例用新实例，
+  /// 所以不会出现重复订阅。生产运行中不调用本方法。
+  /// </remarks>
   internal static void ResetMemoryForTests()
   {
     _remembered = null;
     _hooked.Clear();
+    _applied.Clear();
   }
 }
