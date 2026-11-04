@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
+using AutoCMEX.UI;
 using AutoCMEX.UI.Guessing;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
@@ -17,6 +18,8 @@ public class TestAliasPanel : TestClass
   private AliasPanel _panel = default!;
   private DataManager _dm = default!;
   private Mock<ITree> _aliasTree = default!;
+  private Mock<IButton> _importAliasBtn = default!;
+  private Mock<IFileDialog> _importFileDialog = default!;
   private Mock<IAcceptDialog> _errorDialog = default!;
   private Tree _tree = default!;
   private readonly List<Node> _toCleanup = new();
@@ -68,12 +71,12 @@ public class TestAliasPanel : TestClass
     _aliasTree
       .Setup(m => m.GetNextSelected(It.IsAny<TreeItem>()))
       .Returns((TreeItem from) => _tree.GetNextSelected(from));
-    var importAliasBtn = new Mock<IButton>();
+    _importAliasBtn = new Mock<IButton>();
+    _importFileDialog = new Mock<IFileDialog>();
     var exportAliasBtn = new Mock<IButton>();
     var addAliasBtn = new Mock<IButton>();
     var addAliasToCreatorBtn = new Mock<IButton>();
     var deleteAliasBtn = new Mock<IButton>();
-    var importFileDialog = new Mock<IFileDialog>();
     var exportFileDialog = new Mock<IFileDialog>();
     _errorDialog = new Mock<IAcceptDialog>();
 
@@ -81,12 +84,12 @@ public class TestAliasPanel : TestClass
       new()
       {
         ["%AliasTree"] = _aliasTree.Object,
-        ["%ImportAliasBtn"] = importAliasBtn.Object,
+        ["%ImportAliasBtn"] = _importAliasBtn.Object,
         ["%ExportAliasBtn"] = exportAliasBtn.Object,
         ["%AddAliasBtn"] = addAliasBtn.Object,
         ["%AddAliasToCreatorBtn"] = addAliasToCreatorBtn.Object,
         ["%DeleteAliasBtn"] = deleteAliasBtn.Object,
-        ["%ImportFileDialog"] = importFileDialog.Object,
+        ["%ImportFileDialog"] = _importFileDialog.Object,
         ["%ExportFileDialog"] = exportFileDialog.Object,
         ["%ErrorDialog"] = _errorDialog.Object,
       }
@@ -131,6 +134,19 @@ public class TestAliasPanel : TestClass
   public void GetDataManager_ReturnsInjectedInstance()
   {
     _panel.GetDataManager().ShouldBe(_dm);
+  }
+
+  [Test]
+  public void ImportAliasTable_OpensPickerWithUnifiedSizePolicy()
+  {
+    var expected = FileDialogSizing.Resolve(FileDialogSizing.FallbackParentSize);
+
+    _importAliasBtn.Raise(m => m.Pressed += null);
+
+    _importFileDialog.Verify(
+      d => d.PopupCentered(It.Is<Vector2I?>(size => size == expected)),
+      Times.Once
+    );
   }
 
   [Test]

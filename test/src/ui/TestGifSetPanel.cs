@@ -429,6 +429,29 @@ public class TestGifSetPanel : TestClass
   }
 
   [Test]
+  public async Task ImportFolderPicker_OpensWithWindowShareAndIsResizable()
+  {
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+    var column = GetGifColumn(panel);
+
+    ((Button)column.FindChild("ImportFolderButton", owned: false, recursive: true)!).EmitSignal(
+      BaseButton.SignalName.Pressed
+    );
+    await SettleAsync(panel);
+
+    var dialog = GetFileDialog(column, FileDialog.FileModeEnum.OpenDir);
+    dialog.Visible.ShouldBeTrue("点导入文件夹后必须弹出选择器");
+    dialog.Unresizable.ShouldBeFalse("选择文件窗口要能拖大");
+
+    // 统一尺寸策略：首次唤出按主窗口八成打开。断言用相对主窗口的宽松下限，
+    // 不依赖测试机的具体分辨率，又能拦住回退到引擎默认小窗（836×360）的改动。
+    var parent = panel.GetTree().Root.Size;
+    dialog.Size.X.ShouldBeGreaterThanOrEqualTo((int)(parent.X * 0.7f));
+    dialog.Size.Y.ShouldBeGreaterThanOrEqualTo((int)(parent.Y * 0.7f));
+  }
+
+  [Test]
   public async Task ImportZip_ViaDialog_RegistersSetAndSelectsIt()
   {
     var zipPath = CreateSetZip("sample_pkg.zip", 2);
