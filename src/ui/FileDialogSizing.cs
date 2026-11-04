@@ -5,7 +5,7 @@ using Chickensoft.GodotNodeInterfaces;
 using Godot;
 
 /// <summary>
-/// 文件选择窗口的统一尺寸策略：首次唤出按主窗口的固定比例给尺寸，再次唤出沿用上次尺寸。
+/// 文件选择窗口的统一尺寸策略：所有文件对话框共用一份「上次尺寸」，没被用户改过时按主窗口视口尺寸的固定比例打开。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -13,8 +13,9 @@ using Godot;
 /// （写死的像素值不随主窗口与主题缩放变化）。
 /// </para>
 /// <para>
-/// 首次唤出的目标尺寸 = 主窗口<b>视口尺寸</b> × <see cref="DefaultParentRatio"/>；同一对话框在同一次运行内
-/// 再次唤出时沿用其当前尺寸，用户拖拽过的结果不回弹。
+/// 尺寸记忆是<b>进程内全局</b>的：任一个文件对话框被拖动过并关闭后，之后所有文件对话框都用这个尺寸；
+/// 从未被改过时按主窗口<b>视口尺寸</b> × <see cref="DefaultParentRatio"/> 打开。记忆尺寸会按当前视口收敛
+/// （主窗口缩小后不会留下超出窗口的弹窗）。跨重启不记忆（后续统一做设置持久化时再补）。
 /// </para>
 /// <para>
 /// 父尺寸必须取 <c>Root.GetVisibleRect().Size</c>（内容缩放后的 UI 坐标），不能用 <c>Root.Size</c>（窗口像素尺寸）：
@@ -40,8 +41,11 @@ public static class FileDialogSizing
   /// <summary>拿不到主窗口信息（未入树、单元测试的 Mock）时的兜底主窗口尺寸。</summary>
   public static readonly Vector2I FallbackParentSize = new(1280, 720);
 
-  /// <summary>已按策略唤出过的对话框实例（弱引用，不延长节点生命周期）。</summary>
-  private static readonly ConditionalWeakTable<object, object> _opened = new();
+  /// <summary>所有文件对话框共用的上次尺寸（视口 UI 坐标）；<c>null</c> 表示还没被用户改过。</summary>
+  private static Vector2I? _remembered;
+
+  /// <summary>已挂过「隐藏时记住尺寸」的对话框实例（弱引用，避免重复订阅）。</summary>
+  private static readonly ConditionalWeakTable<object, object> _hooked = new();
 
   /// <summary>
   /// 按主窗口尺寸计算首次唤出的目标尺寸。
@@ -73,35 +77,75 @@ public static class FileDialogSizing
     {
       // 适配失败时静默返回会表现成「点了按钮没反应」，这里留下可诊断的错误
       GD.PushError(
-        $"FileDialogSizing: 节点 {dialog?.GetPath()} 无法适配成 IFileDialog，文件选择窗口不会弹出。"
+        $"FileDialogSizing: 节点 {dialog.GetPath()} 无法适配成 IFileDialog，文件选择窗口不会弹出。"
       );
       return;
     }
 
-    // 以具体节点为记忆键：同一节点每次唤出都复用同一个尺寸，用户拖拽结果才留得住
     Open(adapted, dialog);
   }
 
-  /// <summary>首次唤出按策略给尺寸，之后沿用对话框当前尺寸。</summary>
+  /// <summary>按全局记忆尺寸（或视口 80%）弹出，并在 popup 后补回被引擎钳小的尺寸。</summary>
   /// <param name="dialog">节点接口形式的对话框（适配器或 Mock）。</param>
-  /// <param name="instanceKey">区分实例的记忆键：场景节点用适配器本身，代码创建的节点用具体节点。</param>
+  /// <param name="instanceKey">对话框实例键：用于保证同一实例只挂一次「隐藏时记住尺寸」。</param>
   private static void Open(IFileDialog dialog, object instanceKey)
   {
-    if (_opened.TryGetValue(instanceKey, out _))
-    {
-      // 再次唤出：沿用上次尺寸。popup 会被引擎钳小，故弹完再补回来（位置已按该尺寸居中）
-      var current = dialog.Size;
-      dialog.PopupCentered();
-      dialog.Size = current;
-      return;
-    }
+    Hook(dialog, instanceKey);
 
-    // 取视口可见区域（内容缩放后的 UI 坐标，不是窗口像素），与嵌入子窗口的 Size / PopupCentered 同源
-    var viewport = dialog.GetTree()?.Root?.GetVisibleRect().Size ?? Vector2.Zero;
-    var target = Resolve(new Vector2I(Mathf.RoundToInt(viewport.X), Mathf.RoundToInt(viewport.Y)));
-    _opened.AddOrUpdate(instanceKey, dialog);
+    var viewport = ViewportSize(dialog);
+    var target = Clamp(_remembered ?? Resolve(viewport), viewport);
     dialog.PopupCentered(target);
     // popup 会把尺寸钳到屏幕可用区域的像素值，这里补回目标尺寸（位置已按 target 居中）
     dialog.Size = target;
+  }
+
+  /// <summary>给对话框挂「隐藏时回写尺寸」，同一实例只挂一次。</summary>
+  /// <param name="dialog">要挂的对话框。</param>
+  /// <param name="instanceKey">区分实例的键：场景节点用适配器本身，代码创建的节点用具体节点。</param>
+  private static void Hook(IFileDialog dialog, object instanceKey)
+  {
+    if (_hooked.TryGetValue(instanceKey, out _))
+      return;
+
+    _hooked.AddOrUpdate(instanceKey, dialog);
+    dialog.VisibilityChanged += () => RememberSizeOnHide(dialog);
+  }
+
+  /// <summary>对话框隐藏时把最终尺寸记为全局「上次尺寸」；显示时的可见性变化忽略。</summary>
+  /// <param name="dialog">发生可见性变化的对话框。</param>
+  private static void RememberSizeOnHide(IFileDialog dialog)
+  {
+    if (dialog.Visible)
+      return;
+
+    var size = dialog.Size;
+    if (size.X > 0 && size.Y > 0)
+      _remembered = size;
+  }
+
+  /// <summary>取主窗口视口尺寸（内容缩放后的 UI 坐标）；拿不到时回落兜底尺寸。</summary>
+  /// <param name="dialog">用于定位场景树/主窗口的对话框。</param>
+  /// <returns>视口尺寸（UI 坐标）。</returns>
+  private static Vector2I ViewportSize(IFileDialog dialog)
+  {
+    var viewport = dialog.GetTree()?.Root?.GetVisibleRect().Size ?? Vector2.Zero;
+    if (viewport.X <= 0 || viewport.Y <= 0)
+      return FallbackParentSize;
+
+    return new Vector2I(Mathf.RoundToInt(viewport.X), Mathf.RoundToInt(viewport.Y));
+  }
+
+  /// <summary>把目标尺寸收敛到视口以内，避免窗口缩小后弹窗超出主窗口。</summary>
+  /// <param name="size">目标尺寸。</param>
+  /// <param name="limit">视口尺寸。</param>
+  /// <returns>收敛后的尺寸。</returns>
+  private static Vector2I Clamp(Vector2I size, Vector2I limit) =>
+    new(Mathf.Min(size.X, limit.X), Mathf.Min(size.Y, limit.Y));
+
+  /// <summary>清空全局尺寸记忆与订阅记录（仅测试使用，保证用例之间互不影响）。</summary>
+  internal static void ResetMemoryForTests()
+  {
+    _remembered = null;
+    _hooked.Clear();
   }
 }
