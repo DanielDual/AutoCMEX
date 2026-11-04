@@ -2,7 +2,11 @@ namespace AutoCMEX;
 
 using System;
 using System.IO;
+using System.Linq;
+using System.Text.Json;
+using AutoCMEX.Core.Info;
 using AutoCMEX.Core.Storage;
+using AutoCMEX.Core.WebSocket;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Settings;
 using Chickensoft.AutoInject;
@@ -27,8 +31,14 @@ public class InfoConfigPanelTest : TestClass
   private InfoConfigPanel _panel = default!;
   private VBoxContainer _groupRows = default!;
   private Button _addButton = default!;
+  private Button _refreshButton = default!;
   private Label _statusLabel = default!;
   private Label _hintLabel = default!;
+  private Mock<IWebSocketServer> _server = default!;
+  private InfoEventBus _bus = default!;
+
+  /// <summary>本页发出的 WebSocket 消息（按顺序），用于断言群列表查询。</summary>
+  private readonly System.Collections.Generic.List<WebSocketMessage> _sent = new();
 
   public InfoConfigPanelTest(Node testScene)
     : base(testScene) { }
@@ -48,10 +58,20 @@ public class InfoConfigPanelTest : TestClass
       new Mock<ILog>().Object
     );
 
+    _sent.Clear();
     _groupRows = new VBoxContainer();
     _addButton = new Button();
+    _refreshButton = new Button();
     _statusLabel = new Label();
     _hintLabel = new Label();
+
+    _server = new Mock<IWebSocketServer>();
+    _server.SetupGet(s => s.ConnectionCount).Returns(1);
+    _server
+      .Setup(s => s.BroadcastAsync(It.IsAny<WebSocketMessage>()))
+      .Callback<WebSocketMessage>(_sent.Add)
+      .ReturnsAsync(1);
+    _bus = new InfoEventBus();
 
     _panel = new InfoConfigPanel();
     (_panel as IAutoInit).IsTesting = true;
@@ -61,12 +81,15 @@ public class InfoConfigPanelTest : TestClass
       {
         ["%GroupRows"] = new VBoxContainerAdapter(_groupRows),
         ["%AddGroupButton"] = new ButtonAdapter(_addButton),
+        ["%RefreshGroupsButton"] = new ButtonAdapter(_refreshButton),
         ["%HintLabel"] = new LabelAdapter(_hintLabel),
         ["%StatusLabel"] = new LabelAdapter(_statusLabel),
       }
     );
 
     _panel.FakeDependency<DataManager>(_dataManager);
+    _panel.FakeDependency<IWebSocketServer>(_server.Object);
+    _panel.FakeDependency<InfoEventBus>(_bus);
     _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
   }
@@ -77,6 +100,7 @@ public class InfoConfigPanelTest : TestClass
     _panel?.QueueFree();
     _groupRows?.QueueFree();
     _addButton?.QueueFree();
+    _refreshButton?.QueueFree();
     _statusLabel?.QueueFree();
     _hintLabel?.QueueFree();
 
@@ -219,5 +243,77 @@ public class InfoConfigPanelTest : TestClass
     input.EmitSignal(LineEdit.SignalName.TextSubmitted, "  示例群  ");
 
     _dataManager.Settings.TargetGroups[0].DisplayName.Value.ShouldBe("示例群");
+  }
+
+  [Test]
+  public void RefreshGroups_SendsQueryToKoishi()
+  {
+    _refreshButton.EmitSignal(BaseButton.SignalName.Pressed);
+
+    _sent.Count.ShouldBe(1);
+    _sent[0].Payload.GetProperty("event").GetString().ShouldBe(InfoProtocol.QueryGroupListEvent);
+    FindDialog(_panel).DialogText.ShouldContain("已向 Koishi 发起群列表查询");
+  }
+
+  [Test]
+  public void RefreshGroups_WithoutConnection_ShowsFailureDialog()
+  {
+    _server.SetupGet(s => s.ConnectionCount).Returns(0);
+
+    _refreshButton.EmitSignal(BaseButton.SignalName.Pressed);
+
+    _sent.ShouldBeEmpty("无连接时不应发出查询");
+    FindDialog(_panel).Title.ShouldBe("群列表刷新失败");
+  }
+
+  [Test]
+  public void GroupListResultEvent_MergesGroupsAndShowsDialog()
+  {
+    _panel.DispatchInfoEvent(
+      InfoProtocol.GroupListResultEvent,
+      JsonSerializer.Serialize(
+        new
+        {
+          data = new[]
+          {
+            new
+            {
+              channelId = "10001",
+              guildId = "9001",
+              name = "示例群",
+            },
+            new
+            {
+              channelId = "10002",
+              guildId = "9001",
+              name = "另一群",
+            },
+          },
+        }
+      )
+    );
+
+    _dataManager.Settings.TargetGroups.Count.ShouldBe(2);
+    _dataManager.Settings.TargetGroups[0].DisplayName.Value.ShouldBe("示例群");
+    _dataManager.Settings.TargetGroups[0].Enabled.Value.ShouldBeFalse("新并入的群默认不启用");
+    FindDialog(_panel).Title.ShouldBe("群列表已更新");
+    FindDialog(_panel).DialogText.ShouldContain("新增 2");
+  }
+
+  [Test]
+  public void DispatchInfoEvent_IgnoresOtherEventsAndMalformedPayload()
+  {
+    _panel.DispatchInfoEvent(InfoProtocol.PublishResultEvent, "{}");
+    _panel.DispatchInfoEvent(InfoProtocol.GroupListResultEvent, "{ not json");
+
+    _dataManager.Settings.TargetGroups.ShouldBeEmpty();
+  }
+
+  /// <summary>取本页懒创建的结果对话框。</summary>
+  private static AcceptDialog FindDialog(Node panel)
+  {
+    var dialog = panel.GetChildren().OfType<AcceptDialog>().LastOrDefault();
+    dialog.ShouldNotBeNull("本页应弹出结果对话框");
+    return dialog!;
   }
 }
