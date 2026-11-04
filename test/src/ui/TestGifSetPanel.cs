@@ -10,6 +10,7 @@ using AutoCMEX.Core.Info;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Core.WebSocket;
 using AutoCMEX.Models;
+using AutoCMEX.UI;
 using AutoCMEX.UI.Info;
 using Chickensoft.AutoInject;
 using Chickensoft.GoDotTest;
@@ -429,26 +430,54 @@ public class TestGifSetPanel : TestClass
   }
 
   [Test]
-  public async Task ImportFolderPicker_OpensWithWindowShareAndIsResizable()
+  public async Task ImportFolderPicker_OpensWithViewportShareAndReusesDialog()
   {
     var panel = InstantiatePanel();
     await SettleAsync(panel);
     var column = GetGifColumn(panel);
+    var tree = panel.GetTree();
 
-    ((Button)column.FindChild("ImportFolderButton", owned: false, recursive: true)!).EmitSignal(
-      BaseButton.SignalName.Pressed
-    );
-    await SettleAsync(panel);
+    // 固定内容缩放，让用例与本机 DPI 解耦：只有视口（UI 坐标）与窗口像素不同，
+    // 才能同时拦住「按窗口像素算尺寸」与「popup 后未补设尺寸」这两种回退。
+    var originalScale = tree.Root.ContentScaleFactor;
+    tree.Root.ContentScaleFactor = 0.5f;
+    try
+    {
+      await SettleAsync(panel);
+      tree.Root.GetVisibleRect()
+        .Size.ShouldNotBe(
+          new Vector2(tree.Root.Size.X, tree.Root.Size.Y),
+          "内容缩放 0.5 时视口 UI 坐标应是窗口像素的两倍"
+        );
 
-    var dialog = GetFileDialog(column, FileDialog.FileModeEnum.OpenDir);
-    dialog.Visible.ShouldBeTrue("点导入文件夹后必须弹出选择器");
-    dialog.Unresizable.ShouldBeFalse("选择文件窗口要能拖大");
+      ((Button)column.FindChild("ImportFolderButton", owned: false, recursive: true)!).EmitSignal(
+        BaseButton.SignalName.Pressed
+      );
+      await SettleAsync(panel);
 
-    // 统一尺寸策略：首次唤出按主窗口八成打开。对话框尺寸用视口可见区域（内容缩放后的 UI 坐标）
-    // 比较，不用窗口像素；断言取宽松下限，不依赖测试机分辨率，又能拦住回退到引擎默认小窗的改动。
-    var parent = panel.GetTree().Root.GetVisibleRect().Size;
-    dialog.Size.X.ShouldBeGreaterThanOrEqualTo((int)(parent.X * 0.7f));
-    dialog.Size.Y.ShouldBeGreaterThanOrEqualTo((int)(parent.Y * 0.7f));
+      var dialog = GetFileDialog(column, FileDialog.FileModeEnum.OpenDir);
+      dialog.Visible.ShouldBeTrue("点导入文件夹后必须弹出选择器");
+      dialog.Unresizable.ShouldBeFalse("选择文件窗口要能拖大");
+
+      // 首次唤出：精确等于视口（内容缩放后的 UI 坐标）的八成
+      var visible = tree.Root.GetVisibleRect().Size;
+      var expected = FileDialogSizing.Resolve(
+        new Vector2I(Mathf.RoundToInt(visible.X), Mathf.RoundToInt(visible.Y))
+      );
+      dialog.Size.ShouldBe(expected);
+
+      // 再次唤出：复用同一个对话框实例，而不是每次新建
+      ((Button)column.FindChild("ImportFolderButton", owned: false, recursive: true)!).EmitSignal(
+        BaseButton.SignalName.Pressed
+      );
+      await SettleAsync(panel);
+      ReferenceEquals(GetFileDialog(column, FileDialog.FileModeEnum.OpenDir), dialog)
+        .ShouldBeTrue("同一选择器应复用，不应每次唤起都新建 FileDialog");
+    }
+    finally
+    {
+      tree.Root.ContentScaleFactor = originalScale;
+    }
   }
 
   [Test]

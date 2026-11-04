@@ -74,6 +74,28 @@ public class FileDialogSizingTest : TestClass
   }
 
   [Test]
+  public void Popup_SecondOpen_RestoresUserResizedSize()
+  {
+    var dialog = new Mock<IFileDialog>();
+    dialog.SetupProperty(d => d.Size, new Vector2I(1200, 700));
+    // 模拟引擎在 popup 时对嵌入子窗口的钳制：弹窗过程会把尺寸改成「屏幕可用区域」
+    dialog
+      .Setup(d => d.PopupCentered(It.IsAny<Vector2I?>()))
+      .Callback((Vector2I? _) => dialog.Object.Size = new Vector2I(960, 510));
+
+    FileDialogSizing.Popup(dialog.Object);
+
+    // 模拟用户把对话框拖成别的尺寸
+    var resized = new Vector2I(1500, 900);
+    dialog.Object.Size = resized;
+    FileDialogSizing.Popup(dialog.Object);
+
+    // 再次唤出必须把用户尺寸补回去，否则会停在引擎钳出的 960×510
+    dialog.Object.Size.ShouldBe(resized);
+    dialog.Verify(d => d.PopupCentered(It.Is<Vector2I?>(size => size == null)), Times.Once);
+  }
+
+  [Test]
   public void Popup_FirstOpen_RestoresSizeAfterPopupClamp()
   {
     // popup 时引擎会把嵌入子窗口钳到屏幕可用区域的像素值（内容缩放 < 1 时会钳小），
