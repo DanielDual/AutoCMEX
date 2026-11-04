@@ -9,6 +9,7 @@ using AutoCMEX.Core.Info;
 using AutoCMEX.Core.Recording;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
+using AutoCMEX.UI;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
@@ -354,7 +355,7 @@ public partial class GifSetPanel : VBoxContainer
       Array.Empty<string>()
     );
     _folderDialog.DirSelected += OnImportFolderSelected;
-    _folderDialog.PopupCentered(new Vector2I(760, 520));
+    FileDialogSizing.Popup(_folderDialog);
   }
 
   private void OnImportZipPressed()
@@ -365,7 +366,7 @@ public partial class GifSetPanel : VBoxContainer
       new[] { "*.zip" }
     );
     _zipDialog.FileSelected += OnImportZipSelected;
-    _zipDialog.PopupCentered(new Vector2I(760, 520));
+    FileDialogSizing.Popup(_zipDialog);
   }
 
   private FileDialog CreateFileDialog(
@@ -453,7 +454,7 @@ public partial class GifSetPanel : VBoxContainer
 
     _pendingModPackZip = null;
     EnsureRecordDialogs();
-    _recordZipDialog!.PopupCentered(new Vector2I(760, 520));
+    FileDialogSizing.Popup(_recordZipDialog!);
   }
 
   /// <summary>创建录制用的两个选择器（只建一次、信号只连一次，避免重复起录）。</summary>
@@ -489,7 +490,7 @@ public partial class GifSetPanel : VBoxContainer
   {
     _pendingModPackZip = path;
     EnsureRecordDialogs();
-    _recordOutputDirDialog!.PopupCentered(new Vector2I(760, 520));
+    FileDialogSizing.Popup(_recordOutputDirDialog!);
   }
 
   /// <summary>选定输出目录后起录。</summary>

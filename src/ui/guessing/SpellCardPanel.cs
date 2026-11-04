@@ -12,6 +12,7 @@ using AutoCMEX;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Helpers;
 using AutoCMEX.Models;
+using AutoCMEX.UI;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
@@ -434,12 +435,12 @@ public partial class SpellCardPanel : VBoxContainer
 
   private void OnImportCardTable()
   {
-    ImportFileDialog.PopupCentered();
+    FileDialogSizing.Popup(ImportFileDialog);
   }
 
   private void OnExportCardTable()
   {
-    ExportFileDialog.PopupCentered();
+    FileDialogSizing.Popup(ExportFileDialog);
   }
 
   private void OnCardExportFileSelected(string path)

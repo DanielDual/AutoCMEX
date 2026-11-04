@@ -8,6 +8,7 @@ using AutoCMEX;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Helpers;
 using AutoCMEX.Models;
+using AutoCMEX.UI;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
@@ -198,12 +199,12 @@ public partial class AliasPanel : VBoxContainer
 
   private void OnImportAliasTable()
   {
-    ImportFileDialog.PopupCentered();
+    FileDialogSizing.Popup(ImportFileDialog);
   }
 
   private void OnExportAliasTable()
   {
-    ExportFileDialog.PopupCentered();
+    FileDialogSizing.Popup(ExportFileDialog);
   }
 
   /// <summary>导出别名表：第一列主名，之后每列一条别名，列数按最长的一行补齐。</summary>

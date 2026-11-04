@@ -5,6 +5,7 @@ using System.IO;
 using AutoCMEX.Core.Recording;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
+using AutoCMEX.UI;
 using Chickensoft.Sync.Primitives;
 using Godot;
 
@@ -357,7 +358,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     ChooseEngineDirButton.Pressed += () =>
     {
       PrepareDialog(EngineDirDialog, _config.EngineDir.Value);
-      EngineDirDialog.PopupCentered(new Vector2I(760, 520));
+      FileDialogSizing.Popup(EngineDirDialog);
     };
     engineRow.AddChild(ChooseEngineDirButton);
 
@@ -416,7 +417,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     ChooseSandboxRootButton.Pressed += () =>
     {
       PrepareDialog(SandboxRootDialog, _config.SandboxRoot.Value);
-      SandboxRootDialog.PopupCentered(new Vector2I(760, 520));
+      FileDialogSizing.Popup(SandboxRootDialog);
     };
     sandboxRow.AddChild(ChooseSandboxRootButton);
 
