@@ -68,11 +68,11 @@ public static class Win32ClipboardImage
     var opened = false;
     try
     {
-      for (var attempt = 0; attempt < 2 && !opened; attempt++)
+      for (var attempt = 0; attempt < 4 && !opened; attempt++)
       {
         opened = OpenClipboard(IntPtr.Zero);
-        if (!opened && attempt == 0)
-          System.Threading.Thread.Sleep(10);
+        if (!opened)
+          System.Threading.Thread.Sleep(20);
       }
 
       if (!opened)

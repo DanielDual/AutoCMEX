@@ -68,12 +68,14 @@ public sealed class TablePreviewExport : IDisposable
   private Image? _image;
   private TableModel? _model;
   private string _signature = string.Empty;
+  private string _imageSignature = string.Empty;
   private int _renderVersion;
   private bool _isRendering;
   private bool _renderPending;
   private bool _isPressed;
   private Vector2 _pressPosition;
   private bool _disposed;
+  private Window? _rootWindow;
 
   /// <summary>创建预览导出组件并接管目标控件的鼠标输入。</summary>
   /// <param name="owner">宿主节点（面板），用于挂菜单/对话框与取视口。</param>
@@ -95,10 +97,16 @@ public sealed class TablePreviewExport : IDisposable
     // Pass：自身接收右键/拖动，滚轮事件继续传给外层 ScrollContainer
     _target.MouseFilter = Control.MouseFilterEnum.Pass;
     _target.GuiInput += OnGuiInput;
+    _target.MouseEntered += OnMouseEntered;
+
+    _rootWindow = _owner.GetTree()?.Root;
+    if (_rootWindow is not null)
+      _rootWindow.FocusExited += OnWindowFocusExited;
   }
 
-  /// <summary>缓存图是否已就绪。</summary>
-  public bool HasImage => _image is not null;
+  /// <summary>缓存图是否与当前表格内容一致且已就绪。</summary>
+  public bool HasImage =>
+    _image is not null && string.Equals(_imageSignature, _signature, StringComparison.Ordinal);
 
   /// <summary>
   /// 按最新表格模型刷新缓存；内容指纹未变时跳过渲染。
@@ -116,9 +124,14 @@ public sealed class TablePreviewExport : IDisposable
 
     _signature = signature;
 
+    // 内容变化即作废在飞渲染，避免旧图在新签名下被写回
+    _renderVersion++;
+    _renderPending = false;
+
     if (!model.HasContent)
     {
       _image = null;
+      _imageSignature = string.Empty;
       return;
     }
 
@@ -133,6 +146,13 @@ public sealed class TablePreviewExport : IDisposable
 
     _disposed = true;
     _target.GuiInput -= OnGuiInput;
+    _target.MouseEntered -= OnMouseEntered;
+
+    if (_rootWindow is not null)
+    {
+      _rootWindow.FocusExited -= OnWindowFocusExited;
+      _rootWindow = null;
+    }
 
     if (_menu is not null && GodotObject.IsInstanceValid(_menu))
     {
@@ -146,6 +166,7 @@ public sealed class TablePreviewExport : IDisposable
     _messageDialog = null;
 
     _image = null;
+    _imageSignature = string.Empty;
     _model = null;
   }
 
@@ -157,13 +178,13 @@ public sealed class TablePreviewExport : IDisposable
       return;
     }
 
-    _ = RenderAsync();
+    _ = RenderAsync(_signature);
   }
 
-  private async Task RenderAsync()
+  private async Task RenderAsync(string signature)
   {
     _isRendering = true;
-    var version = ++_renderVersion;
+    var version = _renderVersion;
 
     try
     {
@@ -173,21 +194,29 @@ public sealed class TablePreviewExport : IDisposable
 
       var result = await _render(model);
 
-      // 期间内容又变了：丢弃过期结果
+      // 期间内容又变了：丢弃过期结果（不能把旧图写到新签名下）
       if (_disposed || version != _renderVersion)
         return;
 
       if (!result.IsSuccess)
       {
         GD.PushWarning($"TablePreviewExport: 表格出图失败：{result.ErrorMessage}");
+        _image = null;
+        _imageSignature = string.Empty;
         return;
       }
 
       _image = result.Image;
+      _imageSignature = signature;
     }
     catch (Exception ex)
     {
       GD.PushWarning($"TablePreviewExport: 表格出图异常：{ex.Message}");
+      if (!_disposed && version == _renderVersion)
+      {
+        _image = null;
+        _imageSignature = string.Empty;
+      }
     }
     finally
     {
@@ -200,6 +229,24 @@ public sealed class TablePreviewExport : IDisposable
     }
   }
 
+  /// <summary>鼠标进入表格且缓存缺失/失效时补一次渲染（出图失败后的兜底重试）。</summary>
+  private void OnMouseEntered()
+  {
+    if (_disposed || _isRendering || HasImage)
+      return;
+
+    if (_model is { HasContent: true })
+      QueueRender();
+  }
+
+  /// <summary>窗口失焦时复位按下状态，避免下次拖动误判。</summary>
+  private void OnWindowFocusExited()
+  {
+    _isPressed = false;
+  }
+
+  private static bool IsPlatformSupported => OperatingSystem.IsWindows();
+
   private void OnGuiInput(InputEvent @event)
   {
     if (_disposed)
@@ -208,7 +255,7 @@ public sealed class TablePreviewExport : IDisposable
     switch (@event)
     {
       case InputEventMouseButton button when button.ButtonIndex == MouseButton.Right:
-        if (button.Pressed)
+        if (button.Pressed && IsPlatformSupported)
         {
           ShowMenu();
           _target.AcceptEvent();
@@ -236,6 +283,9 @@ public sealed class TablePreviewExport : IDisposable
 
   private void MaybeStartDrag(Vector2 position)
   {
+    if (!IsPlatformSupported)
+      return;
+
     var threshold = _owner.GetViewport()?.GetDragThreshold() ?? FallbackDragThreshold;
     if (position.DistanceTo(_pressPosition) < threshold)
       return;
@@ -246,15 +296,21 @@ public sealed class TablePreviewExport : IDisposable
 
   private void ShowMenu()
   {
-    if (!_owner.IsInsideTree())
+    if (!IsPlatformSupported || !_owner.IsInsideTree())
       return;
 
     EnsureMenu();
     _menu!.Clear();
     _menu.AddItem(CopyMenuText, 0);
-    _menu.SetItemDisabled(0, _image is null);
+    _menu.SetItemDisabled(0, !HasImage);
 
-    _menu.Position = DisplayServer.MouseGetPosition();
+    // 项目使用嵌入子窗口（embed_subwindows 默认开启）：PopupMenu 的 Position 按
+    // 父视口坐标解释；只有显式关闭嵌入时才用屏幕坐标。
+    var viewport = _owner.GetViewport();
+    _menu.Position =
+      viewport is not null && viewport.GuiEmbedSubwindows
+        ? (Vector2I)viewport.GetMousePosition()
+        : DisplayServer.MouseGetPosition();
     _menu.Popup();
   }
 
@@ -278,7 +334,7 @@ public sealed class TablePreviewExport : IDisposable
 
   private void CopyImage()
   {
-    if (_image is null)
+    if (!IsPlatformSupported || !HasImage || _image is null)
       return;
 
     if (!_backend.TryCopy(_image, out var error))
@@ -287,9 +343,10 @@ public sealed class TablePreviewExport : IDisposable
 
   private void StartDrag()
   {
-    if (_image is null || !_owner.IsInsideTree())
+    if (!IsPlatformSupported || !HasImage || _image is null || !_owner.IsInsideTree())
       return;
 
+    var image = _image;
     _menu?.Hide();
 
     var fileName =
@@ -303,7 +360,7 @@ public sealed class TablePreviewExport : IDisposable
       if (!string.IsNullOrEmpty(directory))
         Directory.CreateDirectory(directory);
 
-      var error = _image.SavePng(path);
+      var error = image.SavePng(path);
       if (error != Error.Ok)
       {
         ShowMessage("拖拽失败", $"无法创建拖拽文件（{error}）。");
@@ -316,7 +373,7 @@ public sealed class TablePreviewExport : IDisposable
       return;
     }
 
-    if (!_backend.TryDragFiles(new[] { path }, _image, out var dragError))
+    if (!_backend.TryDragFiles(new[] { path }, image, out var dragError))
       ShowMessage("拖拽失败", dragError);
   }
 
@@ -335,7 +392,13 @@ public sealed class TablePreviewExport : IDisposable
     if (_messageDialog is not null && GodotObject.IsInstanceValid(_messageDialog))
       return;
 
-    _messageDialog = new AcceptDialog { Name = "TableImageMessage", Title = "表格图片导出" };
+    // 非独占：导出失败提示只是信息展示，独占子窗口会与其它弹出窗口（菜单/文件框）冲突
+    _messageDialog = new AcceptDialog
+    {
+      Name = "TableImageMessage",
+      Title = "表格图片导出",
+      Exclusive = false,
+    };
     _owner.AddChild(_messageDialog);
   }
 }

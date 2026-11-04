@@ -84,6 +84,13 @@ public class Win32DragOutTest : TestClass
   }
 
   [Test]
+  public void TryDragFiles_EmptyPaths_ReturnsFailure()
+  {
+    Win32DragOut.TryDragFiles(Array.Empty<string>(), null, out var error).ShouldBeFalse();
+    error.ShouldNotBeNullOrWhiteSpace();
+  }
+
+  [Test]
   public void TryDragFiles_MissingFile_ReturnsFailure()
   {
     if (!OperatingSystem.IsWindows())

@@ -145,6 +145,15 @@ public static class TableImageRenderer
     string outputPath
   )
   {
+    if (host is null || !GodotObject.IsInstanceValid(host) || !host.IsInsideTree())
+      return TableImageResult.Error("出图失败：渲染宿主节点无效或不在场景树内。");
+
+    if (model is null)
+      return TableImageResult.Error("出图失败：表格模型为空。");
+
+    if (!model.HasContent)
+      return TableImageResult.Error("出图失败：表格没有可发布的数据行。");
+
     if (string.IsNullOrWhiteSpace(outputPath))
       return TableImageResult.Error("出图失败：输出路径为空。");
 

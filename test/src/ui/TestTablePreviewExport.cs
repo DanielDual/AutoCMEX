@@ -48,6 +48,7 @@ public class TestTablePreviewExport : TestClass
   private FakeBackend _backend = default!;
   private TablePreviewExport _export = default!;
   private int _renderCount;
+  private bool _failRender;
   private readonly List<string> _tempFiles = new();
 
   public TestTablePreviewExport(Node testScene)
@@ -63,6 +64,7 @@ public class TestTablePreviewExport : TestClass
 
     _backend = new FakeBackend();
     _renderCount = 0;
+    _failRender = false;
     _export = new TablePreviewExport(_owner, new ControlAdapter(_target), _ => Render(), _backend);
   }
 
@@ -71,8 +73,10 @@ public class TestTablePreviewExport : TestClass
   {
     _export?.Dispose();
 
-    if (_owner != null && !_owner.IsQueuedForDeletion())
-      _owner.QueueFree();
+    // Free 而不是 QueueFree：立即释放挂在上面的菜单/对话框，避免上一个用例的
+    // 独占子窗口残留到下一个用例（会打印 exclusive child 引擎 ERROR）。
+    if (_owner != null && GodotObject.IsInstanceValid(_owner))
+      _owner.Free();
 
     foreach (var file in _tempFiles)
     {
@@ -86,6 +90,10 @@ public class TestTablePreviewExport : TestClass
   private Task<TableImageRenderResult> Render()
   {
     _renderCount++;
+
+    if (_failRender)
+      return Task.FromResult(TableImageRenderResult.Error("渲染失败"));
+
     var image = Image.CreateEmpty(20, 10, false, Image.Format.Rgba8);
     image.Fill(Colors.White);
     return Task.FromResult(TableImageRenderResult.Success(image));
@@ -190,6 +198,7 @@ public class TestTablePreviewExport : TestClass
 
     var dialog = _owner.GetChildren().OfType<AcceptDialog>().Single();
     dialog.DialogText.ShouldBe("失败原因");
+    dialog.Hide();
   }
 
   [Test]
@@ -222,6 +231,36 @@ public class TestTablePreviewExport : TestClass
   }
 
   [Test]
+  public void Update_RenderFailure_ClearsImageAndDisablesCopy()
+  {
+    _failRender = true;
+    _export.Update(CreateModel("A"));
+    _export.HasImage.ShouldBeFalse();
+
+    RightClick();
+    FindMenu().IsItemDisabled(0).ShouldBeTrue();
+
+    EmitGui(MakeMouseButton(MouseButton.Left, true, new Vector2(20, 20)));
+    EmitGui(MouseMotion(new Vector2(160, 160), MouseButtonMask.Left));
+    _backend.DraggedFiles.ShouldBeEmpty();
+  }
+
+  [Test]
+  public async Task Dispose_ClearsImageAndUnsubscribes()
+  {
+    _export.Update(CreateModel("A"));
+    _export.HasImage.ShouldBeTrue();
+
+    _export.Dispose();
+    _export.HasImage.ShouldBeFalse();
+
+    // Dispose 后菜单已入删除队列；等一帧后确认不再响应右键
+    await _owner.ToSignal(_owner.GetTree(), SceneTree.SignalName.ProcessFrame);
+    RightClick();
+    _owner.GetChildren().OfType<PopupMenu>().ShouldBeEmpty();
+  }
+
+  [Test]
   public void DragFailure_ShowsMessageDialog()
   {
     _backend.FailDrag = true;
@@ -232,5 +271,6 @@ public class TestTablePreviewExport : TestClass
 
     var dialog = _owner.GetChildren().OfType<AcceptDialog>().Single();
     dialog.DialogText.ShouldBe("失败原因");
+    dialog.Hide();
   }
 }
