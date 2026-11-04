@@ -1045,4 +1045,86 @@ public class TestInfoPanel : TestClass
     FindDialogOrNull(panel).ShouldBeNull();
     _sent.ShouldBeEmpty();
   }
+
+  [Test]
+  public async Task TablePreviews_ExposeDragExportAndCopyMenu()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var guessing = (GuessingTablePanel)panel.ColumnPanels[1]!;
+    var creator = (CreatorRemainingPanel)panel.ColumnPanels[2]!;
+
+    await WaitForPreviewImageAsync(panel, guessing);
+    await WaitForPreviewImageAsync(panel, creator);
+
+    AssertCopyMenu(guessing);
+    AssertCopyMenu(creator);
+  }
+
+  [Test]
+  public async Task TablePreviews_WithoutBoss_DisableCopy()
+  {
+    CreateDataManager();
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var guessing = (GuessingTablePanel)panel.ColumnPanels[1]!;
+    RightClickGrid(guessing);
+
+    var menu = FindPreviewMenu(guessing);
+    menu.ItemCount.ShouldBe(1);
+    menu.IsItemDisabled(0).ShouldBeTrue("表内无数据时「复制」应禁用");
+  }
+
+  private static TablePreviewExport? GetPreviewExport(Node column) =>
+    column switch
+    {
+      GuessingTablePanel guessing => guessing.PreviewExport,
+      CreatorRemainingPanel creator => creator.PreviewExport,
+      _ => null,
+    };
+
+  private static async Task WaitForPreviewImageAsync(Node panel, Node column)
+  {
+    var export = GetPreviewExport(column);
+    export.ShouldNotBeNull();
+
+    for (var frame = 0; frame < 300 && !export!.HasImage; frame++)
+      await panel.ToSignal(panel.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    export!.HasImage.ShouldBeTrue("表格图片应在若干帧内完成渲染");
+  }
+
+  private static void RightClickGrid(Node column)
+  {
+    var grid = column.FindChild("TableGrid", owned: false, recursive: true) as GridContainer;
+    grid.ShouldNotBeNull("表格栏内应有 TableGrid");
+
+    var press = new InputEventMouseButton
+    {
+      ButtonIndex = MouseButton.Right,
+      Pressed = true,
+      Position = new Vector2(4, 4),
+    };
+    grid!.EmitSignal(Control.SignalName.GuiInput, press);
+  }
+
+  private static PopupMenu FindPreviewMenu(Node column)
+  {
+    var menu = column.GetChildren().OfType<PopupMenu>().SingleOrDefault();
+    menu.ShouldNotBeNull("右键表格应弹出预览导出菜单");
+    return menu!;
+  }
+
+  private static void AssertCopyMenu(Node column)
+  {
+    RightClickGrid(column);
+
+    var menu = FindPreviewMenu(column);
+    menu.ItemCount.ShouldBe(1);
+    menu.GetItemText(0).ShouldBe("复制");
+    menu.IsItemDisabled(0).ShouldBeFalse();
+  }
 }
