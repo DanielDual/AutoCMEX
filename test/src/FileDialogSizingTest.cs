@@ -112,9 +112,45 @@ public class FileDialogSizingTest : TestClass
     dialog.SetupGet(d => d.Visible).Returns(true);
 
     FileDialogSizing.Popup(dialog.Object);
+
+    // 显示方向即使尺寸与本次设定不同（例如引擎修正过），也不能写记忆
+    dialog.Object.Size = new Vector2I(900, 600);
     dialog.Raise(d => d.VisibilityChanged += null);
 
     FileDialogSizing.RememberedForTests.ShouldBeNull();
+  }
+
+  [Test]
+  public void Popup_ContentMinBump_IsNotRemembered()
+  {
+    // 引擎把窗口抬到内容最小尺寸不是用户拖动，不能写记忆
+    var dialog = new Mock<IFileDialog>();
+    dialog.SetupProperty(d => d.Size, new Vector2I(640, 360));
+    dialog.SetupGet(d => d.Visible).Returns(false);
+    dialog.Setup(d => d.GetContentsMinimumSize()).Returns(new Vector2I(1200, 700));
+
+    FileDialogSizing.Popup(dialog.Object);
+    dialog.Object.Size = new Vector2I(1200, 700);
+    dialog.Raise(d => d.VisibilityChanged += null);
+
+    FileDialogSizing.RememberedForTests.ShouldBeNull("引擎内容最小尺寸抬升不算用户改动");
+  }
+
+  [Test]
+  public void Popup_HideWithoutResize_NextDialogKeepsPolicy()
+  {
+    // 只关闭、没拖动：下一个对话框仍按视口 80%（80% 策略没有被冻结）
+    var first = new Mock<IFileDialog>();
+    first.SetupProperty(d => d.Size, new Vector2I(640, 360));
+    first.SetupGet(d => d.Visible).Returns(false);
+    FileDialogSizing.Popup(first.Object);
+    first.Raise(d => d.VisibilityChanged += null);
+
+    var second = new Mock<IFileDialog>();
+    FileDialogSizing.Popup(second.Object);
+
+    var expected = FileDialogSizing.Resolve(FileDialogSizing.FallbackParentSize);
+    second.Verify(d => d.PopupCentered(It.Is<Vector2I?>(size => size == expected)), Times.Once);
   }
 
   [Test]
