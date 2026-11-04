@@ -44,6 +44,8 @@ public class TestAliasPanel : TestClass
   [Setup]
   public void Setup()
   {
+    // 尺寸记忆是进程内全局的：每个用例开始前清空，避免用例间顺序相关
+    FileDialogSizing.ResetMemoryForTests();
     _dm = new DataManager(
       System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"AutoCMEX_Test_{Guid.NewGuid():N}"),
       new AesEncryptor("test-key")
@@ -139,7 +141,6 @@ public class TestAliasPanel : TestClass
   [Test]
   public void ImportAliasTable_OpensPickerWithUnifiedSizePolicy()
   {
-    FileDialogSizing.ResetMemoryForTests();
     var expected = FileDialogSizing.Resolve(FileDialogSizing.FallbackParentSize);
 
     _importAliasBtn.Raise(m => m.Pressed += null);

@@ -79,11 +79,42 @@ public class FileDialogSizingTest : TestClass
     var resized = new Vector2I(1200, 700);
     first.Object.Size = resized;
     first.Raise(d => d.VisibilityChanged += null);
+    FileDialogSizing.RememberedForTests.ShouldBe(resized);
 
     // 另一个按钮唤出的另一个对话框，直接沿用这份全局尺寸
     var second = new Mock<IFileDialog>();
+    second.SetupProperty(d => d.Size, new Vector2I(640, 360));
     FileDialogSizing.Popup(second.Object);
     second.Verify(d => d.PopupCentered(It.Is<Vector2I?>(size => size == resized)), Times.Once);
+    second.Object.Size.ShouldBe(resized);
+  }
+
+  [Test]
+  public void Popup_HideWithoutResize_KeepsPolicyMemory()
+  {
+    // 用户没改尺寸就关窗：不能写记忆，否则主窗口之后变大，弹窗也不会跟着重算 80%
+    var dialog = new Mock<IFileDialog>();
+    dialog.SetupProperty(d => d.Size, new Vector2I(640, 360));
+    dialog.SetupGet(d => d.Visible).Returns(false);
+
+    FileDialogSizing.Popup(dialog.Object);
+    dialog.Raise(d => d.VisibilityChanged += null);
+
+    FileDialogSizing.RememberedForTests.ShouldBeNull("只隐藏、没拖动时不应写全局记忆");
+  }
+
+  [Test]
+  public void Popup_ShowDirection_DoesNotWriteMemory()
+  {
+    // 显示方向的可见性变化不是「关闭」，不能写记忆
+    var dialog = new Mock<IFileDialog>();
+    dialog.SetupProperty(d => d.Size, new Vector2I(1200, 700));
+    dialog.SetupGet(d => d.Visible).Returns(true);
+
+    FileDialogSizing.Popup(dialog.Object);
+    dialog.Raise(d => d.VisibilityChanged += null);
+
+    FileDialogSizing.RememberedForTests.ShouldBeNull();
   }
 
   [Test]
@@ -96,12 +127,20 @@ public class FileDialogSizingTest : TestClass
     FileDialogSizing.Popup(first.Object);
     first.Object.Size = new Vector2I(5000, 5000);
     first.Raise(d => d.VisibilityChanged += null);
+    // 记忆保留用户原始尺寸（未被视口夹过）
+    FileDialogSizing.RememberedForTests.ShouldBe(new Vector2I(5000, 5000));
 
     var second = new Mock<IFileDialog>();
+    second.SetupProperty(d => d.Size, new Vector2I(100, 100));
+    second.SetupGet(d => d.Visible).Returns(false);
     FileDialogSizing.Popup(second.Object);
 
     var fallback = FileDialogSizing.FallbackParentSize;
     second.Verify(d => d.PopupCentered(It.Is<Vector2I?>(size => size == fallback)), Times.Once);
+
+    // 关掉这次被夹过的窗口，不能把「夹小后的值」写回记忆
+    second.Raise(d => d.VisibilityChanged += null);
+    FileDialogSizing.RememberedForTests.ShouldBe(new Vector2I(5000, 5000));
   }
 
   [Test]
