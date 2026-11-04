@@ -90,6 +90,11 @@ size_flags_horizontal = 3
 [node name="ActionRow" type="HBoxContainer" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel" unique_id=953420434]
 layout_mode = 2
 
+[node name="RefreshGroupsButton" type="Button" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/ActionRow" unique_id=395190614]
+unique_name_in_owner = true
+layout_mode = 2
+text = "刷新群列表"
+
 [node name="AddGroupButton" type="Button" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel/ActionRow" unique_id=1036681716]
 unique_name_in_owner = true
 layout_mode = 2
