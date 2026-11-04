@@ -3,6 +3,7 @@ namespace AutoCMEX.Helpers.Windows;
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using System.Runtime.InteropServices.ComTypes;
 using Godot;
 
 /// <summary>
@@ -26,7 +27,11 @@ public static class Win32DragOut
   private const uint MkLbutton = 0x0001;
   private const uint DatadirGet = 1;
   private const uint TymedHGlobal = 0x0001;
+  private const uint TymedIStream = 0x0004;
   private const uint DvaspectContent = 1;
+
+  /// <summary>单个流格式的读取上限（字节）：防止异常流把内存吃满。</summary>
+  private const int MaxStreamBytes = 64 * 1024 * 1024;
 
   private const int SOK = 0;
   private const int SFalse = 1;
@@ -221,6 +226,13 @@ public static class Win32DragOut
   [DllImport("ole32.dll")]
   private static extern void ReleaseStgMedium(ref StgMedium pmedium);
 
+  [DllImport("ole32.dll", PreserveSig = true)]
+  private static extern int CreateStreamOnHGlobal(
+    IntPtr hGlobal,
+    bool fDeleteOnRelease,
+    out IntPtr ppstm
+  );
+
   /// <summary>
   /// 发起一次系统拖放。
   /// </summary>
@@ -263,7 +275,10 @@ public static class Win32DragOut
         var preview = ScaleDragImage(dragImage);
         imageHandle = Win32Bitmap.CreateHBitmap(preview, out var width, out var height);
         if (imageHandle != IntPtr.Zero)
-          _ = TrySetDragImage(dataObject, imageHandle, width, height, out _);
+        {
+          if (!TrySetDragImage(dataObject, imageHandle, width, height, out var dragImageError))
+            GD.PushWarning($"Win32DragOut: 拖影设置失败：{dragImageError}");
+        }
       }
 
       var result = DoDragDrop(dataObject, new DropSourceImpl(), DropeffectCopy, out var effect);
@@ -426,6 +441,11 @@ public static class Win32DragOut
       if (bytes is null)
         return DvEFormatEtc;
 
+      // 拖影管理器注入的流式格式（如 DragContext）要求以 IStream 归还，
+      // 否则外壳拿不到拖影上下文、不会绘制拖影。
+      if ((pformatetcIn.Tymed & TymedIStream) != 0 && IsExtraStreamFormat(pformatetcIn))
+        return CreateStreamMedium(bytes, out pmedium);
+
       var handle = AllocateHGlobal(bytes);
       if (handle == IntPtr.Zero)
         return unchecked((int)0x8007000E); // E_OUTOFMEMORY
@@ -462,31 +482,41 @@ public static class Win32DragOut
     {
       try
       {
-        // 非 HGLOBAL 格式（如拖影管理器附带设置的流式上下文）当前不消费；
-        // 返回成功让拖影初始化继续，避免整个拖影因未实现的辅助格式被放弃。
-        if ((pmedium.Tymed & TymedHGlobal) == 0 || pmedium.UnionMember == IntPtr.Zero)
+        if ((pmedium.Tymed & TymedHGlobal) != 0 && pmedium.UnionMember != IntPtr.Zero)
+        {
+          var size = (int)Win32Bitmap.GlobalSize(pmedium.UnionMember);
+          if (size <= 0)
+            return ENotImpl;
+
+          var pointer = Win32Bitmap.GlobalLock(pmedium.UnionMember);
+          if (pointer == IntPtr.Zero)
+            return ENotImpl;
+
+          var bytes = new byte[size];
+          try
+          {
+            Marshal.Copy(pointer, bytes, 0, size);
+          }
+          finally
+          {
+            Win32Bitmap.GlobalUnlock(pmedium.UnionMember);
+          }
+
+          _extraFormats.Add((pformatetc, bytes));
           return SOK;
-
-        var size = (int)Win32Bitmap.GlobalSize(pmedium.UnionMember);
-        if (size <= 0)
-          return ENotImpl;
-
-        var pointer = Win32Bitmap.GlobalLock(pmedium.UnionMember);
-        if (pointer == IntPtr.Zero)
-          return ENotImpl;
-
-        var bytes = new byte[size];
-        try
-        {
-          Marshal.Copy(pointer, bytes, 0, size);
-        }
-        finally
-        {
-          Win32Bitmap.GlobalUnlock(pmedium.UnionMember);
         }
 
-        _extraFormats.Add((pformatetc, bytes));
-        return SOK;
+        if ((pmedium.Tymed & TymedIStream) != 0)
+        {
+          var bytes = ReadStream(pmedium.UnionMember);
+          if (bytes is null)
+            return ENotImpl;
+
+          _extraFormats.Add((pformatetc, bytes));
+          return SOK;
+        }
+
+        return ENotImpl;
       }
       finally
       {
@@ -569,7 +599,7 @@ public static class Win32DragOut
       if (format.DwAspect != DvaspectContent || format.Lindex != -1)
         return false;
 
-      if (format.Tymed != 0 && (format.Tymed & TymedHGlobal) == 0)
+      if (format.Tymed != 0 && (format.Tymed & (TymedHGlobal | TymedIStream)) == 0)
         return false;
 
       // 拖影由 IDragSourceHelper 通过 SetData 注入，注入前也要对该格式回答“支持”
@@ -577,6 +607,94 @@ public static class Win32DragOut
         return true;
 
       return GetBytes(format) is not null;
+    }
+
+    private bool IsExtraStreamFormat(FormatEtc format)
+    {
+      foreach (var extra in _extraFormats)
+      {
+        if (
+          extra.Format.CfFormat == format.CfFormat
+          && extra.Format.DwAspect == format.DwAspect
+          && extra.Format.Lindex == format.Lindex
+          && (extra.Format.Tymed & TymedIStream) != 0
+        )
+          return true;
+      }
+
+      return false;
+    }
+
+    private int CreateStreamMedium(byte[] bytes, out StgMedium medium)
+    {
+      medium = default;
+
+      var handle = AllocateHGlobal(bytes);
+      if (handle == IntPtr.Zero)
+        return unchecked((int)0x8007000E); // E_OUTOFMEMORY
+
+      var result = CreateStreamOnHGlobal(handle, true, out var stream);
+      if (result < 0 || stream == IntPtr.Zero)
+      {
+        Win32Bitmap.GlobalFree(handle);
+        return result < 0 ? result : unchecked((int)0x80004005); // E_FAIL
+      }
+
+      medium = new StgMedium
+      {
+        Tymed = TymedIStream,
+        UnionMember = stream,
+        PUnkForRelease = IntPtr.Zero,
+      };
+      return SOK;
+    }
+
+    private static byte[]? ReadStream(IntPtr streamPointer)
+    {
+      if (streamPointer == IntPtr.Zero)
+        return null;
+
+      object? comObject = null;
+      try
+      {
+        comObject = Marshal.GetObjectForIUnknown(streamPointer);
+        if (comObject is not IStream stream)
+          return null;
+
+        var buffer = new byte[16 * 1024];
+        var readPointer = Marshal.AllocHGlobal(sizeof(int));
+        try
+        {
+          using var collected = new System.IO.MemoryStream();
+          while (true)
+          {
+            Marshal.WriteInt32(readPointer, 0);
+            stream.Read(buffer, buffer.Length, readPointer);
+            var read = Math.Clamp(Marshal.ReadInt32(readPointer), 0, buffer.Length);
+            if (read == 0)
+              break;
+
+            collected.Write(buffer, 0, read);
+            if (collected.Length > MaxStreamBytes)
+              return null;
+          }
+
+          return collected.ToArray();
+        }
+        finally
+        {
+          Marshal.FreeHGlobal(readPointer);
+        }
+      }
+      catch
+      {
+        return null;
+      }
+      finally
+      {
+        if (comObject is not null && Marshal.IsComObject(comObject))
+          Marshal.ReleaseComObject(comObject);
+      }
     }
 
     private byte[]? GetBytes(FormatEtc format)

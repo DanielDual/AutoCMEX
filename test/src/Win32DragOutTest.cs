@@ -2,6 +2,7 @@ namespace AutoCMEX;
 
 using System;
 using System.IO;
+using System.Runtime.InteropServices;
 using AutoCMEX.Helpers.Windows;
 using Chickensoft.GoDotTest;
 using Godot;
@@ -76,6 +77,68 @@ public class Win32DragOutTest : TestClass
       width.ShouldBe(20);
       height.ShouldBe(10);
       Win32DragOut.TrySetDragImage(data, hBitmap, width, height, out var error).ShouldBeTrue(error);
+    }
+    finally
+    {
+      Win32Bitmap.DeleteHBitmap(hBitmap);
+    }
+  }
+
+  [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+  private static extern uint RegisterClipboardFormatW(string lpszFormat);
+
+  [Test]
+  public void DragImage_StoresImageBitsAndDragContext()
+  {
+    if (!OperatingSystem.IsWindows())
+      return;
+
+    var image = CreateImage();
+    var data = CreateDataObject(image);
+    var hBitmap = Win32Bitmap.CreateHBitmap(image, out var width, out var height);
+
+    try
+    {
+      Win32DragOut.TrySetDragImage(data, hBitmap, width, height, out var error).ShouldBeTrue(error);
+
+      // 拖影管理器把位图信息写进 DragImageBits（HGLOBAL）：外壳按它决定拖影大小与位图。
+      var bitsFormat = (ushort)RegisterClipboardFormatW("DragImageBits");
+      bitsFormat.ShouldNotBe((ushort)0);
+      var bits = new Win32DragOut.FormatEtc
+      {
+        CfFormat = bitsFormat,
+        DwAspect = 1,
+        Lindex = -1,
+        Tymed = 1,
+      };
+      data.QueryGetData(ref bits).ShouldBe(0);
+      data.GetData(ref bits, out var medium).ShouldBe(0);
+      medium.Tymed.ShouldBe(1u);
+
+      var pointer = Win32Bitmap.GlobalLock(medium.UnionMember);
+      try
+      {
+        var dragImage = Marshal.PtrToStructure<Win32DragOut.ShDragImage>(pointer);
+        dragImage.Cx.ShouldBe(width);
+        dragImage.Cy.ShouldBe(height);
+        dragImage.HBitmap.ShouldNotBe(IntPtr.Zero);
+      }
+      finally
+      {
+        Win32Bitmap.GlobalUnlock(medium.UnionMember);
+        Win32Bitmap.GlobalFree(medium.UnionMember);
+      }
+
+      // 拖影管理器还会以流格式注入 DragContext；取不回来时外壳不会绘制拖影。
+      var contextFormat = (ushort)RegisterClipboardFormatW("DragContext");
+      var context = new Win32DragOut.FormatEtc
+      {
+        CfFormat = contextFormat,
+        DwAspect = 1,
+        Lindex = -1,
+        Tymed = 4,
+      };
+      data.QueryGetData(ref context).ShouldBe(0);
     }
     finally
     {
