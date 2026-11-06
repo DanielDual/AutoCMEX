@@ -293,7 +293,13 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 ### 配置与插件部署（P4）
 
-设置板块「信息」类别页底部挂一组「符卡 GIF 录制设置」（`RecordingConfigPanel`，默认折叠）：引擎目录、并行度、沙箱根、插件状态、高级参数五段。该类别页没有独立场景（节点直接写在 `SettingsPanel.tscn` 里），故分组按本页既有的「C# 构建行」范式在依赖解析后创建（`InfoConfigPanel.EnsureRecordingSection`），并在该页每次被切显时刷新一次状态（`VisibilityChanged`）。
+设置板块「信息」类别页在目标群列表下方挂一组常显的「符卡 GIF 录制设置」（`RecordingConfigPanel`，已取消折叠复选框）：引擎目录、并行度、沙箱根、插件状态、高级参数五段。该类别页没有独立场景（节点直接写在 `SettingsPanel.tscn` 里），故分组按本页既有的「C# 构建行」范式在依赖解析后创建（`InfoConfigPanel.EnsureRecordingSection`，挂到页面内容的 `%PageBody` 末尾），并在该页每次被切显时刷新一次状态（`VisibilityChanged`）。
+
+**双滚动结构是有意设计**：目标群列表行数随活动规模浮动，固定高度（600px）单独滚动可避免把页面撑长；录制设置整组较长，放在列表下方由页面滚动承接。
+
+替代方案与取舍：① 只做一层滚动（群列表随页面滚）——群列表会把录制设置顶远，行数一多页面极长；② 列表高度按内容自适应——行数变化会让页面高度跳动、滚动位置不稳定；故取固定 600px。
+
+**滚轮边界交接**：Godot 4.7 的 ScrollContainer 只在自身滚动值真的变化时才消费（accept）滚轮，到边界后事件会自然冒泡给父级容器——「列表到底继续滚页面」由引擎默认提供，本页不写额外代码（内层还有余量时滚列表、到边界后滚页面、列表装得下时直接滚页面）。
 
 配置项一律复用 `DataManager.RecordingConfig` 的既有字段（引擎目录 / 并行度 / 沙箱根 / 帧数上限 / 两个抽帧间隔 / 放缩比 / 上次输出目录），写入走既有防抖自动保存。写回纪律：
 

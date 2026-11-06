@@ -14,9 +14,13 @@ using Godot;
 /// </summary>
 /// <remarks>
 /// <para>
-/// 挂在设置面板「信息」类别页（<see cref="InfoConfigPanel"/>）底部，由该页在 <c>OnResolved</c> 时创建。
+/// 挂在设置面板「信息」类别页（<see cref="InfoConfigPanel"/>）的目标群列表下方，由该页在 <c>OnResolved</c> 时创建。
 /// 「信息」类别页没有独立场景（节点直接写在 <c>SettingsPanel.tscn</c> 里），故这里沿用该页既有的
 /// 「C# 构建行」范式，不为一个分组改动共享场景。
+/// </para>
+/// <para>
+/// 整组常显（不再有折叠复选框）：页面本身纵向滚动，往下翻即可看全；目标群列表保留自己的定高滚动区，
+/// 故本页是有意保留的双滚动结构（内层列表 + 外层页面），滚轮到列表边界后由 Godot 默认冒泡给外层页面。
 /// </para>
 /// <para>
 /// 写入纪律：配置项只在通过校验时写回模型（非法值保留原值并只提示）；插件的安装/启用只响应用户点击，
@@ -45,7 +49,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     _dm = dataManager ?? throw new ArgumentNullException(nameof(dataManager));
     _config = _dm.RecordingConfig;
     Name = "RecordingConfigPanel";
-    BuildToggle();
+    BuildHeader();
     BuildBody();
     BuildDialogs();
     SyncFromConfig();
@@ -54,11 +58,8 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
 
   #region Controls
 
-  /// <summary>整组的折叠开关（默认折叠，避免挤压目标群列表）。</summary>
-  public CheckBox SectionToggle { get; private set; } = default!;
-
-  /// <summary>折叠开关控制的设置主体。</summary>
-  public VBoxContainer SectionBody { get; private set; } = default!;
+  /// <summary>分组标题（普通文本，整组常显，不再有折叠开关）。</summary>
+  public Label SectionTitle { get; private set; } = default!;
 
   /// <summary>引擎目录输入框（提交或失焦时才写回）。</summary>
   public LineEdit EngineDirEdit { get; private set; } = default!;
@@ -128,26 +129,11 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
 
   #endregion
 
-  /// <summary>是否已展开。</summary>
-  public bool IsExpanded => SectionToggle.ButtonPressed;
-
   /// <summary>把配置值同步到控件，并重渲染全部状态（每次「信息」类别页显示时调用）。</summary>
   public void Refresh()
   {
     SyncFromConfig();
     RefreshStatuses();
-  }
-
-  /// <summary>展开或折叠设置主体（展开时顺带刷新一次状态）。</summary>
-  /// <param name="expanded">是否展开。</param>
-  public void SetExpanded(bool expanded)
-  {
-    SectionToggle.ButtonPressed = expanded;
-    SectionBody.Visible = expanded;
-    if (expanded)
-    {
-      Refresh();
-    }
   }
 
   /// <summary>提交引擎目录：校验通过才写回模型，否则保留原值并提示原因。</summary>
@@ -314,34 +300,22 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
         : $"上次输出目录：{_config.LastOutputDir.Value}";
   }
 
-  /// <summary>构建折叠开关：默认折叠，避免挤压同页的目标群列表。</summary>
-  private void BuildToggle()
+  /// <summary>构建分组标题：一条分隔线 + 普通文本标题，整组常显，不再用折叠开关。</summary>
+  private void BuildHeader()
   {
-    SectionToggle = new CheckBox
+    AddChild(new HSeparator());
+    SectionTitle = new Label
     {
       Text = "符卡 GIF 录制设置",
-      TooltipText = "展开后可配置引擎目录、录制插件、并行度与沙箱目录",
-      ButtonPressed = false,
+      TooltipText = "引擎目录、录制插件、并行度与沙箱目录",
     };
-    SectionToggle.Toggled += pressed =>
-    {
-      SectionBody.Visible = pressed;
-      if (pressed)
-      {
-        Refresh();
-      }
-    };
-    AddChild(SectionToggle);
+    AddChild(SectionTitle);
   }
 
-  /// <summary>按「标题 - 控件行 - 状态行」的节奏构建设置主体。</summary>
+  /// <summary>按「控件行 - 状态行」的节奏构建设置主体；分组常显，不再有折叠容器。</summary>
   private void BuildBody()
   {
-    SectionBody = new VBoxContainer { Visible = false };
-    AddChild(SectionBody);
-    SectionBody.AddChild(new HSeparator());
-
-    SectionBody.AddChild(
+    AddChild(
       new Label { Text = "引擎目录（LuaSTG 根目录，需含 game/，且 game/ 内有 launch 文件）" }
     );
     var engineRow = new HBoxContainer();
@@ -369,10 +343,10 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     };
     InferEngineDirButton.Pressed += InferEngineDir;
     engineRow.AddChild(InferEngineDirButton);
-    SectionBody.AddChild(engineRow);
+    AddChild(engineRow);
 
     EngineStatusLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-    SectionBody.AddChild(EngineStatusLabel);
+    AddChild(EngineStatusLabel);
 
     var parallelRow = new HBoxContainer();
     parallelRow.AddChild(new Label { Text = "并行录制的引擎实例数" });
@@ -397,10 +371,10 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
         SizeFlagsHorizontal = SizeFlags.ExpandFill,
       }
     );
-    SectionBody.AddChild(parallelRow);
+    AddChild(parallelRow);
 
-    SectionBody.AddChild(new HSeparator());
-    SectionBody.AddChild(
+    AddChild(new HSeparator());
+    AddChild(
       new Label { Text = "沙箱根目录（每轮为每个 worker 建一份引擎副本，留空用系统临时目录）" }
     );
     var sandboxRow = new HBoxContainer();
@@ -428,15 +402,15 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     };
     ResetSandboxRootButton.Pressed += ResetSandboxRoot;
     sandboxRow.AddChild(ResetSandboxRootButton);
-    SectionBody.AddChild(sandboxRow);
+    AddChild(sandboxRow);
 
     DiskHintLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-    SectionBody.AddChild(DiskHintLabel);
+    AddChild(DiskHintLabel);
 
-    SectionBody.AddChild(new HSeparator());
-    SectionBody.AddChild(new Label { Text = "录制插件（安装与启用只在你点击按钮后写入引擎目录）" });
+    AddChild(new HSeparator());
+    AddChild(new Label { Text = "录制插件（安装与启用只在你点击按钮后写入引擎目录）" });
     PluginStatusLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-    SectionBody.AddChild(PluginStatusLabel);
+    AddChild(PluginStatusLabel);
 
     var pluginRow = new HBoxContainer();
     InstallPluginButton = new Button
@@ -459,10 +433,10 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     RefreshPluginButton = new Button { Text = "重新检查" };
     RefreshPluginButton.Pressed += RefreshStatuses;
     pluginRow.AddChild(RefreshPluginButton);
-    SectionBody.AddChild(pluginRow);
+    AddChild(pluginRow);
 
-    SectionBody.AddChild(new HSeparator());
-    SectionBody.AddChild(new Label { Text = "高级参数" });
+    AddChild(new HSeparator());
+    AddChild(new Label { Text = "高级参数" });
     var advancedRow = new HBoxContainer();
     MaxFrameBox = AddAdvancedSpinBox(
       advancedRow,
@@ -493,7 +467,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
       ApplyScalePercent,
       step: 5
     );
-    SectionBody.AddChild(advancedRow);
+    AddChild(advancedRow);
 
     AdvancedHintLabel = new Label
     {
@@ -503,13 +477,13 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
         + "放缩比决定产物分辨率：50% 即捕获区域的宽高各减半（像素总数为 1/4，录制器默认），100% 为原始像素，越大越清晰、体积也越大。",
       AutowrapMode = TextServer.AutowrapMode.WordSmart,
     };
-    SectionBody.AddChild(AdvancedHintLabel);
+    AddChild(AdvancedHintLabel);
 
     LastOutputLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-    SectionBody.AddChild(LastOutputLabel);
+    AddChild(LastOutputLabel);
 
     ActionLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, Visible = false };
-    SectionBody.AddChild(ActionLabel);
+    AddChild(ActionLabel);
   }
 
   /// <summary>构建两个目录选择对话框（隐藏的子节点，点击按钮才弹出）。</summary>

@@ -36,6 +36,7 @@ public class InfoConfigPanelTest : TestClass
   private Label _hintLabel = default!;
   private Mock<IWebSocketServer> _server = default!;
   private InfoEventBus _bus = default!;
+  private VBoxContainer _pageBody = default!;
 
   /// <summary>本页发出的 WebSocket 消息（按顺序），用于断言群列表查询。</summary>
   private readonly System.Collections.Generic.List<WebSocketMessage> _sent = new();
@@ -64,6 +65,7 @@ public class InfoConfigPanelTest : TestClass
     _refreshButton = new Button();
     _statusLabel = new Label();
     _hintLabel = new Label();
+    _pageBody = new VBoxContainer();
 
     _server = new Mock<IWebSocketServer>();
     _server.SetupGet(s => s.ConnectionCount).Returns(1);
@@ -80,6 +82,7 @@ public class InfoConfigPanelTest : TestClass
       new()
       {
         ["%GroupRows"] = new VBoxContainerAdapter(_groupRows),
+        ["%PageBody"] = new VBoxContainerAdapter(_pageBody),
         ["%AddGroupButton"] = new ButtonAdapter(_addButton),
         ["%RefreshGroupsButton"] = new ButtonAdapter(_refreshButton),
         ["%HintLabel"] = new LabelAdapter(_hintLabel),
@@ -103,6 +106,7 @@ public class InfoConfigPanelTest : TestClass
     _refreshButton?.QueueFree();
     _statusLabel?.QueueFree();
     _hintLabel?.QueueFree();
+    _pageBody?.QueueFree();
 
     _dataManager?.Dispose();
 
@@ -243,6 +247,25 @@ public class InfoConfigPanelTest : TestClass
     input.EmitSignal(LineEdit.SignalName.TextSubmitted, "  示例群  ");
 
     _dataManager.Settings.TargetGroups[0].DisplayName.Value.ShouldBe("示例群");
+  }
+
+  [Test]
+  public void OnResolved_MountsRecordingSectionAtEndOfPageBody()
+  {
+    _panel.RecordingSection.ShouldNotBeNull();
+    _pageBody.GetChildCount().ShouldBeGreaterThan(0);
+    _pageBody.GetChild(_pageBody.GetChildCount() - 1).ShouldBe(_panel.RecordingSection);
+  }
+
+  [Test]
+  public void EnsureRecordingSection_IsIdempotent()
+  {
+    var section = _panel.RecordingSection.ShouldNotBeNull();
+    var count = _pageBody.GetChildCount();
+
+    _panel.EnsureRecordingSection().ShouldBeSameAs(section);
+
+    _pageBody.GetChildCount().ShouldBe(count);
   }
 
   [Test]
