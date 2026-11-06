@@ -22,10 +22,6 @@ using Chickensoft.Sync.Primitives;
 /// 重新读盘才同步。符卡改名、改创作者同理，只有属性级订阅能看到。
 /// </para>
 /// <para>
-/// <see cref="SpellCard.IsRevealed"/> 不在订阅范围内：两张表的列、行染色与创作者掩码都只由
-/// 符卡名 / 创作者 / 是否已猜出决定，订阅它只会带来无谓的重建。
-/// </para>
-/// <para>
 /// 回调可能来自数据层线程，调用方应自行 <c>CallDeferred</c> 后再触碰控件。
 /// </para>
 /// </remarks>

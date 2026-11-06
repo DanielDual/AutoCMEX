@@ -18,8 +18,7 @@ public sealed class GuessingTableRow
   /// 第一栏展示的创作者名；<b>未猜出时为空串</b>（发布遮罩，防剧透）。
   /// </summary>
   /// <remarks>
-  /// 数据层每张符卡的 <see cref="SpellCard.Creator"/> 都有值，空串是渲染遮罩的结果，
-  /// 不是数据缺失。
+  /// 空串有两种来源：未猜出时按发布遮罩隐藏答案，以及创作者栏尚未填写；两者都不代表读取失败。
   /// </remarks>
   public string CreatorDisplay { get; init; } = string.Empty;
 

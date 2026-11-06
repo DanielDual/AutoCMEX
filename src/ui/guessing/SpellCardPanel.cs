@@ -370,8 +370,11 @@ public partial class SpellCardPanel : VBoxContainer
   /// <summary>把符卡的三个属性写进它的树行。</summary>
   private static void ApplyCardValues(TreeItem item, SpellCard card)
   {
-    item.SetText(0, card.Name.Value);
-    item.SetText(1, string.IsNullOrEmpty(card.Creator.Value) ? "(未揭晓)" : card.Creator.Value);
+    // 数据文件显式 null 时 AutoValue 里可能装 null（见 AutoValueJsonConverter），
+    // 与信息板块同一口径兜底为空串，避免把 null 交给 SetText
+    item.SetText(0, card.Name.Value ?? string.Empty);
+    // 创作者栏就是答案本身：留空即尚未填写，不显示占位符（占位符会被当成创作者名抄进猜测）
+    item.SetText(1, card.Creator.Value ?? string.Empty);
     item.SetChecked(2, card.IsGuessedOut.Value);
   }
 
@@ -421,10 +424,7 @@ public partial class SpellCardPanel : VBoxContainer
       if (column == 0)
         card.Name.Value = edited.GetText(0);
       else if (column == 1)
-      {
-        var t = edited.GetText(1);
-        card.Creator.Value = t == "(未揭晓)" ? "" : t;
-      }
+        card.Creator.Value = edited.GetText(1);
       else if (column == 2)
       {
         card.IsGuessedOut.Value = edited.IsChecked(2);

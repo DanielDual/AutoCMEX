@@ -134,17 +134,7 @@ public class AiServiceTest : TestClass
       dm.Settings.ActiveAiModelId.Value = "test";
       var factory = new AiServiceFactory(dm);
 
-      var boss = new Boss
-      {
-        Name = "TestBoss",
-        SpellCards = new AutoList<SpellCard>
-        {
-          new() { Name = new AutoValue<string>("Card1") },
-          new() { Name = new AutoValue<string>("Card2") },
-        },
-      };
-
-      var fuzzifier = new AiFuzzifier(factory, new List<CreatorAlias>(), boss);
+      var fuzzifier = new AiFuzzifier(factory, new List<CreatorAlias>());
       fuzzifier.ShouldNotBeNull();
     }
     finally
@@ -189,7 +179,7 @@ public class AiServiceTest : TestClass
   /// <summary>取 AiFuzzifier 的系统提示词（生成为私有方法，用反射取，避免为测试开生产接缝）。</summary>
   private static string BuildPrompt(IReadOnlyList<CreatorAlias> aliases)
   {
-    var fuzzifier = new AiFuzzifier(null!, aliases, null!);
+    var fuzzifier = new AiFuzzifier(null!, aliases);
     var method = typeof(AiFuzzifier).GetMethod(
       "BuildSystemPrompt",
       BindingFlags.NonPublic | BindingFlags.Instance

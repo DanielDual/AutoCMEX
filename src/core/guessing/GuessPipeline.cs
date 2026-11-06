@@ -92,15 +92,6 @@ public partial class GuessPipeline
         continue;
       }
 
-      // 已揭晓符卡跳过
-      if (spellCard.IsRevealed.Value)
-      {
-        details.Add(
-          $"符卡 {index}（{spellCard.Name.Value}）已揭晓，创作者为 {spellCard.Creator.Value}"
-        );
-        continue;
-      }
-
       // 已被猜出的符卡跳过
       if (spellCard.IsGuessedOut.Value)
       {
@@ -112,33 +103,29 @@ public partial class GuessPipeline
 
       totalCards++;
 
-      if (string.IsNullOrEmpty(spellCard.Creator.Value))
+      // 创作者栏就是答案本身：留空表示尚未填写，不构成「无法判定」的特殊状态。
+      // 任何猜测都按栏内值比较——空值不可能等于猜测里的非空创作者，故必然判为猜错。
+      var actualCreator = spellCard.Creator.Value;
+      var isCorrect = string.Equals(
+        actualCreator,
+        creator,
+        System.StringComparison.OrdinalIgnoreCase
+      );
+      if (isCorrect)
       {
-        // 创作者答案未知，无法判断对错
-        details.Add(
-          $"符卡 {index}（{spellCard.Name.Value}）：猜测创作者为 {creator}，待揭晓后验证"
-        );
+        correctCount++;
+        details.Add($"符卡 {index}（{spellCard.Name.Value}）：猜对，创作者为 {actualCreator}");
+      }
+      else if (string.IsNullOrEmpty(actualCreator))
+      {
+        // 尚未填写创作者：写明「实际为空」，免得详情以「实际为 」结尾说不清是空还是漏打印
+        details.Add($"符卡 {index}（{spellCard.Name.Value}）：猜错，猜测 {creator}，实际为空");
       }
       else
       {
-        var isCorrect = string.Equals(
-          spellCard.Creator.Value,
-          creator,
-          System.StringComparison.OrdinalIgnoreCase
+        details.Add(
+          $"符卡 {index}（{spellCard.Name.Value}）：猜错，猜测 {creator}，实际为 {actualCreator}"
         );
-        if (isCorrect)
-        {
-          correctCount++;
-          details.Add(
-            $"符卡 {index}（{spellCard.Name.Value}）：猜对，创作者为 {spellCard.Creator.Value}"
-          );
-        }
-        else
-        {
-          details.Add(
-            $"符卡 {index}（{spellCard.Name.Value}）：猜错，猜测 {creator}，实际为 {spellCard.Creator.Value}"
-          );
-        }
       }
     }
 
@@ -148,7 +135,7 @@ public partial class GuessPipeline
       foreach (var (index, _) in parseResult.Pairs)
       {
         var spellCard = currentBoss.SpellCards[index - 1];
-        if (!spellCard.IsRevealed.Value && !spellCard.IsGuessedOut.Value)
+        if (!spellCard.IsGuessedOut.Value)
         {
           spellCard.IsGuessedOut.Value = true;
         }

@@ -213,7 +213,8 @@ public class TestSpellCardPanel : TestClass
     _panel.Refresh();
     await SettleAsync();
 
-    CardRow(0).GetText(1).ShouldBe("(未揭晓)");
+    // 创作者栏就是答案本身：留空即尚未填写，不显示任何占位符
+    CardRow(0).GetText(1).ShouldBe(string.Empty);
 
     boss.SpellCards[0].Name.Value = "改名后的符卡";
     boss.SpellCards[0].Creator.Value = "作者A";
@@ -225,7 +226,53 @@ public class TestSpellCardPanel : TestClass
     boss.SpellCards[0].Creator.Value = string.Empty;
     await SettleAsync();
 
-    CardRow(0).GetText(1).ShouldBe("(未揭晓)");
+    CardRow(0).GetText(1).ShouldBe(string.Empty);
+  }
+
+  /// <summary>新增符卡时创作者列留空（尚未填写），不出现「(未揭晓)」占位符。</summary>
+  [Test]
+  public async Task AddedCard_HasEmptyCreatorCell()
+  {
+    _panel.GetOnAddBoss()();
+    _panel.Refresh();
+    _panel.GetOnAddSpellCard()();
+    _panel.Refresh();
+    await SettleAsync();
+
+    CardRow(0).GetText(0).ShouldBe("新符卡");
+    CardRow(0).GetText(1).ShouldBe(string.Empty);
+  }
+
+  /// <summary>占位符语义已移除：把「(未揭晓)」字面敲进创作者栏，按字面保存而不是被清空。</summary>
+  [Test]
+  public async Task CreatorCell_KeepsLiteralUnrevealedText()
+  {
+    var boss = AddBoss(("符卡1", ""));
+    _panel.SelectBoss(0);
+    _panel.Refresh();
+    await SettleAsync();
+
+    var row = CardRow(0);
+    row.SetText(1, "(未揭晓)");
+    _spellCardTree.Setup(m => m.GetEdited()).Returns(row);
+    _spellCardTree.Setup(m => m.GetEditedColumn()).Returns(1);
+    _spellCardTree.Raise(m => m.ItemEdited += null);
+    await SettleAsync();
+
+    boss.SpellCards[0].Creator.Value.ShouldBe("(未揭晓)");
+  }
+
+  /// <summary>数据文件显式 null 会装进 AutoValue：符卡名与创作者两列都必须兜底为空串，不能把 null 交给 SetText。</summary>
+  [Test]
+  public async Task NullCardFields_RenderAsEmptyCells()
+  {
+    AddBoss((null!, null!));
+    _panel.SelectBoss(0);
+    _panel.Refresh();
+    await SettleAsync();
+
+    CardRow(0).GetText(0).ShouldBe(string.Empty);
+    CardRow(0).GetText(1).ShouldBe(string.Empty);
   }
 
   /// <summary>一次猜测可能标掉多张符卡：同一帧内的多次变化不许漏刷。</summary>

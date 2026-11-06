@@ -35,6 +35,7 @@ public class TestGuessToSpellCardSync : TestClass
   private GuessingPanel _guessPanel = default!;
   private Tree _tree = default!;
   private Mock<ITextEdit> _guessInput = default!;
+  private Mock<IRichTextLabel> _responseDisplay = default!;
   private Mock<IButton> _processBtn = default!;
   private readonly List<Node> _toCleanup = new();
 
@@ -107,6 +108,28 @@ public class TestGuessToSpellCardSync : TestClass
     CardRow(1).IsChecked(2).ShouldBeFalse("猜错不应标记已猜出");
   }
 
+  /// <summary>创作者尚未填写的符卡也要参与判定：回「猜错，实际为空」，不再出现「待揭晓后验证」。</summary>
+  [Test]
+  public async Task ProcessButton_EmptyCreatorCard_IsJudgedAsWrong()
+  {
+    AddBoss(("符卡1", ""), ("符卡2", "作者B"), ("符卡3", "作者C"));
+    _spellPanel.SelectBoss(0);
+    _spellPanel.Refresh();
+    await SettleAsync();
+
+    _guessInput.Object.Text = "1作者A 2作者B 3作者C";
+    _processBtn.Raise(b => b.Pressed += null);
+    await SettleAsync();
+
+    _responseDisplay.Object.Text.ShouldContain("猜错");
+    _responseDisplay.Object.Text.ShouldContain("实际为空");
+    _responseDisplay.Object.Text.ShouldNotContain("待揭晓后验证");
+    // 含未填写创作者的一批猜测不可能全对，勾选框一律不动
+    CardRow(0).IsChecked(2).ShouldBeFalse("创作者未填写时该卡不可能猜对，不应被标记已猜出");
+    CardRow(1).IsChecked(2).ShouldBeFalse();
+    CardRow(2).IsChecked(2).ShouldBeFalse();
+  }
+
   // ==================== 装配 ====================
 
   /// <summary>装配符卡表：真实 <see cref="Tree"/>，保证勾选框状态可断言。</summary>
@@ -163,8 +186,8 @@ public class TestGuessToSpellCardSync : TestClass
     _processBtn = new Mock<IButton>();
     var fuzzifyBtn = new Mock<IButton>();
     fuzzifyBtn.SetupProperty(m => m.Disabled);
-    var responseDisplay = new Mock<IRichTextLabel>();
-    responseDisplay.SetupProperty(m => m.Text, string.Empty);
+    _responseDisplay = new Mock<IRichTextLabel>();
+    _responseDisplay.SetupProperty(m => m.Text, string.Empty);
     var droppedList = new Mock<IItemList>();
     var retryDroppedBtn = new Mock<IButton>();
     retryDroppedBtn.SetupProperty(m => m.Disabled);
@@ -182,7 +205,7 @@ public class TestGuessToSpellCardSync : TestClass
         ["%GuessInput"] = _guessInput.Object,
         ["%FuzzifyBtn"] = fuzzifyBtn.Object,
         ["%ProcessBtn"] = _processBtn.Object,
-        ["%ResponseDisplay"] = responseDisplay.Object,
+        ["%ResponseDisplay"] = _responseDisplay.Object,
         ["%DroppedList"] = droppedList.Object,
         ["%RetryDroppedBtn"] = retryDroppedBtn.Object,
         ["%ClearDroppedBtn"] = clearDroppedBtn.Object,
