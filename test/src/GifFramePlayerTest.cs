@@ -3,6 +3,7 @@ namespace AutoCMEX;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Threading.Tasks;
 using AutoCMEX.Core.Info;
 using Chickensoft.GoDotTest;
@@ -13,7 +14,7 @@ using SixLabors.ImageSharp.PixelFormats;
 
 /// <summary>
 /// GIF 解码与播放单测：真解码（ImageSharp 现场生成 GIF）、帧延时回退、播放推进、
-/// 重复点播不重解码、失败上报，以及可见性调度的常驻上限。
+/// 重复点播不重解码、失败上报，以及可见性调度的驻留规则。
 /// </summary>
 /// <remarks>
 /// 帧纹理要在主线程创建，因此播放类用例把控件挂在测试场景上；为避免引擎自动 <c>_Process</c>
@@ -263,77 +264,117 @@ public class GifFramePlayerTest : TestClass
     player.IsLoaded.ShouldBeFalse();
   }
 
+  /// <summary>同路径解码失败后必须允许重新尝试：失败会清空 CTS，下一次 Play 重新解码。</summary>
   [Test]
-  public void GifVisibility_PicksIntersectingItemsUpToLimit()
+  public async Task Player_RetriesAfterFailure()
+  {
+    var broken = Path.Combine(_dir, "broken_retry.gif");
+    File.WriteAllText(broken, "not a gif at all");
+
+    var player = CreatePlayer();
+    var failures = 0;
+    player.LoadFailed += _ => failures++;
+
+    player.Play(broken);
+    (await WaitUntil(player, () => failures == 1)).ShouldBeTrue("首次解码失败必须回报");
+    player.SourcePath.ShouldBe(broken, "失败后保留路径，供下一次重试");
+    player.IsLoaded.ShouldBeFalse();
+
+    // 同路径再次点播：失败后 CTS 已清空，不能被"同路径在途复用"挡掉
+    player.Play(broken);
+    (await WaitUntil(player, () => failures == 2)).ShouldBeTrue("失败后同路径 Play 应重新尝试");
+    player.IsLoaded.ShouldBeFalse();
+  }
+
+  /// <summary>同路径在途解码必须复用：主线程内连续两次 Play 只启动一次解码。</summary>
+  [Test]
+  public async Task Player_ReusesInFlightDecodeForSamePath()
+  {
+    var path = WriteGif("sample_reuse.gif", 3);
+    var player = CreatePlayer();
+
+    player.Play(path);
+    player.Play(path); // 同一帧内第二次调用时，第一次的解码仍在途（continuation 抢不到主线程）
+
+    player.DecodeStartCount.ShouldBe(1, "同路径在途解码不应被第二次 Play 重启");
+
+    (await WaitUntil(player, () => player.IsLoaded)).ShouldBeTrue("第一次解码最终要完成");
+    player.DecodeStartCount.ShouldBe(1);
+
+    player.Play(path); // 已加载后再点播：仍不重解码
+    player.DecodeStartCount.ShouldBe(1);
+  }
+
+  /// <summary>可见性判定：凡与视口相交的项全部返回，不按数量截断（含"相交 4 张"的回归断言）。</summary>
+  [Test]
+  public void GifVisibility_PicksEveryIntersectingItem()
   {
     var bounds = new List<(float Top, float Bottom)> { (0f, 50f), (60f, 110f), (120f, 170f) };
 
-    GifVisibility.Compute(bounds, 0f, 300f, 0).ShouldBe(new[] { 0, 1, 2 });
-    GifVisibility.Compute(bounds, 0f, 300f, 2).ShouldBe(new[] { 0, 1 });
-    GifVisibility.Compute(bounds, 55f, 115f, 0).ShouldBe(new[] { 1 });
-    GifVisibility.Compute(bounds, 400f, 500f, 0).ShouldBeEmpty();
-    GifVisibility.Compute(new List<(float, float)>(), 0f, 10f, 3).ShouldBeEmpty();
+    // 视口内相交多少张就返回多少张：不再按"最多几张"截断
+    GifVisibility.Compute(bounds, 0f, 300f).ShouldBe(new[] { 0, 1, 2 });
+    GifVisibility.Compute(bounds, 55f, 115f).ShouldBe(new[] { 1 });
+    GifVisibility.Compute(bounds, 400f, 500f).ShouldBeEmpty();
+    GifVisibility.Compute(new List<(float, float)>(), 0f, 10f).ShouldBeEmpty();
 
     // 视口上下沿倒置（滚动到底部的瞬时值）应被规范化
-    GifVisibility.Compute(bounds, 115f, 55f, 0).ShouldBe(new[] { 1 });
+    GifVisibility.Compute(bounds, 115f, 55f).ShouldBe(new[] { 1 });
 
     // 边界贴合算可见，否则滚到底部时最后一张永远不播
-    GifVisibility.Compute(bounds, 170f, 200f, 0).ShouldBe(new[] { 2 });
+    GifVisibility.Compute(bounds, 170f, 200f).ShouldBe(new[] { 2 });
+
+    // 回归：视口内相交 4 张（含只露出一点的）时全部返回——
+    // 旧实现按"常驻上限 3"按内容顺序截断，丢掉完全可见的第 4 张，正是信息页 GIF 空白的根因
+    var five = new List<(float Top, float Bottom)>
+    {
+      (-200f, -100f),
+      (0f, 100f),
+      (110f, 210f),
+      (220f, 320f),
+      (330f, 430f),
+    };
+    GifVisibility.Compute(five, 0f, 350f).ShouldBe(new[] { 1, 2, 3, 4 });
   }
 
+  /// <summary>驻留调度：视口内相交的卡片全部驻留解码；视口缩窄后其余立即释放。</summary>
   [Test]
-  public async Task Coordinator_KeepsOnlyVisibleCardsWithinLimit()
+  public async Task Coordinator_KeepsEveryVisibleCard()
   {
-    var player0 = CreatePlayer();
-    var player1 = CreatePlayer();
-    var player2 = CreatePlayer();
+    var players = Enumerable.Range(0, 5).Select(_ => CreatePlayer()).ToList();
+    var cards = players
+      .Select(
+        (player, i) =>
+          new GifCardBinding
+          {
+            Player = player,
+            GifPath = WriteGif($"sample_c{i}.gif", 2),
+            ContentRect = new Rect2(0, i * 100, 100, 90),
+          }
+      )
+      .ToList();
 
-    var cards = new List<GifCardBinding>
-    {
-      new()
-      {
-        Player = player0,
-        GifPath = WriteGif("sample_c0.gif", 2),
-        ContentRect = new Rect2(0, 0, 100, 50),
-      },
-      new()
-      {
-        Player = player1,
-        GifPath = WriteGif("sample_c1.gif", 2),
-        ContentRect = new Rect2(0, 60, 100, 50),
-      },
-      new()
-      {
-        Player = player2,
-        GifPath = WriteGif("sample_c2.gif", 2),
-        ContentRect = new Rect2(0, 120, 100, 50),
-      },
-    };
+    var coordinator = new GifPlaybackCoordinator();
 
-    var coordinator = new GifPlaybackCoordinator(maxResident: 1);
+    // 视口覆盖全部 5 张：5 张都要驻留（旧实现按内容顺序只留前 3 张，后两张即便完全可见也空白）
+    var resident = coordinator.Update(cards, 0f, 500f);
+    resident.Count.ShouldBe(5);
+    foreach (var player in players)
+      (await WaitUntil(player, () => player.IsLoaded)).ShouldBeTrue("凡与视口相交的卡片都应解码");
 
-    var resident = coordinator.Update(cards, 0f, 300f);
-    resident.Count.ShouldBe(1);
-    resident[0].Player.ShouldBe(player0);
-
-    (await WaitUntil(player0, () => player0.IsLoaded)).ShouldBeTrue("常驻卡片应被解码");
-    player1.IsLoaded.ShouldBeFalse("超出常驻上限的卡片必须释放，不能同时驻留");
-    player2.IsLoaded.ShouldBeFalse();
-
-    // 只滚到第二张的视口范围：常驻项整体换人
-    resident = coordinator.Update(cards, 65f, 115f);
-    resident.Count.ShouldBe(1);
-    resident[0].Player.ShouldBe(player1);
-
-    (await WaitUntil(player1, () => player1.IsLoaded)).ShouldBeTrue();
-    player0.IsLoaded.ShouldBeFalse();
+    // 视口只覆盖第 3、4 张（第 5 张的顶沿在视口下沿之外）：其余立即释放
+    resident = coordinator.Update(cards, 210f, 395f);
+    resident.Select(r => r.Player).ShouldBe(new[] { players[2], players[3] });
+    players[0].IsLoaded.ShouldBeFalse();
+    players[1].IsLoaded.ShouldBeFalse();
+    players[2].IsLoaded.ShouldBeTrue();
+    players[3].IsLoaded.ShouldBeTrue();
+    players[4].IsLoaded.ShouldBeFalse();
 
     // 桌面调整/切集时全量释放
     GifPlaybackCoordinator.ReleaseAll(cards);
-    player1.IsLoaded.ShouldBeFalse();
+    foreach (var player in players)
+      player.IsLoaded.ShouldBeFalse();
 
     coordinator.Update(new List<GifCardBinding>(), 0f, 100f).ShouldBeEmpty();
-    coordinator.MaxResident.ShouldBe(1);
-    new GifPlaybackCoordinator().MaxResident.ShouldBe(GifPlaybackCoordinator.DefaultMaxResident);
   }
 }

@@ -158,8 +158,13 @@ public sealed class GifFrameSequence : IDisposable
 }
 
 /// <summary>
-/// 可见项范围计算（纯逻辑，可单测）：从纵向范围列表中挑出与视口相交的项，并按上限截断。
+/// 可见项范围计算（纯逻辑，可单测）：从纵向范围列表中挑出与视口相交的项。
 /// </summary>
+/// <remarks>
+/// 不按数量截断：只要与视口有交集（哪怕只露出 1 像素）就必须驻留，否则会出现
+/// "卡片明明在视口里、动图却是空的"；视口能同时容纳的卡片数天然有限，
+/// 内存上界由"视口高度 ÷ 卡片高度"决定，不需要额外上限兜底。
+/// </remarks>
 public static class GifVisibility
 {
   /// <summary>
@@ -168,13 +173,11 @@ public static class GifVisibility
   /// <param name="itemBounds">各项在内容坐标系中的纵向范围（Top, Bottom）。</param>
   /// <param name="viewTop">视口上沿在内容坐标系中的位置。</param>
   /// <param name="viewBottom">视口下沿在内容坐标系中的位置。</param>
-  /// <param name="maxConcurrent">最多驻留的项数（≤0 视为不限）。</param>
-  /// <returns>需要驻留的项下标（按内容顺序；与视口相交优先，超出上限时取靠前者）。</returns>
+  /// <returns>需要驻留的项下标（按内容顺序；凡与视口相交者全部返回）。</returns>
   public static IReadOnlyList<int> Compute(
     IReadOnlyList<(float Top, float Bottom)> itemBounds,
     float viewTop,
-    float viewBottom,
-    int maxConcurrent
+    float viewBottom
   )
   {
     var result = new List<int>();
@@ -189,12 +192,8 @@ public static class GifVisibility
       var (top, bottom) = itemBounds[i];
       // 视口上沿与项下沿重合也算可见，避免滚动到底部时最后一张被判为不可见
       var intersects = bottom >= viewTop && top <= viewBottom;
-      if (!intersects)
-        continue;
-
-      result.Add(i);
-      if (maxConcurrent > 0 && result.Count >= maxConcurrent)
-        break;
+      if (intersects)
+        result.Add(i);
     }
 
     return result;
@@ -215,26 +214,13 @@ public sealed class GifCardBinding
 }
 
 /// <summary>
-/// 按可见性调度 GIF 解码与释放，常驻帧缓存不超过上限。
+/// 按可见性调度 GIF 解码与释放：与视口相交的卡片全部驻留，其余立即释放。
 /// </summary>
 /// <remarks>
 /// 面板每次滚动/布局变化时调用一次 <see cref="Update"/> 即可；未被选中的卡片会被立即释放纹理。
 /// </remarks>
 public sealed class GifPlaybackCoordinator
 {
-  /// <summary>默认常驻上限（张）。</summary>
-  public const int DefaultMaxResident = 3;
-
-  /// <summary>创建调度器。</summary>
-  /// <param name="maxResident">最多同时驻留解码结果的卡片数（≤0 视为不限）。</param>
-  public GifPlaybackCoordinator(int maxResident = DefaultMaxResident)
-  {
-    MaxResident = maxResident;
-  }
-
-  /// <summary>常驻上限（张）。</summary>
-  public int MaxResident { get; }
-
   /// <summary>
   /// 按视口范围更新各卡片的解码状态。
   /// </summary>
@@ -256,7 +242,7 @@ public sealed class GifPlaybackCoordinator
     foreach (var card in cards)
       bounds.Add((card.ContentRect.Position.Y, card.ContentRect.End.Y));
 
-    var visible = GifVisibility.Compute(bounds, viewTop, viewBottom, MaxResident);
+    var visible = GifVisibility.Compute(bounds, viewTop, viewBottom);
     var keep = new HashSet<int>(visible);
 
     for (var i = 0; i < cards.Count; i++)
@@ -317,8 +303,11 @@ public sealed partial class GifFramePlayer : TextureRect
   private int _frameIndex;
   private double _elapsed;
 
-  /// <summary>当前已加载的 GIF 路径；未加载时为空串。</summary>
+  /// <summary>当前已加载的 GIF 路径；未加载时为空串；解码失败时保留路径以便重试。</summary>
   public string SourcePath { get; private set; } = string.Empty;
+
+  /// <summary>测试用：实际启动的解码次数（验证同路径在途复用不会重复解码）。</summary>
+  internal int DecodeStartCount { get; private set; }
 
   /// <summary>是否已加载帧序列。</summary>
   public bool IsLoaded => _sequence is not null;
@@ -330,7 +319,7 @@ public sealed partial class GifFramePlayer : TextureRect
   public int CurrentFrameIndex => _frameIndex;
 
   /// <summary>
-  /// 加载并播放指定 GIF；同一路径重复调用不会重复解码。
+  /// 加载并播放指定 GIF；同一路径已加载或在途解码时直接复用，不重复解码。
   /// </summary>
   /// <param name="path">GIF 文件绝对路径。</param>
   public void Play(string path)
@@ -341,14 +330,22 @@ public sealed partial class GifFramePlayer : TextureRect
       return;
     }
 
-    if (string.Equals(path, SourcePath, StringComparison.Ordinal) && _sequence is not null)
+    // 同路径：已加载、或解码仍在途都直接复用。布局事件密集（拖拽分栏/缩放）时
+    // 每帧重开解码会让可见卡一直空白并放大 CPU 抖动；解码失败后 _cts 已清空，
+    // 下一次 Play 仍会重新尝试。
+    if (
+      string.Equals(path, SourcePath, StringComparison.Ordinal)
+      && (_sequence is not null || _cts is not null)
+    )
       return;
 
     Release();
     SourcePath = path;
 
-    _cts = new CancellationTokenSource();
-    _ = LoadAsync(path, _cts.Token);
+    var cts = new CancellationTokenSource();
+    _cts = cts;
+    DecodeStartCount++;
+    _ = LoadAsync(path, cts);
   }
 
   /// <summary>释放帧缓存并停止播放。</summary>
@@ -397,50 +394,64 @@ public sealed partial class GifFramePlayer : TextureRect
   /// <inheritdoc/>
   public override void _ExitTree() => Release();
 
-  private async Task LoadAsync(string path, CancellationToken token)
+  private async Task LoadAsync(string path, CancellationTokenSource cts)
   {
-    GifFrameData data;
+    var token = cts.Token;
     try
     {
-      data = await Task.Run(() => GifDecoder.Decode(path), token);
-    }
-    catch (OperationCanceledException)
-    {
-      return;
-    }
-    catch (Exception ex)
-    {
-      if (!token.IsCancellationRequested && GodotObject.IsInstanceValid(this))
+      GifFrameData data;
+      try
       {
-        EmitSignal(SignalName.LoadFailed, $"GIF 解码失败：{ex.Message}");
+        data = await Task.Run(() => GifDecoder.Decode(path), token);
+      }
+      catch (OperationCanceledException)
+      {
+        return;
+      }
+      catch (Exception ex)
+      {
+        if (!token.IsCancellationRequested && GodotObject.IsInstanceValid(this))
+        {
+          EmitSignal(SignalName.LoadFailed, $"GIF 解码失败：{ex.Message}");
+        }
+
+        return;
       }
 
-      return;
-    }
+      // 解码期间可能已被释放或切换到其它 GIF
+      if (
+        token.IsCancellationRequested
+        || !GodotObject.IsInstanceValid(this)
+        || !string.Equals(path, SourcePath, StringComparison.Ordinal)
+      )
+      {
+        return;
+      }
 
-    // 解码期间可能已被释放或切换到其它 GIF
-    if (
-      token.IsCancellationRequested
-      || !GodotObject.IsInstanceValid(this)
-      || !string.Equals(path, SourcePath, StringComparison.Ordinal)
-    )
+      var sequence = GifFrameSequence.CreateFrom(data);
+      if (sequence.FrameCount == 0)
+      {
+        sequence.Dispose();
+        EmitSignal(SignalName.LoadFailed, "GIF 不含任何帧。");
+        return;
+      }
+
+      _sequence = sequence;
+      _frameIndex = 0;
+      _elapsed = 0;
+      Texture = sequence.Frames[0];
+      SetProcess(true);
+      EmitSignal(SignalName.FramesLoaded, sequence.FrameCount);
+    }
+    finally
     {
-      return;
+      // 只清理仍属于本次调用的 CTS：Release 或后续 Play 已换掉时不要动。
+      // 清空后同路径 Play 才会重新解码（失败重试依赖这一点）。
+      if (ReferenceEquals(_cts, cts))
+      {
+        _cts = null;
+        cts.Dispose();
+      }
     }
-
-    var sequence = GifFrameSequence.CreateFrom(data);
-    if (sequence.FrameCount == 0)
-    {
-      sequence.Dispose();
-      EmitSignal(SignalName.LoadFailed, "GIF 不含任何帧。");
-      return;
-    }
-
-    _sequence = sequence;
-    _frameIndex = 0;
-    _elapsed = 0;
-    Texture = sequence.Frames[0];
-    SetProcess(true);
-    EmitSignal(SignalName.FramesLoaded, sequence.FrameCount);
   }
 }

@@ -25,8 +25,8 @@ using Godot;
 /// Boss 做任何对齐（集对应"导入的工程"，与 Boss 无关）。
 /// </para>
 /// <para>
-/// 内存策略：GIF 单张可达 10MB 量级，因此只解码当前可见的 1-3 张（见
-/// <see cref="GifPlaybackCoordinator"/>），滑出视野立即释放帧缓存；发布时从磁盘直接取原图。
+/// 内存策略：GIF 单张可达 10MB 量级，因此只解码与视口有交集的卡片（哪怕只露出一部分，
+/// 见 <see cref="GifPlaybackCoordinator"/>），滑出视野立即释放帧缓存；发布时从磁盘直接取原图。
 /// </para>
 /// <para>
 /// 录制按钮为本栏的录制入口：前置检查通过后依次手选工程包与输出目录，自动逐张录制并在结束时
@@ -93,6 +93,9 @@ public partial class GifSetPanel : VBoxContainer
   private bool _isRebuilding;
   private bool _isPublishing;
 
+  /// <summary>是否已排队一次「布局落定后的驻留刷新」（信号与 deferred 回调都在主线程，普通 bool 即可）。</summary>
+  private bool _layoutRefreshQueued;
+
   private readonly record struct CardRef(Control Card, GifFramePlayer Player, string GifPath);
 
   /// <inheritdoc/>
@@ -144,6 +147,13 @@ public partial class GifSetPanel : VBoxContainer
     RecordButton.Pressed += OnRecordPressed;
     CardScroll.GetVScrollBar().ValueChanged += OnCardScrollValueChanged;
 
+    // 可见区不只随滚动变化：窗口缩放/最大化、拖拽分栏会改变视口尺寸，卡片重排会改变位置，
+    // 面板显隐也可能让布局在隐藏期间才落定。这些路径都必须重新评估驻留集合，
+    // 否则新进入视口的卡会空白到下一次滚动（旧行为正是如此）。
+    CardScroll.Resized += ScheduleLayoutRefresh;
+    CardList.Resized += ScheduleLayoutRefresh;
+    VisibilityChanged += ScheduleLayoutRefresh;
+
     _setsBinding = _config.GifSets.Bind().OnModify(OnSetsChanged);
     _activeSetIdBinding = _config.ActiveGifSetId.Bind().OnValue(OnActiveSetIdChanged);
 
@@ -182,8 +192,8 @@ public partial class GifSetPanel : VBoxContainer
       SetInfoLabel.Text = ComposeStatusText(BuildSetSummary(set, entries.Count));
       UpdatePublishButtonState();
 
-      // 卡片尺寸要等一次布局才有效，延后一帧再决定哪些卡片驻留解码
-      CallDeferred(nameof(RefreshPlayback));
+      // 卡片尺寸要等一次布局才有效：走与布局事件同一条刷新通道
+      ScheduleLayoutRefresh();
     }
     finally
     {
@@ -210,6 +220,28 @@ public partial class GifSetPanel : VBoxContainer
       .ToList();
 
     _coordinator.Update(bindings, viewTop, viewBottom);
+  }
+
+  /// <summary>排队一次「布局落定后的驻留刷新」：同一帧内多次布局事件只排一次。</summary>
+  private void ScheduleLayoutRefresh()
+  {
+    if (_layoutRefreshQueued)
+      return;
+
+    _layoutRefreshQueued = true;
+    CallDeferred(nameof(FlushLayoutRefresh));
+  }
+
+  /// <summary>布局事件的首轮回调：容器排序可能仍排在 deferred 队列更后面，故再兜一次。</summary>
+  private void FlushLayoutRefresh()
+  {
+    _layoutRefreshQueued = false;
+    RefreshPlayback();
+
+    // CardList 子项位置由容器排序写入，与本次回调同属 deferred 消息队列、先后不保证；
+    // 再排一次兜底刷新，按真正落定的几何复核。已加载或在途解码的同路径卡再 Play
+    // 都是空操作，所以这里只多一次几何复核的开销。
+    CallDeferred(nameof(RefreshPlayback));
   }
 
   private void BuildCard(GifSetRecord set, GifSetEntry entry)
