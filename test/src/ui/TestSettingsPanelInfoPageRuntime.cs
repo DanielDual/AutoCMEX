@@ -3,11 +3,13 @@ namespace AutoCMEX;
 using System;
 using System.IO;
 using AutoCMEX.Core.Storage;
+using AutoCMEX.Core.WebSocket;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Settings;
 using Chickensoft.AutoInject;
 using Chickensoft.GoDotTest;
 using Godot;
+using Moq;
 using Shouldly;
 
 /// <summary>
@@ -107,7 +109,12 @@ public class TestSettingsPanelInfoPageRuntime : TestClass
     if (root is IAutoInit autoInit)
       autoInit.IsTesting = true;
     if (root is IDependent dependent)
+    {
       dependent.FakeDependency<DataManager>(_dm);
+      // 「信息」类别页同时依赖 WebSocket 服务端（刷新群列表）：合并后新增的依赖，
+      // 不提供会让 AutoInject 不触发 OnResolved，录制分组也就不会挂载。
+      dependent.FakeDependency<IWebSocketServer>(new Mock<IWebSocketServer>().Object);
+    }
 
     foreach (var child in root.GetChildren())
       PrepareDependencies(child);
