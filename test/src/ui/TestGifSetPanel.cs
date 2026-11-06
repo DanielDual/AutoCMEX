@@ -10,6 +10,7 @@ using AutoCMEX.Core.Info;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Core.WebSocket;
 using AutoCMEX.Models;
+using AutoCMEX.UI;
 using AutoCMEX.UI.Info;
 using Chickensoft.AutoInject;
 using Chickensoft.GoDotTest;
@@ -49,6 +50,8 @@ public class TestGifSetPanel : TestClass
   [Setup]
   public void Setup()
   {
+    // 尺寸记忆是进程内全局的：每个用例开始前清空，避免用例间互相影响
+    FileDialogSizing.ResetMemoryForTests();
     _dir = Path.Combine(
       Path.GetTempPath(),
       "AutoCMEX_GifPanelTest_" + Guid.NewGuid().ToString("N")[..8]
@@ -426,6 +429,57 @@ public class TestGifSetPanel : TestClass
 
     // 另一张正常卡片不受影响
     GetPlayer(cards[1]).TooltipText.ShouldBeNullOrEmpty();
+  }
+
+  [Test]
+  public async Task ImportFolderPicker_OpensWithViewportShareAndReusesDialog()
+  {
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+    var column = GetGifColumn(panel);
+    var tree = panel.GetTree();
+
+    // 固定内容缩放，让用例与本机 DPI 解耦：只有视口（UI 坐标）与窗口像素不同，
+    // 才能同时拦住「按窗口像素算尺寸」与「popup 后未补设尺寸」这两种回退。
+    var originalScale = tree.Root.ContentScaleFactor;
+    tree.Root.ContentScaleFactor = 0.5f;
+    try
+    {
+      await SettleAsync(panel);
+      tree.Root.GetVisibleRect()
+        .Size.ShouldNotBe(
+          new Vector2(tree.Root.Size.X, tree.Root.Size.Y),
+          "内容缩放 0.5 时视口 UI 坐标应是窗口像素的两倍"
+        );
+
+      ((Button)column.FindChild("ImportFolderButton", owned: false, recursive: true)!).EmitSignal(
+        BaseButton.SignalName.Pressed
+      );
+      await SettleAsync(panel);
+
+      var dialog = GetFileDialog(column, FileDialog.FileModeEnum.OpenDir);
+      dialog.Visible.ShouldBeTrue("点导入文件夹后必须弹出选择器");
+      dialog.Unresizable.ShouldBeFalse("选择文件窗口要能拖大");
+
+      // 首次唤出：精确等于视口（内容缩放后的 UI 坐标）的八成
+      var visible = tree.Root.GetVisibleRect().Size;
+      var expected = FileDialogSizing.Resolve(
+        new Vector2I(Mathf.RoundToInt(visible.X), Mathf.RoundToInt(visible.Y))
+      );
+      dialog.Size.ShouldBe(expected);
+
+      // 再次唤出：复用同一个对话框实例，而不是每次新建
+      ((Button)column.FindChild("ImportFolderButton", owned: false, recursive: true)!).EmitSignal(
+        BaseButton.SignalName.Pressed
+      );
+      await SettleAsync(panel);
+      ReferenceEquals(GetFileDialog(column, FileDialog.FileModeEnum.OpenDir), dialog)
+        .ShouldBeTrue("同一选择器应复用，不应每次唤起都新建 FileDialog");
+    }
+    finally
+    {
+      tree.Root.ContentScaleFactor = originalScale;
+    }
   }
 
   [Test]

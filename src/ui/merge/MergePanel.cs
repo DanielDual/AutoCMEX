@@ -9,6 +9,7 @@ using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Merge;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
+using AutoCMEX.UI;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
@@ -135,6 +136,7 @@ public partial class MergePanel : Control, IMergePanel
   private AutoList<SpellCardMappingEntry>.Binding? _mappingBinding;
   private AutoValue<int>.Binding? _selectedPackageIndexBinding;
   private int _selectedMapping = -1;
+  private FileDialog? _importPackageDialog;
 
   public override void _Notification(int what) => this.Notify(what);
 
@@ -340,27 +342,45 @@ public partial class MergePanel : Control, IMergePanel
     if (_dm == null)
       return;
 
-    var fileDialog = new FileDialog
+    FileDialogSizing.Popup(EnsureImportPackageDialog());
+  }
+
+  /// <summary>导入创作者包用的文件对话框：只建一次，复用实例才能沿用上次尺寸。</summary>
+  /// <returns>已挂到本面板的对话框。</returns>
+  private FileDialog EnsureImportPackageDialog()
+  {
+    if (_importPackageDialog is not null)
+      return _importPackageDialog;
+
+    _importPackageDialog = new FileDialog
     {
       FileMode = FileDialog.FileModeEnum.OpenFile,
       Filters = new[] { "*.zip ; 创作者包" },
       Access = FileDialog.AccessEnum.Filesystem,
+      UseNativeDialog = false,
     };
-    fileDialog.FileSelected += path =>
+    _importPackageDialog.FileSelected += OnImportPackageFileSelected;
+    AddChild(_importPackageDialog);
+    return _importPackageDialog;
+  }
+
+  /// <summary>选定创作者包：解包成功后追加包与对应表映射，并触发自动保存；失败只记日志。</summary>
+  /// <param name="path">用户选定的创作包 zip 路径。</param>
+  private void OnImportPackageFileSelected(string path)
+  {
+    var result = MergeImporter.ImportZip(path);
+    if (!result.IsSuccess || result.Package == null)
     {
-      var result = MergeImporter.ImportZip(path);
-      if (!result.IsSuccess || result.Package == null)
-      {
-        _log.Warn($"OnImportPackage: failed to import {path}: {result.Error}");
-        return;
-      }
-      _dm.CreatorPackages.Add(result.Package);
-      foreach (var card in result.Cards)
-        _dm.MergeConfig.Mapping.Add(card);
-      _dm.TriggerAutoSave();
-    };
-    AddChild(fileDialog);
-    fileDialog.PopupCentered();
+      _log.Warn($"OnImportPackage: failed to import {path}: {result.Error}");
+      return;
+    }
+
+    if (_dm == null)
+      return;
+    _dm.CreatorPackages.Add(result.Package);
+    foreach (var card in result.Cards)
+      _dm.MergeConfig.Mapping.Add(card);
+    _dm.TriggerAutoSave();
   }
 
   private void OnRemovePackage()

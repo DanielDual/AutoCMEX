@@ -6,6 +6,7 @@ using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.Services;
+using AutoCMEX.UI;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
@@ -219,7 +220,7 @@ public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
   private void OnInstallPlugin()
   {
     PluginFileDialog.Title = SelectDirectoryHint;
-    PluginFileDialog.PopupCentered();
+    FileDialogSizing.Popup(PluginFileDialog);
   }
 
   /// <summary>
