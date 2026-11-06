@@ -16,13 +16,16 @@ using Chickensoft.Sync.Primitives;
 using Godot;
 
 /// <summary>
-/// 信息板块主面板：上栏四栏（符卡 GIF 集 / 符卡猜测情况表 / 创作者剩余表 / 活动规则），
-/// 下栏为目标群多选与一键转发。
+/// 信息板块主面板：顶部发布操作行 + 四栏（符卡 GIF 集 / 符卡猜测情况表 / 创作者剩余表 / 活动规则）。
 /// </summary>
 /// <remarks>
 /// <para>
-/// 四栏各有独立发布入口，均交由 <see cref="PublishService"/> 按固定顺序串行发送；下栏「一键转发」
+/// 四栏各有独立发布入口，均交由 <see cref="PublishService"/> 按固定顺序串行发送；顶部「一键转发」
 /// 按 GIF 集 → 猜测表 → 创作者表 → 活动规则 依次发布。
+/// </para>
+/// <para>
+/// 目标群不在信息页勾选：发布目标取设置板块「信息」类别页里「启用」的目标群。设置页是目标群的
+/// 唯一维护入口（增删、改名、启停与从 Koishi 刷新），避免两处勾选态互相打架。
 /// </para>
 /// <para>
 /// 发布结果统一走本面板的报告对话框：成功/失败逐项列出，存在失败项时可只重试失败项。
@@ -51,12 +54,6 @@ public partial class InfoPanel : Control, IInfoPanel
   [Node("%Columns")]
   public IHBoxContainer Columns { get; set; } = default!;
 
-  [Node("%GroupList")]
-  public IHBoxContainer GroupList { get; set; } = default!;
-
-  [Node("%RefreshGroupsButton")]
-  public IButton RefreshGroupsButton { get; set; } = default!;
-
   [Node("%ForwardAllButton")]
   public IButton ForwardAllButton { get; set; } = default!;
 
@@ -82,14 +79,12 @@ public partial class InfoPanel : Control, IInfoPanel
   private InfoDataService? _dataService;
   private GifSetService? _gifSets;
   private PublishService? _publisher;
-  private GroupDirectoryService? _groupDirectory;
 
   private GifSetPanel? _gifSetPanel;
   private GuessingTablePanel? _guessingTablePanel;
   private CreatorRemainingPanel? _creatorRemainingPanel;
   private ActivityRulePanel? _activityRulePanel;
 
-  private readonly List<(TargetGroup Group, CheckBox Box)> _groupBoxes = new();
   private AutoList<TargetGroup>.Binding? _targetGroupsBinding;
   private AutoValue<bool>.Binding? _autoPublishBinding;
 
@@ -124,24 +119,25 @@ public partial class InfoPanel : Control, IInfoPanel
   /// <summary>AutoInject 节点注入完成：只挂信号，服务待依赖解析后再创建。</summary>
   public void OnReady()
   {
-    RefreshGroupsButton.Pressed += OnRefreshGroupsPressed;
     ForwardAllButton.Pressed += OnForwardAllPressed;
     AutoPublishGuessingTable.Toggled += OnAutoPublishToggled;
+
+    // 目标群在设置页维护：切回信息页时按最新启用状态刷新「一键转发」可用态
+    VisibilityChanged += OnVisibilityChanged;
   }
 
-  /// <summary>AutoInject 依赖解析完成：创建服务并装配四栏与下栏。</summary>
+  /// <summary>AutoInject 依赖解析完成：创建服务并装配四栏与顶部操作行。</summary>
   public void OnResolved()
   {
     _dm = DataManager;
     _dataService = new InfoDataService(_dm);
     _gifSets = new GifSetService(_dm, _dm.DataDir);
     _publisher = new PublishService(_dm, _dataService, _gifSets, Server);
-    _groupDirectory = new GroupDirectoryService(_dm, Server);
 
     BuildColumns();
 
     _targetGroupsBinding = _dm.Settings.TargetGroups.Bind().OnModify(OnTargetGroupsChanged);
-    RebuildGroupList();
+    UpdateForwardButtonState();
 
     // 先落初值再挂绑定：初值赋值不应被当成用户输入
     AutoPublishGuessingTable.ButtonPressed = _dm.InfoConfig.AutoPublishGuessingTable.Value;
@@ -184,10 +180,8 @@ public partial class InfoPanel : Control, IInfoPanel
 
       switch (eventName)
       {
+        // 群列表回执由设置板块「信息」类别页处理（刷新入口在那里），本面板收到时忽略
         case InfoProtocol.GroupListResultEvent:
-          var added = _groupDirectory?.HandleGroupListResult(payload) ?? -1;
-          if (added >= 0)
-            PresentMessage("群列表已更新", $"新增 {added} 个目标群，请在下方勾选需要发布的群。");
           break;
 
         case InfoProtocol.PublishResultEvent:
@@ -316,39 +310,20 @@ public partial class InfoPanel : Control, IInfoPanel
     }
   }
 
-  private async void OnRefreshGroupsPressed()
-  {
-    if (_groupDirectory is null)
-      return;
-
-    RefreshGroupsButton.Disabled = true;
-    try
-    {
-      var requested = await _groupDirectory.RequestAsync();
-      if (requested)
-      {
-        PresentMessage("群列表刷新", "已向 Koishi 发起群列表查询，返回后会并入下方目标群列表。");
-        return;
-      }
-
-      PresentMessage(
-        "群列表刷新失败",
-        "当前没有可用的 Koishi 连接，请先在「WebSocket」面板确认连接状态。"
-      );
-    }
-    finally
-    {
-      if (IsInsideTree())
-        RefreshGroupsButton.Disabled = false;
-    }
-  }
-
+  /// <summary>
+  /// 收集发布目标：设置板块「信息」类别页里「启用」且群 ID 非空的目标群。
+  /// </summary>
+  /// <returns>目标群 channelId 列表；未启用任何目标群时为空。</returns>
+  /// <remarks>信息页不再维护单独的勾选态，设置页的「启用」开关就是发布目标。</remarks>
   private IReadOnlyList<string> CollectTargetGroupIds()
   {
+    if (_dm is null)
+      return Array.Empty<string>();
+
     var ids = new List<string>();
-    foreach (var (group, box) in _groupBoxes)
+    foreach (var group in _dm.Settings.TargetGroups)
     {
-      if (!box.ButtonPressed)
+      if (!group.Enabled.Value)
         continue;
 
       var channelId = group.ChannelId.Value;
@@ -364,52 +339,23 @@ public partial class InfoPanel : Control, IInfoPanel
     if (targets.Count > 0)
       return true;
 
-    PresentMessage("未选择目标群", "请先在下方勾选至少一个目标群，再执行发布。");
+    PresentMessage("未选择目标群", "请先在「设置 → 信息」里启用至少一个目标群，再执行发布。");
     return false;
   }
 
-  private void RebuildGroupList()
+  /// <summary>目标群配置变化：只刷新「一键转发」可用态（群列表本身在设置页展示）。</summary>
+  private void OnTargetGroupsChanged()
   {
-    if (_dm is null)
-      return;
-
-    foreach (var (_, box) in _groupBoxes)
-    {
-      GroupList.RemoveChild(box);
-      box.QueueFree();
-    }
-
-    _groupBoxes.Clear();
-
-    foreach (var group in _dm.Settings.TargetGroups)
-    {
-      var channelId = group.ChannelId.Value;
-      var displayName = group.DisplayName.Value;
-
-      var box = new CheckBox
-      {
-        Text = string.IsNullOrWhiteSpace(displayName) ? channelId : $"{displayName}（{channelId}）",
-        ButtonPressed = group.Enabled.Value,
-      };
-
-      var captured = group;
-      box.Toggled += pressed => OnGroupToggled(captured, pressed);
-
-      GroupList.AddChild(box);
-      _groupBoxes.Add((group, box));
-    }
-
-    UpdateForwardButtonState();
+    if (IsInsideTree())
+      UpdateForwardButtonState();
   }
 
-  private void OnGroupToggled(TargetGroup group, bool pressed)
+  /// <summary>切回信息页时按设置页里最新的「启用」状态刷新按钮可用态。</summary>
+  private void OnVisibilityChanged()
   {
-    group.Enabled.Value = pressed;
-    _dm?.TriggerAutoSave();
-    UpdateForwardButtonState();
+    if (Visible && IsInsideTree())
+      UpdateForwardButtonState();
   }
-
-  private void OnTargetGroupsChanged() => CallDeferred(nameof(RebuildGroupList));
 
   private void OnAutoPublishToggled(bool pressed)
   {
@@ -495,10 +441,10 @@ public partial class InfoPanel : Control, IInfoPanel
   }
 
   /// <summary>
-  /// 静默把当前猜测表推给下栏勾选的目标群。
+  /// 静默把当前猜测表推给设置页启用的目标群。
   /// </summary>
   /// <remarks>
-  /// 目标群复用下栏勾选（与「一键转发」同一份）；自动推送不弹「未选择目标群」对话框——
+  /// 目标群复用设置页「启用」的目标群（与「一键转发」同一份）；自动推送不弹「未选择目标群」对话框——
   /// 猜测进行中反复弹窗会打断操作，只在输出窗口留一条日志。成功同样静默，
   /// 仅失败时复用发布结果对话框，因为失败基本意味着连接断了，必须让用户看见。
   /// 失败不重排：否则断连时会变成每 1.5 秒一次的重试风暴，等下一次表变化再试即可。
@@ -525,7 +471,7 @@ public partial class InfoPanel : Control, IInfoPanel
     if (targets.Count == 0)
     {
       _autoPublishPending = false;
-      GD.Print("InfoPanel: 已跳过猜测表自动推送：未勾选任何目标群。");
+      GD.Print("InfoPanel: 已跳过猜测表自动推送：未启用任何目标群。");
       return;
     }
 

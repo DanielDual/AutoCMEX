@@ -20,7 +20,7 @@ public class TargetGroup
   /// <summary>展示名（从 Koishi 拉取时记录，便于人工辨认；可为空）。</summary>
   public AutoValue<string> DisplayName { get; set; } = new(string.Empty);
 
-  /// <summary>是否在信息板块下栏默认勾选（仅勾选的目标群参与发布）。</summary>
+  /// <summary>是否启用：启用即该群是信息板块的发布目标（默认 false，新并入的群不启用）。</summary>
   public AutoValue<bool> Enabled { get; set; } = new(false);
 
   /// <summary>

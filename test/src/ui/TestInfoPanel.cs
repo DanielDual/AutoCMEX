@@ -21,7 +21,7 @@ using SharpImage = SixLabors.ImageSharp.Image<SixLabors.ImageSharp.PixelFormats.
 
 /// <summary>
 /// 信息板块面板级测试：实例化真实 <c>InfoPanel.tscn</c>，断言四栏装配顺序、两表预览与出图同源、
-/// 下栏目标群勾选与发布前置守卫。
+/// 顶部操作行布局与发布前置守卫。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -159,7 +159,7 @@ public class TestInfoPanel : TestClass
     new GifSetService(_dm, _dm.DataDir).ImportFolder(root).IsSuccess.ShouldBeTrue();
   }
 
-  /// <summary>加一个已勾选的目标群。</summary>
+  /// <summary>加一个已启用的目标群。</summary>
   private void EnableGroup(string channelId) =>
     _dm.Settings.TargetGroups.Add(
       new TargetGroup
@@ -576,66 +576,81 @@ public class TestInfoPanel : TestClass
   }
 
   [Test]
-  public async Task GroupList_BuildsCheckBoxPerTargetGroupAndGatesForwardButton()
+  public async Task Layout_ReplacesGroupBarWithTopActionRow()
   {
     CreateDataManager(new[] { CreateBoss() });
-    _dm.Settings.TargetGroups.Add(
-      new TargetGroup
-      {
-        ChannelId = { Value = "10001" },
-        DisplayName = { Value = "示例群" },
-        Enabled = { Value = true },
-      }
-    );
-    _dm.Settings.TargetGroups.Add(
-      new TargetGroup { ChannelId = { Value = "10002" }, Enabled = { Value = false } }
-    );
-
     var panel = InstantiatePanel();
     await SettleAsync(panel);
 
-    var list = panel.GetNode<HBoxContainer>("%GroupList");
-    list.GetChildCount().ShouldBe(2);
-    list.GetChild<CheckBox>(0).Text.ShouldBe("示例群（10001）");
-    list.GetChild<CheckBox>(0).ButtonPressed.ShouldBeTrue();
-    list.GetChild<CheckBox>(1).Text.ShouldBe("10002");
-    list.GetChild<CheckBox>(1).ButtonPressed.ShouldBeFalse();
+    // 底部「目标群聊」勾选条已删除
+    panel.FindChild("BottomBar", owned: false).ShouldBeNull();
+    panel.FindChild("GroupList", owned: false).ShouldBeNull();
 
-    var forward = panel.GetNode<Button>("%ForwardAllButton");
-    forward.Disabled.ShouldBeFalse("已有一个目标群被勾选时应可转发");
-
-    // 取消唯一勾选的群 → 写回模型并立即禁用一键转发
-    var first = list.GetChild<CheckBox>(0);
-    first.SetPressedNoSignal(false);
-    first.EmitSignal(BaseButton.SignalName.Toggled, false);
-    await SettleAsync(panel);
-
-    _dm.Settings.TargetGroups[0].Enabled.Value.ShouldBeFalse();
-    forward.Disabled.ShouldBeTrue();
-
-    // AutoList 变更驱动下栏重建：新增目标群后自动出现第 3 个勾选框
-    _dm.Settings.TargetGroups.Add(
-      new TargetGroup { ChannelId = { Value = "10003" }, Enabled = { Value = true } }
-    );
-    await SettleAsync(panel);
-
-    list.GetChildCount().ShouldBe(3);
-    forward.Disabled.ShouldBeFalse();
+    // 顶部操作行承载「一键转发」与自动推送开关，并排在上栏滚动区之前
+    var topBar = panel.FindChild("TopBar", owned: false);
+    topBar.ShouldNotBeNull();
+    topBar!.GetParent().GetChild(0).ShouldBe(topBar);
+    panel.GetNode<Button>("%ForwardAllButton").GetParent().ShouldBe(topBar);
+    panel.GetNode<CheckBox>("%AutoPublishGuessingTable").GetParent().ShouldBe(topBar);
   }
 
   [Test]
-  public async Task Publish_WithoutSelectedTargets_ShowsGuardAndSendsNothing()
+  public async Task TargetGroups_EnabledInSettingsDrivePublishAndGateForwardButton()
   {
     CreateDataManager(new[] { CreateBoss() });
+    ImportGifSet();
+    EnableGroup("10001");
+    _dm.Settings.TargetGroups.Add(
+      new TargetGroup { ChannelId = { Value = "10002" }, Enabled = { Value = false } }
+    );
+    _dm.InfoConfig.ActivityRule.Value = "活动规则正文";
+
     var panel = InstantiatePanel();
     await SettleAsync(panel);
+
+    var forward = panel.GetNode<Button>("%ForwardAllButton");
+    forward.Disabled.ShouldBeFalse("设置页已启用一个目标群，应可一键转发");
+
+    // 发布目标 = 设置页启用项：停用的 10002 不得收到消息
+    var column = (GuessingTablePanel)panel.ColumnPanels[1]!;
+    FindButton(column, "PublishButton").EmitSignal(BaseButton.SignalName.Pressed);
+    (await PumpPublishAsync(panel, 1)).ShouldBeTrue();
+    await SettleAsync(panel);
+
+    _sent.Count.ShouldBe(1);
+    _sent[0].Payload.GetProperty("data").GetProperty("channelId").GetString().ShouldBe("10001");
+
+    // 设置页停用唯一启用的群后，切回信息页即禁用一键转发
+    _dm.Settings.TargetGroups[0].Enabled.Value = false;
+    panel.Hide();
+    await SettleAsync(panel);
+    panel.Show();
+    await SettleAsync(panel);
+
+    forward.Disabled.ShouldBeTrue();
+  }
+
+  [Test]
+  public async Task Publish_WithoutEnabledTargets_ShowsGuardAndSendsNothing()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    _dm.Settings.TargetGroups.Add(
+      new TargetGroup { ChannelId = { Value = "10001" }, Enabled = { Value = false } }
+    );
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    // 只有停用的群：一键转发不可用
+    panel.GetNode<Button>("%ForwardAllButton").Disabled.ShouldBeTrue();
 
     var column = (GuessingTablePanel)panel.ColumnPanels[1]!;
     FindButton(column, "PublishButton").EmitSignal(BaseButton.SignalName.Pressed);
     await SettleAsync(panel);
 
-    // 预检拦在出站之前：无目标群时不发任何消息
+    // 预检拦在出站之前：无启用目标群时不发任何消息
     _server.Verify(s => s.BroadcastAsync(It.IsAny<WebSocketMessage>()), Times.Never);
+    FindDialog(panel).Title.ShouldBe("未选择目标群");
   }
 
   [Test]
@@ -674,65 +689,6 @@ public class TestInfoPanel : TestClass
     green.ShouldBeGreaterThan(0, "至少一行已猜出，应为绿底");
     white.ShouldBeGreaterThan(0, "未猜出行与表体应为白底");
     header.ShouldBeGreaterThan(0, "表头应为灰底");
-  }
-
-  [Test]
-  public async Task RefreshGroups_RequestsKoishiListAndMergesResult()
-  {
-    CreateDataManager(new[] { CreateBoss() });
-    var panel = InstantiatePanel();
-    await SettleAsync(panel);
-
-    panel.GetNode<Button>("%RefreshGroupsButton").EmitSignal(BaseButton.SignalName.Pressed);
-    await SettleAsync(panel);
-
-    _sent.Count.ShouldBe(1);
-    _sent[0].Payload.GetProperty("event").GetString().ShouldBe(InfoProtocol.QueryGroupListEvent);
-    FindDialog(panel).DialogText.ShouldContain("已向 Koishi 发起群列表查询");
-
-    // 回执走总线（入站真实路径）→ 并入目标群列表并重建下栏
-    _bus.Publish(
-      InfoProtocol.GroupListResultEvent,
-      JsonSerializer.SerializeToElement(
-        new
-        {
-          data = new[]
-          {
-            new
-            {
-              channelId = "10001",
-              guildId = "9001",
-              name = "示例群",
-            },
-            new
-            {
-              channelId = "10002",
-              guildId = "9001",
-              name = "另一群",
-            },
-          },
-        }
-      )
-    );
-    await SettleAsync(panel);
-
-    _dm.Settings.TargetGroups.Count.ShouldBe(2);
-    _dm.Settings.TargetGroups[0].ChannelId.Value.ShouldBe("10001");
-    _dm.Settings.TargetGroups[0].DisplayName.Value.ShouldBe("示例群");
-
-    var list = panel.GetNode<HBoxContainer>("%GroupList");
-    list.GetChildCount().ShouldBe(2);
-    list.GetChild<CheckBox>(0).Text.ShouldBe("示例群（10001）");
-    list.GetChild<CheckBox>(0).ButtonPressed.ShouldBeFalse("新并入的群默认不勾选");
-    FindDialog(panel).Title.ShouldBe("群列表已更新");
-
-    // 与 Koishi 无连接时不得静默：直接报失败
-    _server.SetupGet(s => s.ConnectionCount).Returns(0);
-    panel.GetNode<Button>("%RefreshGroupsButton").EmitSignal(BaseButton.SignalName.Pressed);
-    await SettleAsync(panel);
-
-    _sent.Count.ShouldBe(1, "无连接时不应发出查询");
-    FindDialog(panel).Title.ShouldBe("群列表刷新失败");
   }
 
   [Test]
