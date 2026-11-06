@@ -30,6 +30,10 @@ public partial class CreatorRemainingPanel : VBoxContainer
   private ColumnPublishHandler? _publish;
   private BossDataWatcher? _watcher;
   private bool _isPublishing;
+  private TablePreviewExport? _previewExport;
+
+  /// <summary>表格预览的拖拽/复制交互（供面板级测试断言接线）。</summary>
+  internal TablePreviewExport? PreviewExport => _previewExport;
 
   /// <inheritdoc/>
   public override void _Notification(int what) => this.Notify(what);
@@ -39,6 +43,9 @@ public partial class CreatorRemainingPanel : VBoxContainer
   {
     _watcher?.Dispose();
     _watcher = null;
+
+    _previewExport?.Dispose();
+    _previewExport = null;
   }
 
   /// <summary>AutoInject 节点注入完成（依赖注入前，无需额外动作）。</summary>
@@ -64,6 +71,12 @@ public partial class CreatorRemainingPanel : VBoxContainer
 
     PublishButton.Pressed += OnPublishPressed;
     _watcher = new BossDataWatcher(dataManager, () => CallDeferred(nameof(Refresh)));
+    _previewExport = new TablePreviewExport(
+      this,
+      TableGrid,
+      model => TableImageRenderer.RenderToImageAsync(this, model),
+      new WindowsTableImageExportBackend()
+    );
 
     Refresh();
   }
@@ -77,6 +90,7 @@ public partial class CreatorRemainingPanel : VBoxContainer
     var model = TableModelBuilder.BuildCreatorRemainingTable(_dataService.BuildSnapshot());
     TitleLabel.Text = model.Title;
     TableModelView.Fill(TableGrid, model);
+    _previewExport?.Update(model);
     PublishButton.Disabled = _isPublishing || !model.HasContent;
   }
 
