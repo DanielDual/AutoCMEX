@@ -2,6 +2,7 @@ namespace AutoCMEX;
 
 using System;
 using AutoCMEX.Core.Logging;
+using AutoCMEX.UI;
 using Chickensoft.GameTools.Displays;
 using Godot;
 #if RUN_TESTS
@@ -85,6 +86,9 @@ public partial class Main : Node2D
   {
     // Correct any erroneous scaling and guess sensible defaults.
     GetWindow().LookGood(WindowScaleBehavior.UIFixed, DesignResolution);
+
+    // LookGood 会把 MaxSize 限制为屏幕逻辑分辨率的 75%（游戏窗口推荐值），这里解除该上限以支持自由缩放
+    MainWindowSizing.AllowFreeResize(GetWindow());
 
     // 初始化全局日志服务（位于系统临时目录，详见 LogConfig）
     var logService = AppLogs.Initialize();
