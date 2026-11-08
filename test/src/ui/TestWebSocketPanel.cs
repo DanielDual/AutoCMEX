@@ -207,6 +207,38 @@ public class TestWebSocketPanel : TestClass
     _errorLabel.VerifySet(m => m.Visible = true);
   }
 
+  /// <summary>
+  /// 同帧多事件合并：连接、断开与状态变化常在同一条事件链里连发，
+  /// 面板必须只做一次全量刷新（而不是每个事件各排一次 deferred 刷新）。
+  /// </summary>
+  [Test]
+  public async Task SameFrameEventChain_RefreshesOnce()
+  {
+    _server.Mode = "Server";
+    _server.IsRunning = true;
+    _panel.UpdateServer(_server);
+
+    var before = _panel.RefreshCountForTests;
+
+    // 同一帧：连接 → 状态变化 → 断开 → 状态变化（真实实例在连接/断开时都会各抛两种事件）
+    _server.RaiseClientConnected("client-1");
+    _server.RaiseStateChanged();
+    _server.RaiseClientDisconnected("client-1");
+    _server.RaiseStateChanged();
+
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    (_panel.RefreshCountForTests - before).ShouldBe(1, "同帧多次事件只应触发一次全量刷新");
+
+    // 合并不是丢事件：下一帧的事件照常再刷一次
+    _server.RaiseStateChanged();
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    (_panel.RefreshCountForTests - before).ShouldBe(2, "合并不丢事件，下一帧的变化应再刷一次");
+  }
+
   [Test]
   public void ClientConnected_AddsToClientList()
   {

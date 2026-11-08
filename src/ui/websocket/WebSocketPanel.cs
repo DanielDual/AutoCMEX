@@ -89,6 +89,18 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
 
   private string _lastEvent = "";
 
+  /// <summary>
+  /// 本帧是否已排过刷新：连接/断开与状态变化常在同一事件链里连发，合并成每帧一次。
+  /// </summary>
+  /// <remarks>
+  /// 事件可能来自 socket 线程，因此用 <c>volatile</c> 保证读写可见性；竞态最坏只是同帧多排一次刷新，
+  /// 而 <see cref="RefreshUI"/> 本身是幂等、可重复执行的。
+  /// </remarks>
+  private volatile bool _refreshQueued;
+
+  /// <summary>已执行的 <see cref="RefreshUI"/> 次数（测试用：断言同帧多事件只刷新一次）。</summary>
+  internal int RefreshCountForTests { get; private set; }
+
   public override void _Notification(int what) => this.Notify(what);
 
   public void OnReady()
@@ -173,6 +185,29 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
   }
 
   /// <summary>
+  /// 把本帧的刷新请求合并成一次：连接/断开/状态处理器都只调用它，不再各自排一次全量刷新。
+  /// </summary>
+  /// <remarks>
+  /// 处理器可能运行在 socket 线程（规则 19），这里只置脏并排一次 deferred，真正刷新回主线程执行。
+  /// 同一事件链里「连接 + 状态变化」或「断开 + 重连态」会连发多次通知，本方法保证只刷一次。
+  /// </remarks>
+  private void QueueRefresh()
+  {
+    if (_refreshQueued)
+      return;
+
+    _refreshQueued = true;
+    CallDeferred(nameof(FlushRefresh));
+  }
+
+  /// <summary>执行本帧合并后的刷新；公开以便 <c>CallDeferred</c> 按名调用，不属于对外契约。</summary>
+  public void FlushRefresh()
+  {
+    _refreshQueued = false;
+    RefreshUI();
+  }
+
+  /// <summary>
   /// 服务器状态变化：调度到主线程刷新显示（事件可能来自接受循环/连接循环线程）。
   /// </summary>
   /// <remarks>
@@ -181,21 +216,21 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
   /// </remarks>
   private void OnServerStateChanged()
   {
-    Callable.From(RefreshUI).CallDeferred();
+    QueueRefresh();
   }
 
   private void OnConnected(string id)
   {
     _lastEvent = $"已连接 {id} ({DateTime.Now:HH:mm:ss})";
     _pendingClientEvents.Enqueue((true, id));
-    Callable.From(RefreshUI).CallDeferred();
+    QueueRefresh();
   }
 
   private void OnDisconnected(string id)
   {
     _lastEvent = $"已断开 {id} ({DateTime.Now:HH:mm:ss})";
     _pendingClientEvents.Enqueue((false, id));
-    Callable.From(RefreshUI).CallDeferred();
+    QueueRefresh();
   }
 
   /// <summary>
@@ -226,6 +261,8 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
   {
     if (_server == null)
       return;
+
+    RefreshCountForTests++;
 
     DrainClientEvents();
 
