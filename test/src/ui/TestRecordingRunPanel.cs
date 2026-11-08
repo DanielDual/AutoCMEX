@@ -133,9 +133,12 @@ public class TestRecordingRunPanel : TestClass
     panel.Start(CreateRequest("out/gifset"));
 
     await WaitUntilAsync(() => !panel.IsRunning);
-    await SettleAsync();
 
-    // 进度经 CallDeferred 回主线程刷新（若丢了这一环，标签会停在起录时的占位文案）
+    // 进度与收尾各是一条 deferred，落帧顺序不保证；等标签真正到位再断言，避免固定帧数等待抖动。
+    // 断言值不变：若进度刷新这一环丢了，标签会停在起录时的占位文案。
+    await WaitUntilAsync(() => panel.CountLabel.Text == "总数 2　已完成 1　失败 0");
+    await WaitUntilAsync(() => panel.WorkersLabel.Text.Contains("worker 1：1. 普通攻击 1"));
+
     panel.CountLabel.Text.ShouldBe("总数 2　已完成 1　失败 0");
     panel.WorkersLabel.Text.ShouldContain("worker 1：1. 普通攻击 1");
   }
