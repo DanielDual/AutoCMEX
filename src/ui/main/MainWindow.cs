@@ -2,6 +2,7 @@ namespace AutoCMEX.UI.Main;
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using AutoCMEX;
 using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Guessing;
@@ -164,17 +165,27 @@ public partial class MainWindow
   /// </summary>
   private bool _exiting;
 
-  public override void _Notification(int what) => this.Notify(what);
-
   /// <summary>
-  /// 关窗通知：节点树拆解前唯一可靠的早期时机，先立起退出护栏。
+  /// Godot 通知入口：关窗通知（<see cref="NotificationWMCloseRequest"/>）先立起退出护栏，再交给
+  /// AutoInject/AutoOn 的既有通知分发。
   /// </summary>
   /// <remarks>
   /// Godot 拆解节点树时子节点先退出，设置面板会在自己的退出回调里把去抖窗口内尚未提交的
   /// 端口编辑写回模型；若不提前置位，这笔写入会经配置绑定触发一次 WebSocket 重启，
   /// 而此刻 <see cref="AutoCMEX.Main"/> 已关闭日志服务 → 异步重启会在拆解期失败并重建日志。
+  /// 这里必须显式置位：不能依赖 <c>OnWMCloseRequest</c> 之类的 AutoOn 回调与 <c>_ExitTree</c>
+  /// 的时序（后者晚于子面板退出）。
   /// </remarks>
-  public void OnWMCloseRequest() => _exiting = true;
+  public override void _Notification(int what)
+  {
+    if (what == (int)NotificationWMCloseRequest)
+      _exiting = true;
+
+    this.Notify(what);
+  }
+
+  /// <summary>是否已立起退出护栏（测试用：验证关窗通知在树拆解前就生效）。</summary>
+  internal bool IsExitingForTests => _exiting;
 
   public override void _ExitTree()
   {
@@ -362,11 +373,11 @@ public partial class MainWindow
   /// 重启 WebSocket 服务（切换模式或配置变更时调用）
   /// </summary>
   /// <remarks>
-  /// <c>async void</c> 是信号/绑定回调直接调用的既定形态，异常必须在此收口（否则会被
-  /// Godot 的同步上下文吞掉）；重启本身由 <see cref="WebSocketLifecycle"/> 串行化，
+  /// 改为 <c>async Task</c> 以便护栏用例可 await；信号/绑定回调用弃元丢弃返回的 Task，
+  /// 异常仍在本方法的 catch 内收口。重启本身由 <see cref="WebSocketLifecycle"/> 串行化，
   /// 并在「配置其实没变」时原样返回现有实例，不重建不启停。
   /// </remarks>
-  public async void RestartWebSocket()
+  public async Task RestartWebSocket()
   {
     // 退出/已离树：此时的配置写入（典型：设置面板退出时恢复未提交的端口编辑）只该落盘，
     // 不得再重建 WebSocket——否则关窗路径上会与已关闭的日志服务抢生命周期
@@ -386,8 +397,9 @@ public partial class MainWindow
     }
     catch (Exception ex)
     {
+      // 测试模式不初始化 _logService：这里必须空安全，否则护栏用例会在 catch 里 NRE
       _logService
-        .GetLogger("WebSocket")
+        ?.GetLogger("WebSocket")
         .Err($"MainWindow: restart WebSocket failed: {ex.GetType().Name}: {ex.Message}");
     }
   }

@@ -1,6 +1,7 @@
 namespace AutoCMEX;
 
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using AutoCMEX.UI.Guessing;
 using AutoCMEX.UI.Info;
 using AutoCMEX.UI.Logging;
@@ -122,6 +123,42 @@ public class MainWindowTest : TestClass
   public void MainWindow_LoadsSuccessfully()
   {
     _mainWindow.ShouldNotBeNull();
+  }
+
+  /// <summary>
+  /// 退出护栏（批次 6/7 审查阻塞项）：关窗通知必须在节点树拆解前立起退出护栏。
+  /// </summary>
+  /// <remarks>
+  /// Godot 4.7.1 实测子节点先退出、此时父窗口仍 inside；若只在 <c>_ExitTree</c> 置位，
+  /// 设置页在拆解期写回端口会经配置绑定触发一次 WebSocket 重启（此时日志服务已关闭）。
+  /// 本用例失败即说明关窗通知没有提前置位（不能依赖 AutoOn 的 OnWMCloseRequest 回调时序）。
+  /// </remarks>
+  [Test]
+  public void WMCloseRequest_ArmsExitGuardBeforeTreeTeardown()
+  {
+    _mainWindow.IsExitingForTests.ShouldBeFalse("初始不应处于退出流程");
+
+    _mainWindow._Notification((int)Node.NotificationWMCloseRequest);
+
+    _mainWindow.IsExitingForTests.ShouldBeTrue("关窗通知必须立刻立起退出护栏，不能等到 _ExitTree");
+  }
+
+  /// <summary>
+  /// 退出护栏行为：测试模式没有 lifecycle/日志服务，关窗后等待重启必须安全返回。
+  /// </summary>
+  /// <remarks>
+  /// 把窗口放进场景树，让护栏走 <c>_exiting</c> 分支而不是 <c>!IsInsideTree()</c> 分支；
+  /// 护栏生效时重启在守卫处直接返回，既不碰空 lifecycle 也不触碰空日志服务。
+  /// </remarks>
+  [Test]
+  public async Task RestartWebSocket_AfterWMCloseRequest_ReturnsSafely()
+  {
+    TestScene.AddChild(_mainWindow);
+    _mainWindow._Notification((int)Node.NotificationWMCloseRequest);
+
+    await _mainWindow.RestartWebSocket();
+
+    _mainWindow.IsExitingForTests.ShouldBeTrue();
   }
 
   [Test]
