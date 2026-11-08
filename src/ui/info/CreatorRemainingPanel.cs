@@ -190,25 +190,22 @@ public partial class CreatorRemainingPanel : VBoxContainer, ICreatorRemainingPan
 
   /// <summary>发布按钮：触发 <see cref="PublishRequested"/>，由信息面板统一编排发布。</summary>
   /// <remarks>
-  /// 事件同步派发，因此这里的忙碌态只覆盖派发段；真正的串行发送、失败即停与重试由信息面板的
-  /// 发布服务编排负责（单栏与「一键转发」共用同一条链路）。
+  /// 忙碌态由信息面板在真正发送期间经 <see cref="SetPublishBusy"/> 驱动（覆盖整个在飞区间），
+  /// 因此这里的守卫能在重复点击时直接丢弃、不会重入；发布结束后由信息面板复位。
   /// </remarks>
   private void OnPublishPressed()
   {
     if (_isPublishing)
       return;
 
-    _isPublishing = true;
+    PublishRequested?.Invoke();
+  }
+
+  /// <summary>设置本栏「发布中」忙碌态：在飞期间发布按钮置灰（由信息面板统一驱动）。</summary>
+  /// <param name="busy">是否正在发布。</param>
+  public void SetPublishBusy(bool busy)
+  {
+    _isPublishing = busy;
     UpdatePublishButtonState();
-    try
-    {
-      PublishRequested?.Invoke();
-    }
-    finally
-    {
-      _isPublishing = false;
-      if (IsInsideTree())
-        UpdatePublishButtonState();
-    }
   }
 }

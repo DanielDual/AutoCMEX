@@ -133,6 +133,8 @@ public partial class ModelEntryPanel : VBoxContainer
     DeleteBtn.Pressed += deleteAction;
   }
 
+  /// <summary>端点地址输入变化：写回模型并触发防抖自动保存。</summary>
+  /// <param name="text">输入框当前文本。</param>
   private void OnUrlTextChanged(string text)
   {
     if (Model is null)
@@ -142,6 +144,8 @@ public partial class ModelEntryPanel : VBoxContainer
     DataManager.TriggerAutoSave();
   }
 
+  /// <summary>模型 Id 输入变化：写回模型并触发防抖自动保存。</summary>
+  /// <param name="text">输入框当前文本。</param>
   private void OnModelIdTextChanged(string text)
   {
     if (Model is null)
@@ -151,6 +155,8 @@ public partial class ModelEntryPanel : VBoxContainer
     DataManager.TriggerAutoSave();
   }
 
+  /// <summary>API Key 输入变化：写回模型（加密字段）并触发防抖自动保存。</summary>
+  /// <param name="text">输入框当前文本。</param>
   private void OnApiKeyTextChanged(string text)
   {
     if (Model is null)

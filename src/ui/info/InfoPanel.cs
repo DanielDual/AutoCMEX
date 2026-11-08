@@ -98,6 +98,11 @@ public partial class InfoPanel
   GifSetService IProvide<GifSetService>.Value() => _gifSets!;
 
   /// <summary>提供给子栏的发布编排服务（各栏只发起发布请求，串行/失败即停/重试在本服务内）。</summary>
+  /// <remarks>
+  /// 预留：当前四栏都经 <c>PublishRequested</c> 事件由本面板收口发布，暂无子节点直接依赖本服务；
+  /// 保留该 provider 以维持「子栏依赖由信息面板提供」的契约，后续栏位若需要发布编排能力可直接注入，
+  /// 不必再改 InfoPanel 的提供清单。
+  /// </remarks>
   PublishService IProvide<PublishService>.Value() => _publisher!;
 
   /// <summary>提供给子栏共享的数据观察者（两表栏共用一个实例）。</summary>
@@ -143,7 +148,8 @@ public partial class InfoPanel
   /// <summary>单栏发布的在飞栏位（仅主线程）：首次发布未结束时同一栏的重复触发直接丢弃。</summary>
   /// <remarks>
   /// 栏位的事件是同步派发的，栏位自己的忙碌态只覆盖派发段，覆盖不到真正的串行发送区间；
-  /// 重入过滤放在这里，和「一键转发」的 <see cref="_isPublishing"/> 各管一条链，互不改语义。
+  /// 重入过滤与「发布中置灰」都放在本面板（见 <see cref="PublishColumnSafelyAsync"/>），
+  /// 和「一键转发」的 <see cref="_isPublishing"/> 各管一条链，互不改语义。
   /// </remarks>
   private readonly HashSet<PublishItemKind> _publishingKinds = new();
 
@@ -358,6 +364,8 @@ public partial class InfoPanel
     if (!_publishingKinds.Add(kind))
       return;
 
+    // 在飞期间把对应栏的发布按钮置灰（异常路径同样由 finally 复位）
+    SetColumnPublishBusy(kind, true);
     try
     {
       await PublishColumnAsync(kind);
@@ -368,7 +376,34 @@ public partial class InfoPanel
     }
     finally
     {
+      SetColumnPublishBusy(kind, false);
       _publishingKinds.Remove(kind);
+    }
+  }
+
+  /// <summary>按栏位把「发布中」忙碌态转给对应栏（按钮可用态由各栏自己维护）。</summary>
+  /// <param name="kind">栏位。</param>
+  /// <param name="busy">是否正在发布。</param>
+  /// <remarks>发布收尾时面板可能已退出场景树（关窗/切场景），此时子栏已不可操作，直接跳过。</remarks>
+  private void SetColumnPublishBusy(PublishItemKind kind, bool busy)
+  {
+    if (!IsInsideTree())
+      return;
+
+    switch (kind)
+    {
+      case PublishItemKind.GifSet:
+        GifSetPanelNode.SetPublishBusy(busy);
+        break;
+      case PublishItemKind.GuessingTable:
+        GuessingTablePanelNode.SetPublishBusy(busy);
+        break;
+      case PublishItemKind.CreatorRemainingTable:
+        CreatorRemainingPanelNode.SetPublishBusy(busy);
+        break;
+      case PublishItemKind.ActivityRule:
+        ActivityRulePanelNode.SetPublishBusy(busy);
+        break;
     }
   }
 

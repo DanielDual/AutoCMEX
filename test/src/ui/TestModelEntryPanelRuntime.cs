@@ -196,6 +196,12 @@ public class TestModelEntryPanelRuntime : TestClass
     {
       entries[i].Model.ShouldBeSameAs(dm.Settings.AiModels[i], "每行应绑定自己的模型");
       entries[i].UrlInput.ShouldNotBeNull("依赖解析后 [Node] 应已注入");
+      // 依赖解析（而不仅是 [Node] 注入）真的发生了：行的 [Dependency] 来自父面板 provider
+      entries[i]
+        .DataManager.ShouldBeSameAs(
+          dm,
+          "行的 [Dependency] DataManager 应解析自父面板 provider，未被解析时取依赖会抛异常"
+        );
     }
   }
 

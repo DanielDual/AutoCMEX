@@ -1153,6 +1153,54 @@ public class TestInfoPanel : TestClass
     SentKind(_sent[1]).ShouldBe("ActivityRule");
   }
 
+  /// <summary>
+  /// 批3 收尾（评审警告）：单栏发布在飞期间对应栏发布按钮置灰，回执到达（成功/失败）后恢复。
+  /// </summary>
+  /// <remarks>
+  /// 忙碌态由信息面板在真正的串行发送区间驱动（事件同步派发覆盖不到等回执阶段），栏位只负责按该
+  /// 状态更新按钮；失败路径同样必须在 <c>finally</c> 里复位，否则一次失败会把按钮永久锁死。
+  /// </remarks>
+  [Test]
+  public async Task ColumnPublish_DuringFlight_DisablesButtonAndRestoresAfterAck()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    ImportGifSet();
+    EnableGroup("10001");
+    _dm.InfoConfig.ActivityRule.Value = "活动规则正文";
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var rule = (ActivityRulePanel)panel.ColumnPanels[3]!;
+    var button = FindButton(rule, "PublishButton");
+    button.Disabled.ShouldBeFalse();
+
+    // 点一次：请求同步发出并进入等回执阶段，该栏应立刻置灰
+    button.EmitSignal(BaseButton.SignalName.Pressed);
+    _sent.Count.ShouldBe(1);
+    button.Disabled.ShouldBeTrue("发布在飞期间对应栏按钮必须置灰");
+
+    // 在飞期间再点：重入护栏丢弃，不得再发（双击只发一次）
+    button.EmitSignal(BaseButton.SignalName.Pressed);
+    _sent.Count.ShouldBe(1, "发布在飞期间的重复点击应被丢弃");
+
+    (await PumpPublishAsync(panel, 1)).ShouldBeTrue();
+    await SettleAsync(panel);
+    button.Disabled.ShouldBeFalse("回执到达、发布结束后按钮应恢复可用");
+
+    // 失败路径同样要复位：不允许一次失败把按钮永久锁死
+    _sent.Clear();
+    button.EmitSignal(BaseButton.SignalName.Pressed);
+    _sent.Count.ShouldBe(1);
+    button.Disabled.ShouldBeTrue();
+
+    (await PumpPublishAsync(panel, 1, false)).ShouldBeTrue();
+    await SettleAsync(panel);
+
+    button.Disabled.ShouldBeFalse("发布失败后按钮也必须恢复");
+    FindDialog(panel).DialogText.ShouldContain("失败");
+  }
+
   [Test]
   public async Task RemainingColumns_PublishTheirOwnItem()
   {

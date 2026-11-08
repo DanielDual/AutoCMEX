@@ -14,13 +14,18 @@ using System;
 /// <para>
 /// 本栏不再由信息面板用 <c>Setup(...)</c> 手动注入回调：发布按钮改为触发
 /// <see cref="PublishRequested"/>，表内容变化改为触发 <see cref="TableChanged"/>，
-/// 由信息面板订阅后统一编排发布与自动推送。
+/// 由信息面板订阅后统一编排发布与自动推送；发布在飞期间按钮置灰由信息面板经
+/// <see cref="SetPublishBusy"/> 统一驱动（事件同步派发，栏位自己判断不出在飞区间）。
 /// </para>
 /// </remarks>
 public interface IGuessingTablePanel
 {
   /// <summary>本栏发布请求（点「发布该表」时触发）。</summary>
   event Action? PublishRequested;
+
+  /// <summary>设置本栏的「发布中」忙碌态：在飞期间发布按钮置灰（由信息面板统一驱动）。</summary>
+  /// <param name="busy">是否正在发布。</param>
+  void SetPublishBusy(bool busy);
 
   /// <summary>
   /// 表内容真正变化时触发（首次刷新只记基线，不算变化），供信息面板做自动推送防抖。
