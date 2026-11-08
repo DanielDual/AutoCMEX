@@ -2,6 +2,7 @@ namespace AutoCMEX.Core.Info;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.Log;
@@ -110,31 +111,42 @@ public class InfoDataService
   }
 
   /// <summary>
+  /// 测试注入点：符卡快照取好后、开始遍历前触发，用于模拟「遍历期间集合被并发修改」。
+  /// </summary>
+  internal Action? CardsSnapshotTakenForTests { get; set; }
+
+  /// <summary>
   /// 解析当前 Boss。
   /// </summary>
   /// <remarks>
   /// 与猜测模块保持同一口径：读 <see cref="AppSettings.SelectedBossIndex"/>，下标越界时
-  /// 回退为 0（并写回设置），无 Boss 时返回 null。
+  /// 回退为 0（并写回设置），无 Boss 时返回 null。遍历前先 <c>ToList()</c> 取快照（规则 22），
+  /// 避免并发增删让 <c>Count</c> 与下标错位。
   /// </remarks>
   /// <returns>当前 Boss；无数据时为 null。</returns>
   public Boss? ResolveCurrentBoss()
   {
-    if (_dataManager.Bosses.Count == 0)
+    var bosses = _dataManager.Bosses.ToList();
+    if (bosses.Count == 0)
       return null;
 
     var selectedIndex = _dataManager.Settings.SelectedBossIndex.Value;
-    if (selectedIndex < 0 || selectedIndex >= _dataManager.Bosses.Count)
+    if (selectedIndex < 0 || selectedIndex >= bosses.Count)
     {
       selectedIndex = 0;
       _dataManager.Settings.SelectedBossIndex.Value = 0;
     }
 
-    return _dataManager.Bosses[selectedIndex];
+    return bosses[selectedIndex];
   }
 
   /// <summary>
   /// 推导两张表的完整快照。
   /// </summary>
+  /// <remarks>
+  /// 遍历前先把 <see cref="Boss.SpellCards"/> 抄成 <c>List</c>（规则 22）：数据线程并发增删符卡时，
+  /// 遍历与下标都只碰快照，不会在枚举期间改集合或越界。
+  /// </remarks>
   /// <returns>
   /// 当前 Boss 的快照；无 Boss 时返回 <see cref="InfoTableSnapshot.HasBoss"/> 为 false 的空快照。
   /// </returns>
@@ -147,7 +159,9 @@ public class InfoDataService
       return new InfoTableSnapshot();
     }
 
-    var cards = boss.SpellCards;
+    var cards = boss.SpellCards.ToList();
+    CardsSnapshotTakenForTests?.Invoke();
+
     var guessingRows = new List<GuessingTableRow>(cards.Count);
     var creatorOrder = new List<string>();
     var totals = new Dictionary<string, int>(StringComparer.Ordinal);

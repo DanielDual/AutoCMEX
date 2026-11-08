@@ -93,17 +93,24 @@ public class TestInfoPanel : TestClass
     return _dm;
   }
 
+  /// <summary>造一个「运行中 + 有 1 条连接」的服务端桩，发出的消息按顺序记进 <see cref="_sent" />。</summary>
+  private Mock<IWebSocketServer> CreateServerMock()
+  {
+    var server = new Mock<IWebSocketServer>();
+    server.SetupGet(s => s.IsRunning).Returns(true);
+    server.SetupGet(s => s.ConnectionCount).Returns(1);
+    server
+      .Setup(s => s.BroadcastAsync(It.IsAny<WebSocketMessage>()))
+      .Callback<WebSocketMessage>(_sent.Add)
+      .ReturnsAsync(1);
+    return server;
+  }
+
   private InfoPanel InstantiatePanel()
   {
     _sent.Clear();
 
-    _server = new Mock<IWebSocketServer>();
-    _server.SetupGet(s => s.IsRunning).Returns(true);
-    _server.SetupGet(s => s.ConnectionCount).Returns(1);
-    _server
-      .Setup(s => s.BroadcastAsync(It.IsAny<WebSocketMessage>()))
-      .Callback<WebSocketMessage>(_sent.Add)
-      .ReturnsAsync(1);
+    _server = CreateServerMock();
 
     _bus = new InfoEventBus();
 
@@ -546,6 +553,116 @@ public class TestInfoPanel : TestClass
     CellBackground(creatorGrid, creatorRow * 2).ShouldBe(InfoTablePalette.HighlightBackground);
   }
 
+  /// <summary>
+  /// 两张表栏必须共用信息面板创建的同一个数据观察者，而不是各自 new 一个。
+  /// </summary>
+  /// <remarks>
+  /// 各建一个观察者会让每次符卡变化发两轮通知、结构变更重挂也做两遍；共享后两栏都在同一轮通知里
+  /// 各自按帧合并重建。
+  /// </remarks>
+  [Test]
+  public async Task TableColumns_ShareSingleWatcherFromInfoPanel()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var guessing = (GuessingTablePanel)panel.ColumnPanels[1]!;
+    var creator = (CreatorRemainingPanel)panel.ColumnPanels[2]!;
+
+    guessing.WatcherForTests.ShouldNotBeNull("信息面板应为两表栏注入共享观察者");
+    creator.WatcherForTests.ShouldBeSameAs(
+      guessing.WatcherForTests,
+      "两张表栏必须订阅同一个观察者，不能各建一个"
+    );
+  }
+
+  /// <summary>
+  /// 生产调度器回归：数据线程（猜测模块的 <c>Task.Run</c>）改「当前 Boss」时，观察者的结构变更
+  /// 必须经 <c>Callable.From(...).CallDeferred()</c> 回到主线程重挂，而不是在数据线程改绑定集合。
+  /// </summary>
+  /// <remarks>
+  /// 用信息面板构造观察者时注入的生产调度器跑真实往返：数据线程只排队，主线程等帧后重挂到新 Boss 的
+  /// 符卡属性绑定（3 张 × 3 属性 → 1 张 × 3 属性）。断言绑定数量而不是看画面，直接盯住
+  /// 「结构变更是否真的在主线程发生过」；两栏共用同一观察者，数量断言同时覆盖两栏。
+  /// </remarks>
+  [Test]
+  public async Task SelectedBossIndexWrittenFromWorkerThread_RebindsCardBindingsOnMainThread()
+  {
+    var secondBoss = new Boss
+    {
+      Name = "SecondBoss",
+      SpellCards = new()
+      {
+        new SpellCard
+        {
+          Name = { Value = "符卡 X" },
+          Creator = { Value = "Gamma" },
+          IsGuessedOut = { Value = false },
+        },
+      },
+    };
+
+    CreateDataManager(new[] { CreateBoss(), secondBoss });
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var guessing = (GuessingTablePanel)panel.ColumnPanels[1]!;
+    var creator = (CreatorRemainingPanel)panel.ColumnPanels[2]!;
+    var watcher = guessing.WatcherForTests.ShouldNotBeNull("两表栏应共用信息面板创建的观察者");
+    creator.WatcherForTests.ShouldBeSameAs(watcher);
+
+    // 初始 Boss：3 张符卡 × 3 个属性全部挂上
+    watcher.CardBindingCountForTests.ShouldBe(9);
+
+    // 模拟 WebSocket 线程池写入：生产调度器把结构变更排队，数据线程不碰绑定集合
+    await Task.Run(() => _dm.Settings.SelectedBossIndex.Value = 1);
+
+    await SettleAsync(panel);
+
+    watcher.CardBindingCountForTests.ShouldBe(
+      3,
+      "数据线程写入后，符卡属性绑定必须回到主线程重挂到新 Boss（1 张 × 3 属性）"
+    );
+  }
+
+  /// <summary>
+  /// 一次猜测里连改 K 张符卡（同一帧内 K 次数据通知）：每张表只重建一次，而不是 K 次。
+  /// </summary>
+  /// <remarks>
+  /// 这是 P1 的核心回归：合并前每张卡都要排一次全量重建（节点重建 + 离屏出图），
+  /// 一轮连猜 59 张就是 59 次。计数器断言直接盯住「重建发生了几次」，比断言最终画面更能守住性能语义。
+  /// </remarks>
+  [Test]
+  public async Task GuessingKSpellCardsInOneFrame_RebuildsEachTableOnce()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var guessing = (GuessingTablePanel)panel.ColumnPanels[1]!;
+    var creator = (CreatorRemainingPanel)panel.ColumnPanels[2]!;
+
+    var guessingBefore = guessing.RefreshCountForTests;
+    var creatorBefore = creator.RefreshCountForTests;
+
+    // 一次猜测：3 张符卡在同一帧内连续改变（3 次属性通知，符卡列表本身没有增删）
+    _dm.Bosses[0].SpellCards[0].IsGuessedOut.Value = false;
+    _dm.Bosses[0].SpellCards[1].IsGuessedOut.Value = true;
+    _dm.Bosses[0].SpellCards[2].IsGuessedOut.Value = false;
+
+    await SettleAsync(panel);
+
+    (guessing.RefreshCountForTests - guessingBefore).ShouldBe(
+      1,
+      "同一帧内的多次通知应合并成一次重建"
+    );
+    (creator.RefreshCountForTests - creatorBefore).ShouldBe(
+      1,
+      "两栏共用同一观察者，各自也只重建一次"
+    );
+  }
+
   [Test]
   public async Task ActivityRuleColumn_EditsWriteBackToModelAndGatePublish()
   {
@@ -620,7 +737,7 @@ public class TestInfoPanel : TestClass
     _sent.Count.ShouldBe(1);
     _sent[0].Payload.GetProperty("data").GetProperty("channelId").GetString().ShouldBe("10001");
 
-    // 设置页停用唯一启用的群后，切回信息页即禁用一键转发
+    // 设置页停用唯一启用的群后禁用一键转发（元素级绑定直接驱动；Hide/Show 只是保留既有的切页路径）
     _dm.Settings.TargetGroups[0].Enabled.Value = false;
     panel.Hide();
     await SettleAsync(panel);
@@ -628,6 +745,103 @@ public class TestInfoPanel : TestClass
     await SettleAsync(panel);
 
     forward.Disabled.ShouldBeTrue();
+  }
+
+  /// <summary>
+  /// 设置页勾选/取消目标群后，信息页「一键转发」可用态要跟着变——不必先切走再切回本页。
+  /// </summary>
+  /// <remarks>
+  /// 列表本身没有增删，靠的是信息页为每个目标群的「启用」挂的元素级绑定；回调只调度
+  /// （<c>CallDeferred</c>），所以这里必须等帧再断言。
+  /// </remarks>
+  [Test]
+  public async Task SettingGroupEnabled_UpdatesForwardButtonWithoutSwitchingPanels()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    _dm.Settings.TargetGroups.Add(
+      new TargetGroup { ChannelId = { Value = "10001" }, Enabled = { Value = false } }
+    );
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var forward = panel.GetNode<Button>("%ForwardAllButton");
+    forward.Disabled.ShouldBeTrue("尚未启用任何目标群");
+
+    // 设置页勾选（只改模型）→ 元素级绑定回调排一次刷新
+    _dm.Settings.TargetGroups[0].Enabled.Value = true;
+    await SettleAsync(panel);
+    forward.Disabled.ShouldBeFalse("启用目标群后一键转发应可用");
+
+    _dm.Settings.TargetGroups[0].Enabled.Value = false;
+    await SettleAsync(panel);
+    forward.Disabled.ShouldBeTrue("取消启用后一键转发应重新禁用");
+  }
+
+  /// <summary>群 ID 从空补成非空（或反向清空）同样要经元素级绑定刷新「一键转发」可用态。</summary>
+  /// <remarks>启用着群但群 ID 为空时不能算作有效发布目标，按钮必须保持禁用。</remarks>
+  [Test]
+  public async Task SettingGroupChannelId_UpdatesForwardButtonViaElementBinding()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    _dm.Settings.TargetGroups.Add(
+      new TargetGroup { ChannelId = { Value = string.Empty }, Enabled = { Value = true } }
+    );
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var forward = panel.GetNode<Button>("%ForwardAllButton");
+    forward.Disabled.ShouldBeTrue("启用了群但群 ID 为空，不应算作发布目标");
+
+    _dm.Settings.TargetGroups[0].ChannelId.Value = "10001";
+    await SettleAsync(panel);
+    forward.Disabled.ShouldBeFalse("群 ID 补齐后一键转发应可用");
+
+    _dm.Settings.TargetGroups[0].ChannelId.Value = "   ";
+    await SettleAsync(panel);
+    forward.Disabled.ShouldBeTrue("群 ID 被清空后应重新禁用");
+  }
+
+  /// <summary>
+  /// WebSocket 改设置重启会重建实例并把旧实例 Stop+Dispose：信息页发布必须改走新实例。
+  /// </summary>
+  /// <remarks>
+  /// 发布服务构造时只收「取当前实例」的访问器；这里通过替换 <c>IWebSocketServer</c> 依赖
+  /// 模拟 <c>MainWindow</c> 重启后把新实例交给容器，断言第二次发布落在新实例、旧实例不再被使用。
+  /// </remarks>
+  [Test]
+  public async Task Publish_UsesCurrentServerAfterWebSocketRestart()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    EnableGroup("10001");
+    _dm.InfoConfig.ActivityRule.Value = "活动规则正文";
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var publishButton = FindButton((Control)panel.ColumnPanels[3]!, "PublishButton");
+
+    // 第一次发布：落在面板解析依赖时拿到的实例
+    publishButton.EmitSignal(BaseButton.SignalName.Pressed);
+    (await PumpPublishAsync(panel, 1)).ShouldBeTrue();
+    await SettleAsync(panel);
+
+    _sent.Count.ShouldBe(1);
+    _server.Verify(s => s.BroadcastAsync(It.IsAny<WebSocketMessage>()), Times.Once);
+
+    // 模拟重启：容器里的「当前实例」换成新实例（旧实例已被 Stop+Dispose）
+    var restartedServer = CreateServerMock();
+    panel.FakeDependency<IWebSocketServer>(restartedServer.Object);
+
+    _sent.Clear();
+    publishButton.EmitSignal(BaseButton.SignalName.Pressed);
+    (await PumpPublishAsync(panel, 1)).ShouldBeTrue();
+    await SettleAsync(panel);
+
+    _sent.Count.ShouldBe(1);
+    restartedServer.Verify(s => s.BroadcastAsync(It.IsAny<WebSocketMessage>()), Times.Once);
+    _server.Verify(s => s.BroadcastAsync(It.IsAny<WebSocketMessage>()), Times.Once);
   }
 
   [Test]
@@ -1042,10 +1256,21 @@ public class TestInfoPanel : TestClass
       _ => null,
     };
 
+  /// <summary>
+  /// 惰性出图：先模拟鼠标进入表格（交互入口）触发渲染，再等缓存就绪。
+  /// </summary>
+  /// <remarks>
+  /// <see cref="TablePreviewExport.Update"/> 只记内容不渲染，所以这里不能再只等帧——
+  /// 不触发交互的话图永远不会出，等待必然超时。
+  /// </remarks>
   private static async Task WaitForPreviewImageAsync(Node panel, Node column)
   {
     var export = GetPreviewExport(column);
     export.ShouldNotBeNull();
+
+    var grid = column.FindChild("TableGrid", owned: false, recursive: true) as GridContainer;
+    grid.ShouldNotBeNull("表格栏内应有 TableGrid");
+    grid!.EmitSignal(Control.SignalName.MouseEntered);
 
     for (var frame = 0; frame < 300 && !export!.HasImage; frame++)
       await panel.ToSignal(panel.GetTree(), SceneTree.SignalName.ProcessFrame);

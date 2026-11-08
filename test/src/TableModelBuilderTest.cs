@@ -1,6 +1,8 @@
 namespace AutoCMEX;
 
 using System;
+using System.Collections;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using AutoCMEX.Core.Info;
@@ -144,5 +146,63 @@ public class TableModelBuilderTest : TestClass
   {
     Should.Throw<ArgumentNullException>(() => TableModelBuilder.BuildGuessingTable(null!));
     Should.Throw<ArgumentNullException>(() => TableModelBuilder.BuildCreatorRemainingTable(null!));
+  }
+
+  [Test]
+  public void GuessingTable_IteratesRowSnapshot_WhenRowsMutateDuringEnumeration()
+  {
+    var liveRows = new List<GuessingTableRow>
+    {
+      new()
+      {
+        Index = 1,
+        CreatorDisplay = "Alpha",
+        SpellCardName = "符卡 1",
+        IsGuessedOut = true,
+      },
+      new() { Index = 2, SpellCardName = "符卡 2" },
+    };
+    var snapshot = new InfoTableSnapshot
+    {
+      HasBoss = true,
+      BossName = "SampleBoss",
+      TotalCards = liveRows.Count,
+      GuessingRows = new ClearingRowsView(liveRows),
+    };
+
+    TableModel? table = null;
+    Should.NotThrow(() => table = TableModelBuilder.BuildGuessingTable(snapshot));
+
+    // 枚举第一行时源集合被并发清空：已快照的行照常输出，不抛异常也不越界
+    table!.Rows.Count.ShouldBe(1);
+    table.Rows[0].Cells.ShouldBe(new[] { "Alpha", "1", "符卡 1" });
+  }
+
+  /// <summary>
+  /// 模拟「活集合在枚举中途被并发修改」的行视图：每产出一行就把后备列表的末项删掉。
+  /// </summary>
+  private sealed class ClearingRowsView : IReadOnlyList<GuessingTableRow>
+  {
+    private readonly List<GuessingTableRow> _rows;
+
+    public ClearingRowsView(List<GuessingTableRow> rows) => _rows = rows;
+
+    public int Count => _rows.Count;
+
+    public GuessingTableRow this[int index] => _rows[index];
+
+    public IEnumerator<GuessingTableRow> GetEnumerator()
+    {
+      for (var i = 0; i < _rows.Count; i++)
+      {
+        var row = _rows[i];
+        if (_rows.Count > 1)
+          _rows.RemoveAt(_rows.Count - 1);
+
+        yield return row;
+      }
+    }
+
+    IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
   }
 }

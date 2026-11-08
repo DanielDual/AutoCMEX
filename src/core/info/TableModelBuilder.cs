@@ -3,6 +3,7 @@ namespace AutoCMEX.Core.Info;
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 
 /// <summary>表格列的对齐方式。</summary>
 public enum TableColumnAlign
@@ -89,8 +90,10 @@ public static class TableModelBuilder
       new TableColumn { Header = "符卡名", Align = TableColumnAlign.Left },
     };
 
-    var rows = new List<TableRow>(snapshot.GuessingRows.Count);
-    foreach (var row in snapshot.GuessingRows)
+    // 规则 22：先抄快照再遍历，入参即便挂了活集合也不会在枚举期间被并发改掉
+    var sourceRows = snapshot.GuessingRows.ToList();
+    var rows = new List<TableRow>(sourceRows.Count);
+    foreach (var row in sourceRows)
     {
       rows.Add(
         new TableRow
@@ -128,8 +131,10 @@ public static class TableModelBuilder
       new TableColumn { Header = "剩余未被猜测符卡数", Align = TableColumnAlign.Center },
     };
 
-    var rows = new List<TableRow>(snapshot.CreatorRows.Count);
-    foreach (var row in snapshot.CreatorRows)
+    // 规则 22：同猜测表，遍历前先取快照
+    var sourceRows = snapshot.CreatorRows.ToList();
+    var rows = new List<TableRow>(sourceRows.Count);
+    foreach (var row in sourceRows)
     {
       rows.Add(
         new TableRow

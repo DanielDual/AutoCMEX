@@ -3,6 +3,8 @@ namespace AutoCMEX;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Info;
@@ -119,6 +121,136 @@ public class TestBossDataWatcher : TestClass
     boss.SpellCards[0].IsGuessedOut.Value = true;
     boss.SpellCards.Add(new SpellCard());
     notifications.ShouldBe(afterDispose);
+  }
+
+  [Test]
+  public void OffThreadSelectionChange_OnlyQueuesStructuralRebind()
+  {
+    var dataManager = CreateDataManager(CreateBoss("A", 2), CreateBoss("B", 4));
+    var notifications = 0;
+    var notifyThreadId = 0;
+    var mainThreadId = System.Environment.CurrentManagedThreadId;
+    var pending = new Queue<Action>();
+    var pendingGate = new object();
+    using var watcher = new BossDataWatcher(
+      dataManager,
+      () =>
+      {
+        Interlocked.Increment(ref notifications);
+        Volatile.Write(ref notifyThreadId, System.Environment.CurrentManagedThreadId);
+      },
+      action =>
+      {
+        lock (pendingGate)
+          pending.Enqueue(action);
+      }
+    );
+
+    // 构造期 OnValue 回放也会排一次重挂：先按主线程排空
+    DrainQueue(pending, pendingGate);
+    watcher.CardBindingCountForTests.ShouldBe(6); // 当前 Boss A：2 张符卡 × 3 个属性
+    var baseline = notifications;
+
+    Task.Run(() => dataManager.Settings.SelectedBossIndex.Value = 1).GetAwaiter().GetResult();
+
+    // 数据线程只排队：绑定集合没有被改动，通知仍是同步发出的（不在主线程）
+    watcher.CardBindingCountForTests.ShouldBe(6);
+    notifications.ShouldBe(baseline + 1);
+    Volatile.Read(ref notifyThreadId).ShouldNotBe(mainThreadId);
+    lock (pendingGate)
+      pending.Count.ShouldBe(1);
+
+    // 主线程排空后才真正重挂到 Boss B：4 张符卡 × 3 个属性，且重挂本身不额外发通知
+    DrainQueue(pending, pendingGate);
+    watcher.CardBindingCountForTests.ShouldBe(12);
+    notifications.ShouldBe(baseline + 1);
+  }
+
+  [Test]
+  public void Dispose_WithPendingRebind_SkipsItWithoutThrowing()
+  {
+    var dataManager = CreateDataManager(CreateBoss("A", 2), CreateBoss("B", 4));
+    var pending = new Queue<Action>();
+    var pendingGate = new object();
+    var watcher = new BossDataWatcher(
+      dataManager,
+      () => { },
+      action =>
+      {
+        lock (pendingGate)
+          pending.Enqueue(action);
+      }
+    );
+
+    DrainQueue(pending, pendingGate);
+    dataManager.Settings.SelectedBossIndex.Value = 1;
+    lock (pendingGate)
+      pending.Count.ShouldBe(1);
+
+    watcher.Dispose();
+    watcher.Dispose(); // 重复释放必须安全
+
+    // 释放后到期的 deferred 重挂要安全跳过，不碰已释放的绑定
+    Should.NotThrow(() => DrainQueue(pending, pendingGate));
+    watcher.CardBindingCountForTests.ShouldBe(0);
+
+    // 绑定已全部释放：后续数据变化不会再排队
+    dataManager.Settings.SelectedBossIndex.Value = 0;
+    lock (pendingGate)
+      pending.Count.ShouldBe(0);
+  }
+
+  [Test]
+  public void SharedWatcher_NotifiesConstructorCallbackAndChangedListeners()
+  {
+    var dataManager = CreateDataManager(CreateBoss("A"));
+    var fromConstructor = 0;
+    var fromEvent = 0;
+    using var watcher = new BossDataWatcher(dataManager, () => fromConstructor++);
+    watcher.Changed += () => fromEvent++;
+
+    var constructorBaseline = fromConstructor;
+    var eventBaseline = fromEvent;
+
+    // 两张表栏共用一个 watcher：一次属性变化要让所有订阅方都收到
+    dataManager.Bosses[0].SpellCards[0].IsGuessedOut.Value = true;
+
+    fromConstructor.ShouldBe(constructorBaseline + 1);
+    fromEvent.ShouldBe(eventBaseline + 1);
+  }
+
+  [Test]
+  public void DispatchOnlyConstructor_RebindsInlineAndRaisesChanged()
+  {
+    var dataManager = CreateDataManager(CreateBoss("A", 2), CreateBoss("B", 4));
+    Action<Action> inline = action => action();
+    using var watcher = new BossDataWatcher(dataManager, inline);
+    var notifications = 0;
+    watcher.Changed += () => notifications++;
+
+    watcher.CardBindingCountForTests.ShouldBe(6);
+
+    dataManager.Settings.SelectedBossIndex.Value = 1;
+
+    watcher.CardBindingCountForTests.ShouldBe(12);
+    notifications.ShouldBe(1);
+  }
+
+  private static void DrainQueue(Queue<Action> pending, object gate)
+  {
+    while (true)
+    {
+      Action next;
+      lock (gate)
+      {
+        if (pending.Count == 0)
+          return;
+
+        next = pending.Dequeue();
+      }
+
+      next();
+    }
   }
 
   private DataManager CreateDataManager(params Boss[] bosses)

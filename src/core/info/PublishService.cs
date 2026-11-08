@@ -117,7 +117,18 @@ public sealed class PublishService
   private readonly DataManager _dataManager;
   private readonly InfoDataService _dataService;
   private readonly GifSetService _gifSets;
-  private readonly IWebSocketServer _server;
+
+  /// <summary>
+  /// 「当前」WebSocket 实例的访问器：每次发送都重新取，而不是构造时存快照。
+  /// </summary>
+  /// <remarks>
+  /// 设置页改端口/模式/地址时 <see cref="WebSocketLifecycle"/> 会重建实例并把旧实例
+  /// Stop+Dispose；若这里缓存实例，重启后信息页发布仍发给已被释放的旧实例（表现为发布一直等不到回执）。
+  /// 因此运行期解析：信息页传入「读当前实例」的访问器（读 <c>[Dependency] IWebSocketServer</c>，
+  /// 该属性本身每次访问都会向提供者重读），测试则传固定实例。
+  /// </remarks>
+  private readonly Func<IWebSocketServer?> _serverAccessor;
+
   private readonly ITableImageFactory _tableImages;
   private readonly ILog _log;
 
@@ -134,7 +145,55 @@ public sealed class PublishService
   private readonly object _pendingLock = new();
 
   /// <summary>
-  /// 创建发布服务（使用默认出图实现与默认日志）。
+  /// 创建发布服务（使用默认出图实现与默认日志；运行期解析当前 WebSocket 实例）。
+  /// </summary>
+  /// <param name="dataManager">数据管理器。</param>
+  /// <param name="dataService">信息数据服务。</param>
+  /// <param name="gifSets">GIF 集服务。</param>
+  /// <param name="serverAccessor">返回当前 WebSocket 实例的访问器；无实例时返回 <c>null</c>。</param>
+  public PublishService(
+    DataManager dataManager,
+    InfoDataService dataService,
+    GifSetService gifSets,
+    Func<IWebSocketServer?> serverAccessor
+  )
+    : this(
+      dataManager,
+      dataService,
+      gifSets,
+      serverAccessor,
+      new TableImageFactory(),
+      AppLogs.GetOrCreate().GetLogger(nameof(PublishService))
+    ) { }
+
+  /// <summary>
+  /// 创建发布服务（出图实现与日志注入，便于单测；运行期解析当前 WebSocket 实例）。
+  /// </summary>
+  /// <param name="dataManager">数据管理器。</param>
+  /// <param name="dataService">信息数据服务。</param>
+  /// <param name="gifSets">GIF 集服务。</param>
+  /// <param name="serverAccessor">返回当前 WebSocket 实例的访问器；无实例时返回 <c>null</c>。</param>
+  /// <param name="tableImages">表格出图实现。</param>
+  /// <param name="log">日志。</param>
+  public PublishService(
+    DataManager dataManager,
+    InfoDataService dataService,
+    GifSetService gifSets,
+    Func<IWebSocketServer?> serverAccessor,
+    ITableImageFactory tableImages,
+    ILog log
+  )
+  {
+    _dataManager = dataManager ?? throw new ArgumentNullException(nameof(dataManager));
+    _dataService = dataService ?? throw new ArgumentNullException(nameof(dataService));
+    _gifSets = gifSets ?? throw new ArgumentNullException(nameof(gifSets));
+    _serverAccessor = serverAccessor ?? throw new ArgumentNullException(nameof(serverAccessor));
+    _tableImages = tableImages ?? throw new ArgumentNullException(nameof(tableImages));
+    _log = log ?? throw new ArgumentNullException(nameof(log));
+  }
+
+  /// <summary>
+  /// 创建发布服务（使用默认出图实现与默认日志；固定实例，保留给测试与既有调用方）。
   /// </summary>
   /// <param name="dataManager">数据管理器。</param>
   /// <param name="dataService">信息数据服务。</param>
@@ -156,7 +215,7 @@ public sealed class PublishService
     ) { }
 
   /// <summary>
-  /// 创建发布服务（出图实现与日志注入，便于单测）。
+  /// 创建发布服务（出图实现与日志注入，便于单测；固定实例，保留给测试与既有调用方）。
   /// </summary>
   /// <param name="dataManager">数据管理器。</param>
   /// <param name="dataService">信息数据服务。</param>
@@ -172,13 +231,15 @@ public sealed class PublishService
     ITableImageFactory tableImages,
     ILog log
   )
+    : this(dataManager, dataService, gifSets, FixedServerAccessor(server), tableImages, log) { }
+
+  /// <summary>把固定实例包装成访问器，并在构造时立即校验非空。</summary>
+  /// <param name="server">WebSocket 服务端。</param>
+  /// <returns>始终返回同一实例的访问器。</returns>
+  private static Func<IWebSocketServer?> FixedServerAccessor(IWebSocketServer server)
   {
-    _dataManager = dataManager ?? throw new ArgumentNullException(nameof(dataManager));
-    _dataService = dataService ?? throw new ArgumentNullException(nameof(dataService));
-    _gifSets = gifSets ?? throw new ArgumentNullException(nameof(gifSets));
-    _server = server ?? throw new ArgumentNullException(nameof(server));
-    _tableImages = tableImages ?? throw new ArgumentNullException(nameof(tableImages));
-    _log = log ?? throw new ArgumentNullException(nameof(log));
+    _ = server ?? throw new ArgumentNullException(nameof(server));
+    return () => server;
   }
 
   /// <summary>
@@ -365,7 +426,8 @@ public sealed class PublishService
     IReadOnlyList<PublishNode> nodes
   )
   {
-    if (_server.ConnectionCount == 0)
+    var server = _serverAccessor();
+    if (server is null || server.ConnectionCount == 0)
       return PublishAck.Failed("当前没有可用的 Koishi 连接，请先在「WebSocket」面板确认连接状态。");
 
     var requestId = Guid.NewGuid().ToString();
@@ -400,7 +462,7 @@ public sealed class PublishService
 
       try
       {
-        await _server.BroadcastAsync(
+        await server.BroadcastAsync(
           WebSocketMessage.CreateEvent(InfoProtocol.PublishForwardEvent, payload)
         );
       }

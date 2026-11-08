@@ -45,8 +45,15 @@ public sealed class WindowsTableImageExportBackend : ITableImageExportBackend
 /// </summary>
 /// <remarks>
 /// <para>
+/// <b>出图惰性：</b><see cref="Update"/> 只记录最新模型与内容指纹（并作废在飞的旧渲染），
+/// 不立刻渲染——两张表栏每次数据变化都会调用它，若在这里出图，一次猜测连改 K 张符卡就要离屏渲染
+/// K 次。真正的出图改到用户交互时：右键弹菜单前、拖拽启动前、鼠标进入表格时调用
+/// <see cref="EnsureImage"/>；首次触发时图还没好，菜单项保持禁用、拖拽不启动（与原先失败的语义一致）。
+/// </para>
+/// <para>
 /// 缓存图与发布图同源（都走 <see cref="TableImageRenderer"/>），内容指纹不变时不重复渲染。
-/// 图片未就绪时菜单项禁用、不启动拖拽；表为空时清空缓存。
+/// 表为空时清空缓存。渲染失败后缓存为空，下一次交互（鼠标进入/右键/拖拽）会自然重试；
+/// 内容变化会作废在飞渲染，旧图不会被写回新签名下。
 /// </para>
 /// <para>
 /// 拖拽阈值取 <see cref="Viewport.GetDragThreshold"/>，避免与系统手感不一致；
@@ -109,9 +116,13 @@ public sealed class TablePreviewExport : IDisposable
     _image is not null && string.Equals(_imageSignature, _signature, StringComparison.Ordinal);
 
   /// <summary>
-  /// 按最新表格模型刷新缓存；内容指纹未变时跳过渲染。
+  /// 记录最新表格模型并作废旧缓存；内容指纹未变时什么都不做。
   /// </summary>
   /// <param name="model">表格模型。</param>
+  /// <remarks>
+  /// 本方法不渲染（惰性出图，见类型注释）：只把模型与指纹记下来并作废在飞的旧渲染，
+  /// 真正出图留到右键/拖拽/鼠标进入这些交互入口。
+  /// </remarks>
   public void Update(TableModel model)
   {
     if (_disposed)
@@ -124,18 +135,12 @@ public sealed class TablePreviewExport : IDisposable
 
     _signature = signature;
 
-    // 内容变化即作废在飞渲染，避免旧图在新签名下被写回
+    // 内容变化即作废旧图与在飞渲染，避免旧图在新签名下被写回；新图等交互时再出。
+    // 若确有在飞渲染，就在它结束后按新内容补一次，否则这次内容变化会一直等到下次交互才出图。
     _renderVersion++;
-    _renderPending = false;
-
-    if (!model.HasContent)
-    {
-      _image = null;
-      _imageSignature = string.Empty;
-      return;
-    }
-
-    QueueRender();
+    _renderPending = _isRendering;
+    _image = null;
+    _imageSignature = string.Empty;
   }
 
   /// <inheritdoc/>
@@ -229,8 +234,17 @@ public sealed class TablePreviewExport : IDisposable
     }
   }
 
-  /// <summary>鼠标进入表格且缓存缺失/失效时补一次渲染（出图失败后的兜底重试）。</summary>
+  /// <summary>鼠标进入表格：惰性出图的主要入口（也是渲染失败后的天然重试时机）。</summary>
   private void OnMouseEntered()
+  {
+    EnsureImage();
+  }
+
+  /// <summary>
+  /// 按需触发一次出图：仅在缓存缺失/失效、没有在飞渲染且表有内容时排队。
+  /// </summary>
+  /// <remarks>右键弹菜单前、拖拽启动前、鼠标进入时调用；渲染尚未完成时缓存仍为空。</remarks>
+  private void EnsureImage()
   {
     if (_disposed || _isRendering || HasImage)
       return;
@@ -299,6 +313,9 @@ public sealed class TablePreviewExport : IDisposable
     if (!IsPlatformSupported || !_owner.IsInsideTree())
       return;
 
+    // 右键是惰性出图的交互入口：首次触发时图还没好，菜单项保持禁用
+    EnsureImage();
+
     EnsureMenu();
     _menu!.Clear();
     _menu.AddItem(CopyMenuText, 0);
@@ -343,7 +360,13 @@ public sealed class TablePreviewExport : IDisposable
 
   private void StartDrag()
   {
-    if (!IsPlatformSupported || !HasImage || _image is null || !_owner.IsInsideTree())
+    if (!IsPlatformSupported || !_owner.IsInsideTree())
+      return;
+
+    // 拖拽是惰性出图的交互入口：图未就绪时本次不启动，等图好了再拖一次
+    EnsureImage();
+
+    if (!HasImage || _image is null)
       return;
 
     var image = _image;

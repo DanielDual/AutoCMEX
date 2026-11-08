@@ -13,10 +13,12 @@ using Godot;
 using Shouldly;
 
 /// <summary>
-/// <see cref="TablePreviewExport"/> 单测：缓存去重、右键复制、拖动阈值与失败提示。
+/// <see cref="TablePreviewExport"/> 单测：惰性出图、缓存去重、右键复制、拖动阈值与失败提示。
 /// </summary>
 /// <remarks>
 /// 后端与出图都注入 Fake，不触发原生剪贴板/拖放；真实原生调用由 Windows 真机验收覆盖。
+/// Fake 的出图默认同步完成，因此「交互触发渲染」的用例可以在同一调用栈里断言缓存；
+/// 需要验证「渲染未完成」语义时用 <see cref="_pendingRender"/> 把手动完成的 Task 交给出图回调。
 /// </remarks>
 public class TestTablePreviewExport : TestClass
 {
@@ -49,6 +51,10 @@ public class TestTablePreviewExport : TestClass
   private TablePreviewExport _export = default!;
   private int _renderCount;
   private bool _failRender;
+
+  /// <summary>非空时出图回调返回这个待完成的 Task（用于模拟「渲染还没好」）。</summary>
+  private TaskCompletionSource<TableImageRenderResult>? _pendingRender;
+
   private readonly List<string> _tempFiles = new();
 
   public TestTablePreviewExport(Node testScene)
@@ -65,6 +71,7 @@ public class TestTablePreviewExport : TestClass
     _backend = new FakeBackend();
     _renderCount = 0;
     _failRender = false;
+    _pendingRender = null;
     _export = new TablePreviewExport(_owner, new ControlAdapter(_target), _ => Render(), _backend);
   }
 
@@ -91,6 +98,9 @@ public class TestTablePreviewExport : TestClass
   {
     _renderCount++;
 
+    if (_pendingRender is not null)
+      return _pendingRender.Task;
+
     if (_failRender)
       return Task.FromResult(TableImageRenderResult.Error("渲染失败"));
 
@@ -112,6 +122,9 @@ public class TestTablePreviewExport : TestClass
 
   private void EmitGui(InputEvent @event) =>
     _target.EmitSignal(Control.SignalName.GuiInput, @event);
+
+  /// <summary>模拟鼠标进入表格：惰性出图的主要交互入口。</summary>
+  private void EnterTarget() => _target.EmitSignal(Control.SignalName.MouseEntered);
 
   private static InputEventMouseButton MakeMouseButton(
     MouseButton button,
@@ -137,23 +150,37 @@ public class TestTablePreviewExport : TestClass
   private PopupMenu FindMenu() => _owner.GetChildren().OfType<PopupMenu>().Single();
 
   [Test]
-  public void Update_RendersOnceAndSkipsUnchangedContent()
+  public void Update_DefersRenderUntilInteractionAndSkipsUnchangedContent()
   {
+    // 惰性出图：Update 只记内容，不渲染（两表栏每次数据变化都会调它）
     _export.Update(CreateModel("A"));
+    _renderCount.ShouldBe(0, "Update 不得立即出图");
+    _export.HasImage.ShouldBeFalse();
+
+    // 鼠标进入（交互）时才真正出图
+    EnterTarget();
+    _renderCount.ShouldBe(1);
     _export.HasImage.ShouldBeTrue();
-    _renderCount.ShouldBe(1);
 
+    // 内容未变：再次 Update 不标脏，交互也不重复渲染
     _export.Update(CreateModel("A"));
+    EnterTarget();
     _renderCount.ShouldBe(1);
+    _export.HasImage.ShouldBeTrue();
 
+    // 内容变化：旧图立即作废，下次交互才出新图
     _export.Update(CreateModel("B"));
+    _export.HasImage.ShouldBeFalse("内容变化后旧图不得继续算作就绪");
+    EnterTarget();
     _renderCount.ShouldBe(2);
+    _export.HasImage.ShouldBeTrue();
   }
 
   [Test]
   public void Update_EmptyModel_ClearsImage()
   {
     _export.Update(CreateModel("A"));
+    EnterTarget();
     _export.HasImage.ShouldBeTrue();
 
     _export.Update(CreateEmptyModel());
@@ -163,6 +190,7 @@ public class TestTablePreviewExport : TestClass
   [Test]
   public void RightClick_ShowsCopyMenuAndCopiesImage()
   {
+    // 没有先经过鼠标进入：右键本身也是出图入口，Fake 同步完成时菜单项即可用
     _export.Update(CreateModel("A"));
     RightClick();
 
@@ -204,6 +232,7 @@ public class TestTablePreviewExport : TestClass
   [Test]
   public void Drag_StartsOnlyAboveThresholdAndWritesTempPng()
   {
+    // 没有先经过鼠标进入：拖拽本身也是出图入口，Fake 同步完成时拖拽可以启动
     _export.Update(CreateModel("A"));
 
     EmitGui(MakeMouseButton(MouseButton.Left, true, new Vector2(20, 20)));
@@ -245,10 +274,48 @@ public class TestTablePreviewExport : TestClass
     _backend.DraggedFiles.ShouldBeEmpty();
   }
 
+  /// <summary>
+  /// 渲染尚未完成时，右键菜单「复制」保持禁用、拖拽不得启动（惰性出图不改变这条语义）。
+  /// </summary>
+  [Test]
+  public async Task Interaction_BeforeImageReady_KeepsCopyDisabledAndDragBlocked()
+  {
+    _pendingRender = new TaskCompletionSource<TableImageRenderResult>();
+    _export.Update(CreateModel("A"));
+    _export.HasImage.ShouldBeFalse();
+
+    // 首次右键触发渲染，但出图尚未完成 → 菜单项禁用、复制不生效
+    RightClick();
+    FindMenu().IsItemDisabled(0).ShouldBeTrue("图未就绪时「复制」应禁用");
+    FindMenu().EmitSignal(PopupMenu.SignalName.IdPressed, 0L);
+    _backend.Copied.ShouldBeEmpty();
+
+    // 拖拽同样不得启动
+    EmitGui(MakeMouseButton(MouseButton.Left, true, new Vector2(20, 20)));
+    EmitGui(MouseMotion(new Vector2(160, 160), MouseButtonMask.Left));
+    _backend.DraggedFiles.ShouldBeEmpty("图未就绪时不得启动拖拽");
+
+    // 渲染完成后再次交互即可用
+    var image = Image.CreateEmpty(20, 10, false, Image.Format.Rgba8);
+    image.Fill(Colors.White);
+    _pendingRender.SetResult(TableImageRenderResult.Success(image));
+
+    for (var frame = 0; frame < 300 && !_export.HasImage; frame++)
+      await _owner.ToSignal(_owner.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    _export.HasImage.ShouldBeTrue("渲染完成后缓存应就绪");
+
+    RightClick();
+    FindMenu().IsItemDisabled(0).ShouldBeFalse();
+    FindMenu().EmitSignal(PopupMenu.SignalName.IdPressed, 0L);
+    _backend.Copied.Count.ShouldBe(1);
+  }
+
   [Test]
   public async Task Dispose_ClearsImageAndUnsubscribes()
   {
     _export.Update(CreateModel("A"));
+    EnterTarget();
     _export.HasImage.ShouldBeTrue();
 
     _export.Dispose();

@@ -715,4 +715,81 @@ public class TestGifSetPanel : TestClass
     // 目标群未勾选时预检拦在出站之前
     _server.Verify(s => s.BroadcastAsync(It.IsAny<WebSocketMessage>()), Times.Never);
   }
+
+  /// <summary>
+  /// 回归（S4）：导入选择器会复用，但信号订阅只能在创建分支里挂一次。
+  /// 旧写法把 <c>+=</c> 放在 <c>??=</c> 外面，第 N 次按下导入按钮就会重复连接同一条信号
+  /// （Godot 4 对同一 Callable 的重复连接会持续报 "already connected" 引擎错误）。
+  /// </summary>
+  [Test]
+  public async Task ImportPickers_RepeatedPress_SubscribeHandlerOnlyOnce()
+  {
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+    var column = GetGifColumn(panel);
+
+    var folderButton = (Button)
+      column.FindChild("ImportFolderButton", owned: false, recursive: true)!;
+    var zipButton = (Button)column.FindChild("ImportZipButton", owned: false, recursive: true)!;
+
+    folderButton.EmitSignal(BaseButton.SignalName.Pressed);
+    zipButton.EmitSignal(BaseButton.SignalName.Pressed);
+    await SettleAsync(panel);
+
+    var folderDialog = GetFileDialog(column, FileDialog.FileModeEnum.OpenDir);
+    var zipDialog = GetFileDialog(column, FileDialog.FileModeEnum.OpenFile);
+
+    var folderConnections = folderDialog.GetSignalConnectionList(FileDialog.SignalName.DirSelected);
+    var zipConnections = zipDialog.GetSignalConnectionList(FileDialog.SignalName.FileSelected);
+    folderConnections.Count.ShouldBe(1, "文件夹选择器的 DirSelected 只应连一次");
+    zipConnections.Count.ShouldBe(1, "压缩包选择器的 FileSelected 只应连一次");
+
+    // 复用同一个对话框再点一次：对话框实例不变、连接数也不得增长
+    folderButton.EmitSignal(BaseButton.SignalName.Pressed);
+    zipButton.EmitSignal(BaseButton.SignalName.Pressed);
+    await SettleAsync(panel);
+
+    ReferenceEquals(GetFileDialog(column, FileDialog.FileModeEnum.OpenDir), folderDialog)
+      .ShouldBeTrue("同一选择器应复用");
+    ReferenceEquals(GetFileDialog(column, FileDialog.FileModeEnum.OpenFile), zipDialog)
+      .ShouldBeTrue("同一选择器应复用");
+    folderDialog
+      .GetSignalConnectionList(FileDialog.SignalName.DirSelected)
+      .Count.ShouldBe(folderConnections.Count);
+    zipDialog
+      .GetSignalConnectionList(FileDialog.SignalName.FileSelected)
+      .Count.ShouldBe(zipConnections.Count);
+  }
+
+  /// <summary>
+  /// 回归（S4）：连点两次导入后只做一次选择，只能导入一个集、只能解压一份。
+  /// 压缩包导入每次都会新建 GUID 托管目录，重复执行会留下重复集与重复解压目录。
+  /// </summary>
+  [Test]
+  public async Task ImportPicker_SingleSelectionAfterRepeatedPress_ImportsExactlyOnce()
+  {
+    var zipPath = CreateSetZip("repeat_pkg.zip", 2);
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+    var column = GetGifColumn(panel);
+
+    var zipButton = (Button)column.FindChild("ImportZipButton", owned: false, recursive: true)!;
+    zipButton.EmitSignal(BaseButton.SignalName.Pressed);
+    zipButton.EmitSignal(BaseButton.SignalName.Pressed);
+    await SettleAsync(panel);
+
+    GetFileDialog(column, FileDialog.FileModeEnum.OpenFile)
+      .EmitSignal(FileDialog.SignalName.FileSelected, zipPath);
+    await SettleAsync(panel);
+
+    _dm.InfoConfig.GifSets.Count.ShouldBe(1, "一次选择只能落一个集");
+    GetCardList(column).GetChildCount().ShouldBe(2);
+    GetSetInfoLabel(column).Text.ShouldContain("导入成功");
+
+    var managedDir = Path.Combine(_dm.DataDir, GifSetService.ManagedSetsDirName);
+    Directory.Exists(managedDir).ShouldBeTrue("压缩包导入应解压到托管集目录");
+    Directory
+      .GetDirectories(managedDir)
+      .Length.ShouldBe(1, "一次选择只能解压出一份集目录，不能重复解压");
+  }
 }

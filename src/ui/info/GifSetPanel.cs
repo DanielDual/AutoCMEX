@@ -93,6 +93,9 @@ public partial class GifSetPanel : VBoxContainer
   private bool _isRebuilding;
   private bool _isPublishing;
 
+  /// <summary>是否正在执行一次导入（重入护栏：同一时刻只做一次解压/拷贝）。</summary>
+  private bool _importing;
+
   /// <summary>是否已排队一次「布局落定后的驻留刷新」（信号与 deferred 回调都在主线程，普通 bool 即可）。</summary>
   private bool _layoutRefreshQueued;
 
@@ -379,25 +382,40 @@ public partial class GifSetPanel : VBoxContainer
 
   private void OnCardScrollValueChanged(double value) => RefreshPlayback();
 
+  /// <summary>导入文件夹：选择器只建一次，信号也只在创建分支里连一次。</summary>
+  /// <remarks>
+  /// 订阅必须写在 <c>??=</c> 的创建分支里（与 <see cref="EnsureRecordDialogs"/> 同写法）：
+  /// 写成 <c>_folderDialog.DirSelected += ...</c> 会在每次按下按钮时重复连接，
+  /// Godot 4 对同一 Callable 的重复连接会报 "already connected" 引擎错误并刷屏。
+  /// </remarks>
   private void OnImportFolderPressed()
   {
-    _folderDialog ??= CreateFileDialog(
-      "选择 GIF 集文件夹（需含 manifest.json）",
-      FileDialog.FileModeEnum.OpenDir,
-      Array.Empty<string>()
-    );
-    _folderDialog.DirSelected += OnImportFolderSelected;
+    if (_folderDialog is null)
+    {
+      _folderDialog = CreateFileDialog(
+        "选择 GIF 集文件夹（需含 manifest.json）",
+        FileDialog.FileModeEnum.OpenDir,
+        Array.Empty<string>()
+      );
+      _folderDialog.DirSelected += OnImportFolderSelected;
+    }
+
     FileDialogSizing.Popup(_folderDialog);
   }
 
+  /// <summary>导入压缩包：选择器只建一次，信号也只在创建分支里连一次。</summary>
   private void OnImportZipPressed()
   {
-    _zipDialog ??= CreateFileDialog(
-      "选择 GIF 集压缩包",
-      FileDialog.FileModeEnum.OpenFile,
-      new[] { "*.zip" }
-    );
-    _zipDialog.FileSelected += OnImportZipSelected;
+    if (_zipDialog is null)
+    {
+      _zipDialog = CreateFileDialog(
+        "选择 GIF 集压缩包",
+        FileDialog.FileModeEnum.OpenFile,
+        new[] { "*.zip" }
+      );
+      _zipDialog.FileSelected += OnImportZipSelected;
+    }
+
     FileDialogSizing.Popup(_zipDialog);
   }
 
@@ -428,43 +446,57 @@ public partial class GifSetPanel : VBoxContainer
   private void OnImportZipSelected(string path) => Import(() => _gifSets!.ImportZip(path));
 
   /// <summary>执行一次导入：成功则选中该集并留提示，失败则展示明细。</summary>
+  /// <remarks>
+  /// 带重入护栏：解压/拷贝是同步的长动作，期间同一帧内可能再触发一次导入
+  /// （重复点击、录制结束的自动导入与手选叠加）。重入会让压缩包按新的 GUID 目录
+  /// 再解一份、再注册一个集，因此重入时直接忽略（返回 <c>null</c>）。
+  /// </remarks>
   /// <param name="import">导入动作。</param>
-  /// <returns>导入结果；服务未就绪时为 <c>null</c>。</returns>
+  /// <returns>导入结果；服务未就绪或正在导入时为 <c>null</c>。</returns>
   private GifSetImportResult? Import(Func<GifSetImportResult> import)
   {
-    if (_gifSets is null)
+    if (_gifSets is null || _importing)
       return null;
 
-    GifSetImportResult result;
+    _importing = true;
     try
     {
-      result = import();
-    }
-    catch (Exception ex)
-    {
-      // 服务层已分类报错；这里是兜底，避免解压期的 IO 异常直接冒到 Godot 主循环
-      result = GifSetImportResult.Error($"导入失败：{ex.Message}", new[] { ex.ToString() });
-    }
+      GifSetImportResult result;
+      try
+      {
+        result = import();
+      }
+      catch (Exception ex)
+      {
+        // 服务层已分类报错；这里是兜底，避免解压期的 IO 异常直接冒到 Godot 主循环
+        result = GifSetImportResult.Error($"导入失败：{ex.Message}", new[] { ex.ToString() });
+      }
 
-    if (result.IsSuccess && result.Set is not null)
-    {
-      _dataManager?.TriggerAutoSave();
+      if (result.IsSuccess && result.Set is not null)
+      {
+        _dataManager?.TriggerAutoSave();
 
-      // 切集/集列表变化会触发延后一帧的 RebuildCards（它写集摘要）；把成功提示先记下来，
-      // 由那次重建一并渲染，否则提示会被摘要直接覆盖、用户看不到
-      _pendingStatus = $"导入成功：{result.Set.SetName.Value}（{result.Set.EntryCount.Value} 张）";
-      SetInfoLabel.Text = _pendingStatus;
+        // 切集/集列表变化会触发延后一帧的 RebuildCards（它写集摘要）；把成功提示先记下来，
+        // 由那次重建一并渲染，否则提示会被摘要直接覆盖、用户看不到
+        _pendingStatus =
+          $"导入成功：{result.Set.SetName.Value}（{result.Set.EntryCount.Value} 张）";
+        SetInfoLabel.Text = _pendingStatus;
 
-      _gifSets.SetActiveSet(result.Set.Id.Value);
+        _gifSets.SetActiveSet(result.Set.Id.Value);
+        return result;
+      }
+
+      // 失败结果覆盖上一次的成功提示，避免两条状态并排留下误导
+      _pendingStatus = null;
+      SetInfoLabel.Text = result.ToDisplayText();
+      GD.PushWarning($"GifSetPanel: 导入失败：{result.ToDisplayText()}");
+      ShowMessage("导入失败", result.ToDisplayText());
       return result;
     }
-
-    // 失败结果覆盖上一次的成功提示，避免两条状态并排留下误导
-    _pendingStatus = null;
-    SetInfoLabel.Text = result.ToDisplayText();
-    GD.PushWarning($"GifSetPanel: 导入失败：{result.ToDisplayText()}");
-    ShowMessage("导入失败", result.ToDisplayText());
-    return result;
+    finally
+    {
+      _importing = false;
+    }
   }
 
   /// <summary>录制入口：前置检查通过后依次手选工程包与输出目录。</summary>

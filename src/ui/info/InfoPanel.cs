@@ -85,8 +85,28 @@ public partial class InfoPanel : Control, IInfoPanel
   private CreatorRemainingPanel? _creatorRemainingPanel;
   private ActivityRulePanel? _activityRulePanel;
 
+  /// <summary>
+  /// 两张表栏共用的数据观察者：本面板创建并释放，两栏只订阅其
+  /// <see cref="BossDataWatcher.Changed"/>。
+  /// </summary>
+  /// <remarks>
+  /// 共享的意义：一次猜测 K 张符卡只由一个观察者发一轮通知，两栏各自按帧合并成一次重建；
+  /// 各栏自建观察者会让通知数翻倍，而且结构变更重挂也会各做一遍。
+  /// </remarks>
+  private BossDataWatcher? _watcher;
+
   private AutoList<TargetGroup>.Binding? _targetGroupsBinding;
   private AutoValue<bool>.Binding? _autoPublishBinding;
+
+  /// <summary>每个目标群元素级（启用 / 群 ID）的 AutoValue 绑定；列表增删时重挂。</summary>
+  /// <remarks>
+  /// 只绑列表不够：单个目标群的「启用」或「群 ID」被改时列表本身没有增删，<c>OnModify</c> 不触发，
+  /// 「一键转发」可用态就会停在旧值。绑定回调只调度 <c>CallDeferred</c>，不直接动 UI（规则 19）。
+  /// </remarks>
+  private readonly List<IDisposable> _targetGroupFieldBindings = new();
+
+  /// <summary>正在重挂目标群元素绑定：抑制订阅回放，避免回放回调自激。</summary>
+  private bool _isRebindingGroupFields;
 
   private AcceptDialog? _reportDialog;
   private Button? _retryButton;
@@ -108,10 +128,16 @@ public partial class InfoPanel : Control, IInfoPanel
     _targetGroupsBinding?.Dispose();
     _targetGroupsBinding = null;
 
+    DisposeTargetGroupFieldBindings();
+
     _autoPublishBinding?.Dispose();
     _autoPublishBinding = null;
 
     _autoPublishTimer?.Stop();
+
+    // 两栏在 _ExitTree 里先退订（子节点先于父节点退出），这里才是共享观察者的唯一释放点
+    _watcher?.Dispose();
+    _watcher = null;
 
     InfoEvents.Received -= OnInfoEventReceived;
   }
@@ -121,9 +147,6 @@ public partial class InfoPanel : Control, IInfoPanel
   {
     ForwardAllButton.Pressed += OnForwardAllPressed;
     AutoPublishGuessingTable.Toggled += OnAutoPublishToggled;
-
-    // 目标群在设置页维护：切回信息页时按最新启用状态刷新「一键转发」可用态
-    VisibilityChanged += OnVisibilityChanged;
   }
 
   /// <summary>AutoInject 依赖解析完成：创建服务并装配四栏与顶部操作行。</summary>
@@ -132,11 +155,18 @@ public partial class InfoPanel : Control, IInfoPanel
     _dm = DataManager;
     _dataService = new InfoDataService(_dm);
     _gifSets = new GifSetService(_dm, _dm.DataDir);
-    _publisher = new PublishService(_dm, _dataService, _gifSets, Server);
+
+    // 传访问器而不是实例：WebSocket 重启会重建实例并释放旧实例，发布时必须取「当前」那一个
+    _publisher = new PublishService(_dm, _dataService, _gifSets, () => Server);
+
+    // 两表栏共用一个观察者；结构变更（重挂符卡属性绑定）经 dispatcher 回到主线程执行，
+    // 因为写入可能来自 WebSocket 线程池（猜测模块在 Task.Run 里改数据）。
+    _watcher = new BossDataWatcher(_dm, static action => Callable.From(action).CallDeferred());
 
     BuildColumns();
 
     _targetGroupsBinding = _dm.Settings.TargetGroups.Bind().OnModify(OnTargetGroupsChanged);
+    RebindTargetGroupFieldBindings();
     UpdateForwardButtonState();
 
     // 先落初值再挂绑定：初值赋值不应被当成用户输入
@@ -215,7 +245,7 @@ public partial class InfoPanel : Control, IInfoPanel
 
     _guessingTablePanel = InstantiateColumn<GuessingTablePanel>(GuessingTablePanelScenePath);
     _guessingTablePanel?.Setup(
-      _dm!,
+      _watcher!,
       _dataService!,
       CreateColumnHandler(PublishItemKind.GuessingTable),
       OnGuessingTableChanged
@@ -225,7 +255,7 @@ public partial class InfoPanel : Control, IInfoPanel
       CreatorRemainingPanelScenePath
     );
     _creatorRemainingPanel?.Setup(
-      _dm!,
+      _watcher!,
       _dataService!,
       CreateColumnHandler(PublishItemKind.CreatorRemainingTable)
     );
@@ -343,18 +373,65 @@ public partial class InfoPanel : Control, IInfoPanel
     return false;
   }
 
-  /// <summary>目标群配置变化：只刷新「一键转发」可用态（群列表本身在设置页展示）。</summary>
+  /// <summary>目标群列表增删：重挂元素级绑定并刷新「一键转发」可用态（群列表本身在设置页展示）。</summary>
+  /// <remarks>
+  /// 绑定回调里只调度、不动 UI（规则 19）。列表增删会换掉元素对象，旧绑定必须释放、新群纳入，
+  /// 之后才谈按钮态，因此两次 <c>CallDeferred</c> 顺序固定（先重挂、后刷新）。
+  /// </remarks>
   private void OnTargetGroupsChanged()
   {
-    if (IsInsideTree())
-      UpdateForwardButtonState();
+    CallDeferred(nameof(RebindTargetGroupFieldBindings));
+    CallDeferred(nameof(UpdateForwardButtonState));
   }
 
-  /// <summary>切回信息页时按设置页里最新的「启用」状态刷新按钮可用态。</summary>
-  private void OnVisibilityChanged()
+  /// <summary>按当前目标群列表重挂「启用 / 群 ID」的元素级绑定。</summary>
+  /// <remarks>
+  /// 订阅 <see cref="AutoValue{T}"/> 会立刻回放一次当前值，重挂期间用
+  /// <see cref="_isRebindingGroupFields"/> 抑制回放，避免每次重挂都排一次按钮刷新。
+  /// 公开以便 <c>CallDeferred</c> 按名调用，不属于对外契约的一部分。
+  /// </remarks>
+  public void RebindTargetGroupFieldBindings()
   {
-    if (Visible && IsInsideTree())
-      UpdateForwardButtonState();
+    if (_dm is null)
+      return;
+
+    DisposeTargetGroupFieldBindings();
+
+    _isRebindingGroupFields = true;
+    try
+    {
+      foreach (var group in _dm.Settings.TargetGroups)
+      {
+        _targetGroupFieldBindings.Add(
+          group.Enabled.Bind().OnValue(_ => OnTargetGroupFieldChanged())
+        );
+        _targetGroupFieldBindings.Add(
+          group.ChannelId.Bind().OnValue(_ => OnTargetGroupFieldChanged())
+        );
+      }
+    }
+    finally
+    {
+      _isRebindingGroupFields = false;
+    }
+  }
+
+  /// <summary>释放上一轮目标群元素级绑定。</summary>
+  private void DisposeTargetGroupFieldBindings()
+  {
+    foreach (var binding in _targetGroupFieldBindings)
+      binding.Dispose();
+
+    _targetGroupFieldBindings.Clear();
+  }
+
+  /// <summary>目标群的启用/群 ID 变化会影响发布目标集合：调度一次按钮态刷新。</summary>
+  private void OnTargetGroupFieldChanged()
+  {
+    if (_isRebindingGroupFields)
+      return;
+
+    CallDeferred(nameof(UpdateForwardButtonState));
   }
 
   private void OnAutoPublishToggled(bool pressed)
@@ -501,7 +578,12 @@ public partial class InfoPanel : Control, IInfoPanel
     }
   }
 
-  private void UpdateForwardButtonState()
+  /// <summary>按当前启用目标群与发布状态刷新「一键转发」可用态。</summary>
+  /// <remarks>
+  /// 列表绑定（<see cref="OnTargetGroupsChanged"/>）与元素绑定（启用 / 群 ID）都以
+  /// <c>CallDeferred</c> 按名调用，故公开。
+  /// </remarks>
+  public void UpdateForwardButtonState()
   {
     if (ForwardAllButton is null)
       return;

@@ -149,6 +149,35 @@ public class InfoDataServiceTest : TestClass
     service.BuildSnapshot().BossName.ShouldBe("First");
   }
 
+  [Test]
+  public void BuildSnapshot_SurvivesConcurrentCardRemoval()
+  {
+    AddBoss(
+      "SampleBoss",
+      SpellCard("A", "Alpha"),
+      SpellCard("B", "Beta"),
+      SpellCard("C", "Alpha", guessedOut: true)
+    );
+
+    var service = new InfoDataService(_dataManager);
+    var snapshotTaken = false;
+    service.CardsSnapshotTakenForTests = () =>
+    {
+      snapshotTaken = true;
+      // 模拟数据线程在遍历开始前清空符卡：规则 22 要求遍历只碰快照，不能越界
+      _dataManager.Bosses[0].SpellCards.Clear();
+    };
+
+    InfoTableSnapshot? snapshot = null;
+    Should.NotThrow(() => snapshot = service.BuildSnapshot());
+
+    snapshotTaken.ShouldBeTrue();
+    snapshot!.TotalCards.ShouldBe(3);
+    snapshot.GuessingRows.Count.ShouldBe(3);
+    snapshot.GuessingRows[2].SpellCardName.ShouldBe("C");
+    snapshot.CreatorRows.Count.ShouldBe(2);
+  }
+
   private void AddBoss(string name, params SpellCard[] cards)
   {
     var boss = new Boss { Name = name };
