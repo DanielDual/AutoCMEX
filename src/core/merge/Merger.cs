@@ -186,7 +186,11 @@ public class Merger
 
   private readonly ILog _log;
 
-  public Merger() => _log = AppLogs.GetOrCreate().GetLogger(nameof(Merger));
+  /// <summary>
+  /// 创建提取式合并器。
+  /// </summary>
+  /// <param name="log">日志；为 <c>null</c> 时使用 <see cref="NullLog.Instance"/>（生产/测试可显式注入）。</param>
+  public Merger(ILog? log = null) => _log = log ?? NullLog.Instance;
 
   /// <summary>
   /// 执行合并。失败时返回带 <see cref="MergeResult.Error"/> 的结果。

@@ -31,8 +31,11 @@ public sealed class TopFolderCarryMerger
 
   private readonly ILog _log;
 
-  public TopFolderCarryMerger() =>
-    _log = AppLogs.GetOrCreate().GetLogger(nameof(TopFolderCarryMerger));
+  /// <summary>
+  /// 创建整文件夹搬运合并器。
+  /// </summary>
+  /// <param name="log">日志；为 <c>null</c> 时使用 <see cref="NullLog.Instance"/>（生产/测试可显式注入）。</param>
+  public TopFolderCarryMerger(ILog? log = null) => _log = log ?? NullLog.Instance;
 
   /// <summary>
   /// 执行合并。失败时返回带 <see cref="MergeResult.Error"/> 的结果。

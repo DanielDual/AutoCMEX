@@ -24,7 +24,7 @@ public class AiFuzzifier
   private readonly ILog _log;
 
   public AiFuzzifier(AiServiceFactory aiServiceFactory, IReadOnlyList<CreatorAlias> aliasTable)
-    : this(aiServiceFactory, aliasTable, AppLogs.GetOrCreate().GetLogger(nameof(AiFuzzifier))) { }
+    : this(aiServiceFactory, aliasTable, NullLog.Instance) { }
 
   public AiFuzzifier(
     AiServiceFactory aiServiceFactory,

@@ -20,7 +20,7 @@ public class AnthropicService : IAiService, IDisposable
   private bool _disposed;
 
   public AnthropicService(AiModelConfig config, int timeoutSeconds = 100)
-    : this(config, AppLogs.GetOrCreate().GetLogger(nameof(AnthropicService)), timeoutSeconds) { }
+    : this(config, NullLog.Instance, timeoutSeconds) { }
 
   public AnthropicService(AiModelConfig config, ILog log, int timeoutSeconds = 100)
   {

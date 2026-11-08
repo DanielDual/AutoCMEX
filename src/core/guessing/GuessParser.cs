@@ -8,10 +8,12 @@ using Chickensoft.Log;
 /// <summary>
 /// 猜测文本严格格式解析器
 /// </summary>
+/// <remarks>
+/// 日志由调用方注入（<see cref="GuessPipeline"/> 传入自己的日志器），本类不再依赖启动层的静态日志定位；
+/// 未注入时用 <see cref="NullLog.Instance"/> 兜底，便于纯单测。
+/// </remarks>
 public static partial class GuessParser
 {
-  private static ILog _log => AppLogs.GetOrCreate().GetLogger(nameof(GuessParser));
-
   /// <summary>
   /// 严格格式正则：数字+非空白字符，分隔符为任意空白（<c>\s+</c>）；注意 Parse 后续只按半角空格切分
   /// </summary>
@@ -29,12 +31,15 @@ public static partial class GuessParser
   /// </summary>
   /// <param name="text">猜测文本</param>
   /// <param name="maxCardIndex">当前 Boss 的最大符卡下标（从 1 开始）</param>
+  /// <param name="log">日志；为 <c>null</c> 时使用 <see cref="NullLog.Instance"/>（测试兜底）。</param>
   /// <returns>解析结果</returns>
-  public static ParseResult Parse(string text, int maxCardIndex)
+  public static ParseResult Parse(string text, int maxCardIndex, ILog? log = null)
   {
+    var logger = log ?? NullLog.Instance;
+
     if (string.IsNullOrWhiteSpace(text))
     {
-      _log.Warn("GuessParser: input is empty/whitespace.");
+      logger.Warn("GuessParser: input is empty/whitespace.");
       return ParseResult.Error("猜测文本为空");
     }
 
@@ -42,7 +47,7 @@ public static partial class GuessParser
 
     if (!StrictFormatRegex().IsMatch(text))
     {
-      _log.Warn($"GuessParser: format mismatch for '{text}'");
+      logger.Warn($"GuessParser: format mismatch for '{text}'");
       return ParseResult.Error("格式错误：请使用严格格式，如 1Alice 2Bob 3Charlie");
     }
 
@@ -54,19 +59,19 @@ public static partial class GuessParser
       var match = PairRegex().Match(part);
       if (!match.Success)
       {
-        _log.Warn($"GuessParser: cannot parse pair '{part}'");
+        logger.Warn($"GuessParser: cannot parse pair '{part}'");
         return ParseResult.Error($"无法解析 '{part}'");
       }
 
       if (!int.TryParse(match.Groups[1].Value, out var index))
       {
-        _log.Warn($"GuessParser: invalid index in '{part}'");
+        logger.Warn($"GuessParser: invalid index in '{part}'");
         return ParseResult.Error($"'{part}' 中的下标不是有效数字");
       }
 
       if (index < 1 || index > maxCardIndex)
       {
-        _log.Warn($"GuessParser: index {index} out of range (max={maxCardIndex})");
+        logger.Warn($"GuessParser: index {index} out of range (max={maxCardIndex})");
         return ParseResult.Error($"符卡下标 {index} 越界（当前 Boss 共 {maxCardIndex} 张符卡）");
       }
 
@@ -74,7 +79,7 @@ public static partial class GuessParser
       pairs.Add((index, creator));
     }
 
-    _log.Print($"GuessParser: parsed {pairs.Count} pairs from text.");
+    logger.Print($"GuessParser: parsed {pairs.Count} pairs from text.");
     return ParseResult.Success(pairs);
   }
 }

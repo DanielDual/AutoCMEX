@@ -55,11 +55,7 @@ public class DroppedGuessRetryService : IDroppedGuessRetryService
     IGuessProcessingService guessProcessingService,
     WebSocketLifecycle lifecycle
   )
-    : this(
-      guessProcessingService,
-      lifecycle,
-      AppLogs.GetOrCreate().GetLogger(nameof(DroppedGuessRetryService))
-    ) { }
+    : this(guessProcessingService, lifecycle, NullLog.Instance) { }
 
   /// <summary>
   /// 创建重试协调器

@@ -28,13 +28,8 @@ public class GuessProcessingService : IGuessProcessingService
     IGuessResponseHandler responseHandler,
     IDroppedGuessRepository droppedGuessRepository
   )
-    : this(
-      dataManager,
-      aiServiceFactory,
-      responseHandler,
-      droppedGuessRepository,
-      AppLogs.GetOrCreate().GetLogger(nameof(GuessProcessingService))
-    ) { }
+    : this(dataManager, aiServiceFactory, responseHandler, droppedGuessRepository, NullLog.Instance)
+  { }
 
   public GuessProcessingService(
     DataManager dataManager,

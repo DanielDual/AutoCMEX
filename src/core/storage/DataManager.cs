@@ -44,6 +44,16 @@ public class DataManager : IDisposable
   /// </remarks>
   private readonly Action<Action> _dispatch;
 
+  /// <summary>
+  /// 按模块名取日志器的工厂：让上层为同源子服务/子模块取到带模块名的日志，
+  /// 同时避免核心层反向依赖启动层的静态日志定位。
+  /// </summary>
+  /// <remarks>
+  /// 默认返回本管理器自身的日志器（<see cref="Log"/>）；生产由 MainWindow 注入
+  /// <c>_logService.GetLogger</c> 的取用器，测试不需要改动。
+  /// </remarks>
+  private readonly Func<string, ILog> _loggerFactory;
+
   private AutoList<Boss> _bosses = new();
   private AutoList<CreatorAlias> _aliases = new();
   private AppSettings _settings = new();
@@ -120,6 +130,23 @@ public class DataManager : IDisposable
   /// </remarks>
   public string DataDir => _dataDir;
 
+  /// <summary>
+  /// 本管理器使用的日志器。
+  /// </summary>
+  /// <remarks>
+  /// 供上层为同源子服务/子模块取日志，避免它们再依赖启动层的静态日志定位；
+  /// 默认构造时为 <see cref="NullLog.Instance"/>，生产由启动装配显式注入真实日志器。
+  /// 需要按模块名取独立日志器时用 <see cref="GetLogger(string)"/>。
+  /// </remarks>
+  public ILog Log => _log;
+
+  /// <summary>
+  /// 取指定模块的日志器。
+  /// </summary>
+  /// <param name="moduleName">模块名（一般为类名/子系统名，如 <c>Recording</c>）。</param>
+  /// <returns>该模块的 <see cref="ILog"/>；未注入工厂时退回本管理器的日志器。</returns>
+  public ILog GetLogger(string moduleName) => _loggerFactory(moduleName);
+
   private AutoValue<string?>.Binding? _activeAiModelIdBinding;
   private AutoValue<int>.Binding? _webSocketPortBinding;
   private AutoValue<string>.Binding? _webSocketModeBinding;
@@ -160,12 +187,7 @@ public class DataManager : IDisposable
   /// <param name="dataDir">数据目录。</param>
   /// <param name="encryptor">密钥加解密器。</param>
   public DataManager(string dataDir, AesEncryptor encryptor)
-    : this(
-      dataDir,
-      encryptor,
-      AppLogs.GetOrCreate().GetLogger(nameof(DataManager)),
-      static action => action()
-    ) { }
+    : this(dataDir, encryptor, NullLog.Instance, static action => action()) { }
 
   /// <summary>
   /// 创建数据管理器，自动保存的主线程调度器使用 inline（调用方必须已保证在主线程）。
@@ -186,11 +208,22 @@ public class DataManager : IDisposable
   /// 主线程调度器：接收「捕获 + 序列化」动作并保证它在主线程执行，例如
   /// <c>action =&gt; Callable.From(action).CallDeferred()</c>。
   /// </param>
-  public DataManager(string dataDir, AesEncryptor encryptor, ILog log, Action<Action> dispatch)
+  /// <param name="loggerFactory">
+  /// 可选：按模块名取日志器的工厂（<see cref="GetLogger"/> 使用）。为空时退回 <paramref name="log"/>，
+  /// 保持既有构造调用的行为不变（测试无需改动）。
+  /// </param>
+  public DataManager(
+    string dataDir,
+    AesEncryptor encryptor,
+    ILog log,
+    Action<Action> dispatch,
+    Func<string, ILog>? loggerFactory = null
+  )
   {
     _dataDir = dataDir;
     _encryptor = encryptor;
     _log = log;
+    _loggerFactory = loggerFactory ?? (_ => _log);
     _dispatch = dispatch ?? throw new ArgumentNullException(nameof(dispatch));
     _jsonOptions = new JsonSerializerOptions
     {

@@ -2,8 +2,10 @@ namespace AutoCMEX.Core.Ai;
 
 using System;
 using System.Linq;
+using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
+using Chickensoft.Log;
 
 /// <summary>
 /// AI 服务工厂：根据当前激活的模型配置创建对应的 IAiService 实例
@@ -11,10 +13,20 @@ using AutoCMEX.Models;
 public class AiServiceFactory
 {
   private readonly DataManager _dataManager;
+  private readonly ILog _log;
 
-  public AiServiceFactory(DataManager dataManager)
+  /// <summary>
+  /// 创建 AI 服务工厂。
+  /// </summary>
+  /// <param name="dataManager">数据管理器。</param>
+  /// <param name="log">
+  /// 日志；为 <c>null</c> 时使用 <see cref="NullLog.Instance"/>（生产/测试可显式注入）。
+  /// 该日志会透传给工厂创建的各 AI 服务。
+  /// </param>
+  public AiServiceFactory(DataManager dataManager, ILog? log = null)
   {
     _dataManager = dataManager;
+    _log = log ?? NullLog.Instance;
   }
 
   /// <summary>
@@ -23,7 +35,7 @@ public class AiServiceFactory
   public virtual IAiService GetActiveService()
   {
     var config = GetActiveModelConfig();
-    return CreateService(config, _dataManager.Settings.AiTimeoutSeconds.Value);
+    return CreateService(config, _dataManager.Settings.AiTimeoutSeconds.Value, _log);
   }
 
   /// <summary>
@@ -70,12 +82,18 @@ public class AiServiceFactory
   /// </summary>
   /// <param name="config">模型配置。</param>
   /// <param name="timeoutSeconds">单次 HTTP 请求的超时秒数；默认与设置项默认值一致。</param>
-  public static IAiService CreateService(AiModelConfig config, int timeoutSeconds = 100)
+  /// <param name="log">日志；为 <c>null</c> 时使用 <see cref="NullLog.Instance"/>（测试兜底）。</param>
+  public static IAiService CreateService(
+    AiModelConfig config,
+    int timeoutSeconds = 100,
+    ILog? log = null
+  )
   {
+    var logger = log ?? NullLog.Instance;
     return config.ApiFormat.Value switch
     {
-      "OpenAI" => new OpenAiService(config, timeoutSeconds),
-      "Anthropic" => new AnthropicService(config, timeoutSeconds),
+      "OpenAI" => new OpenAiService(config, logger, timeoutSeconds),
+      "Anthropic" => new AnthropicService(config, logger, timeoutSeconds),
       _ => throw new ArgumentException($"不支持的 API 格式: {config.ApiFormat.Value}"),
     };
   }

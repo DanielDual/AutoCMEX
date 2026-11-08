@@ -20,7 +20,7 @@ public class OpenAiService : IAiService, IDisposable
   private bool _disposed;
 
   public OpenAiService(AiModelConfig config, int timeoutSeconds = 100)
-    : this(config, AppLogs.GetOrCreate().GetLogger(nameof(OpenAiService)), timeoutSeconds) { }
+    : this(config, NullLog.Instance, timeoutSeconds) { }
 
   public OpenAiService(AiModelConfig config, ILog log, int timeoutSeconds = 100)
   {

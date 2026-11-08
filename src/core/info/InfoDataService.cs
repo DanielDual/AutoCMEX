@@ -3,6 +3,7 @@ namespace AutoCMEX.Core.Info;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.Log;
@@ -97,7 +98,7 @@ public class InfoDataService
   /// </summary>
   /// <param name="dataManager">数据管理器（提供 Bosses 与当前 Boss 下标）。</param>
   public InfoDataService(DataManager dataManager)
-    : this(dataManager, AppLogs.GetOrCreate().GetLogger(nameof(InfoDataService))) { }
+    : this(dataManager, NullLog.Instance) { }
 
   /// <summary>
   /// 使用指定日志器创建服务。

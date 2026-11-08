@@ -80,7 +80,7 @@ public class WebSocketServer : IWebSocketServer, IDisposable
       heartbeatService,
       enableAuth,
       authToken,
-      AppLogs.GetOrCreate().GetLogger(nameof(WebSocketServer))
+      NullLog.Instance
     ) { }
 
   /// <summary>

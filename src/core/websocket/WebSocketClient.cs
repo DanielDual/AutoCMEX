@@ -80,7 +80,7 @@ public class WebSocketClient : IWebSocketServer, IDisposable
       messageRouter,
       reconnectIntervalMs,
       heartbeatIntervalMs,
-      AppLogs.GetOrCreate().GetLogger(nameof(WebSocketClient))
+      NullLog.Instance
     ) { }
 
   /// <summary>

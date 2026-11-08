@@ -163,7 +163,7 @@ public sealed class PublishService
       gifSets,
       serverAccessor,
       new TableImageFactory(),
-      AppLogs.GetOrCreate().GetLogger(nameof(PublishService))
+      NullLog.Instance
     ) { }
 
   /// <summary>
@@ -205,14 +205,7 @@ public sealed class PublishService
     GifSetService gifSets,
     IWebSocketServer server
   )
-    : this(
-      dataManager,
-      dataService,
-      gifSets,
-      server,
-      new TableImageFactory(),
-      AppLogs.GetOrCreate().GetLogger(nameof(PublishService))
-    ) { }
+    : this(dataManager, dataService, gifSets, server, new TableImageFactory(), NullLog.Instance) { }
 
   /// <summary>
   /// 创建发布服务（出图实现与日志注入，便于单测；固定实例，保留给测试与既有调用方）。

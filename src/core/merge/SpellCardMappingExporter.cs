@@ -23,8 +23,11 @@ public class SpellCardMappingExporter
 
   private readonly ILog _log;
 
-  public SpellCardMappingExporter() =>
-    _log = AppLogs.GetOrCreate().GetLogger(nameof(SpellCardMappingExporter));
+  /// <summary>
+  /// 创建对应表导出器。
+  /// </summary>
+  /// <param name="log">日志；为 <c>null</c> 时使用 <see cref="NullLog.Instance"/>（生产/测试可显式注入）。</param>
+  public SpellCardMappingExporter(ILog? log = null) => _log = log ?? NullLog.Instance;
 
   /// <summary>
   /// 导出对应表到 CSV 文件。

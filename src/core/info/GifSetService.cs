@@ -7,6 +7,7 @@ using System.IO;
 using System.IO.Compression;
 using System.Linq;
 using System.Text.Json;
+using AutoCMEX.Core.Logging;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using Chickensoft.Log;
@@ -94,7 +95,7 @@ public class GifSetService
   /// <param name="dataManager">数据管理器（提供 InfoConfig 的集注册表）。</param>
   /// <param name="dataDir">数据目录（托管集目录的父目录）。</param>
   public GifSetService(DataManager dataManager, string dataDir)
-    : this(dataManager, dataDir, AppLogs.GetOrCreate().GetLogger(nameof(GifSetService))) { }
+    : this(dataManager, dataDir, NullLog.Instance) { }
 
   /// <summary>使用指定日志器创建服务。</summary>
   /// <param name="dataManager">数据管理器（提供 InfoConfig 的集注册表）。</param>

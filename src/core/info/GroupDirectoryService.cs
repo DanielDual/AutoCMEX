@@ -54,11 +54,7 @@ public sealed class GroupDirectoryService
   /// <param name="dataManager">数据管理器。</param>
   /// <param name="serverAccessor">返回当前 WebSocket 实例的访问器；无实例时返回 <c>null</c>。</param>
   public GroupDirectoryService(DataManager dataManager, Func<IWebSocketServer?> serverAccessor)
-    : this(
-      dataManager,
-      serverAccessor,
-      AppLogs.GetOrCreate().GetLogger(nameof(GroupDirectoryService))
-    ) { }
+    : this(dataManager, serverAccessor, NullLog.Instance) { }
 
   /// <summary>
   /// 创建群目录服务（日志注入；运行期解析当前 WebSocket 实例）。
@@ -83,7 +79,7 @@ public sealed class GroupDirectoryService
   /// <param name="dataManager">数据管理器。</param>
   /// <param name="server">WebSocket 服务端（出站通道）。</param>
   public GroupDirectoryService(DataManager dataManager, IWebSocketServer server)
-    : this(dataManager, server, AppLogs.GetOrCreate().GetLogger(nameof(GroupDirectoryService))) { }
+    : this(dataManager, server, NullLog.Instance) { }
 
   /// <summary>
   /// 创建群目录服务（日志注入；固定实例，保留给测试与既有调用方）。

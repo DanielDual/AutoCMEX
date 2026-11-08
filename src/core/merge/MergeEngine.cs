@@ -22,13 +22,27 @@ public class MergeEngine
   private readonly bool _obfuscateLua;
   private readonly ILog _log;
 
-  public MergeEngine(DataManager dm, string templatePath, bool includeLstges, bool obfuscateLua)
+  /// <summary>
+  /// 创建整合引擎门面。
+  /// </summary>
+  /// <param name="dm">数据管理器。</param>
+  /// <param name="templatePath">模板工程路径。</param>
+  /// <param name="includeLstges">是否把合并工程交付到输出目录。</param>
+  /// <param name="obfuscateLua">是否混淆 Lua（当前仅透传给导出流程）。</param>
+  /// <param name="log">日志；为 <c>null</c> 时使用 <see cref="NullLog.Instance"/>（生产/测试可显式注入）。</param>
+  public MergeEngine(
+    DataManager dm,
+    string templatePath,
+    bool includeLstges,
+    bool obfuscateLua,
+    ILog? log = null
+  )
   {
     _dm = dm;
     _templatePath = templatePath;
     _includeLstges = includeLstges;
     _obfuscateLua = obfuscateLua;
-    _log = AppLogs.GetOrCreate().GetLogger(nameof(MergeEngine));
+    _log = log ?? NullLog.Instance;
   }
 
   /// <summary>
@@ -105,8 +119,8 @@ public class MergeEngine
     };
     MergeResult result =
       _dm.MergeConfig.Algorithm.Value == MergeAlgorithm.TopFolderCarry
-        ? new TopFolderCarryMerger().Merge(template, packageDocs, entries, options)
-        : new Merger().Merge(template, packageDocs, entries, options, creatorNames);
+        ? new TopFolderCarryMerger(_log).Merge(template, packageDocs, entries, options)
+        : new Merger(_log).Merge(template, packageDocs, entries, options, creatorNames);
     if (result.IsSuccess)
     {
       PersistMergedProject(result.Merged!);
@@ -183,7 +197,7 @@ public class MergeEngine
       .Select(e => new SpellCardMappingRow(e.Name, e.Creator.Value, e.IsNonSpell.Value))
       .ToList();
     var outPath = Path.Combine(outputDir, "spellcard_mapping.csv");
-    return new SpellCardMappingExporter().Export(ResolveCommonBossName(_dm), rows, outPath);
+    return new SpellCardMappingExporter(_log).Export(ResolveCommonBossName(_dm), rows, outPath);
   }
 
   /// <summary>

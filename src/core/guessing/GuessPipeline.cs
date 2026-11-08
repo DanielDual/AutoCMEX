@@ -20,7 +20,7 @@ public partial class GuessPipeline
     IGuessResponseHandler responseHandler,
     IReadOnlyList<CreatorAlias> aliasTable
   )
-    : this(responseHandler, aliasTable, AppLogs.GetOrCreate().GetLogger(nameof(GuessPipeline))) { }
+    : this(responseHandler, aliasTable, NullLog.Instance) { }
 
   public GuessPipeline(
     IGuessResponseHandler responseHandler,
@@ -54,7 +54,7 @@ public partial class GuessPipeline
 
     // 2. 格式校验与解析
     var parseSw = Stopwatch.StartNew();
-    var parseResult = GuessParser.Parse(text, currentBoss?.SpellCards?.Count ?? 0);
+    var parseResult = GuessParser.Parse(text, currentBoss?.SpellCards?.Count ?? 0, _log);
     parseSw.Stop();
     _log.Print(
       $"GuessPipeline: parse {parseSw.ElapsedMilliseconds}ms, success={parseResult.IsSuccess}"

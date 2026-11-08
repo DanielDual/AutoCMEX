@@ -17,7 +17,11 @@ public class SharpCliInvoker
 
   private readonly ILog _log;
 
-  public SharpCliInvoker() => _log = AppLogs.GetOrCreate().GetLogger(nameof(SharpCliInvoker));
+  /// <summary>
+  /// 创建 Sharp Cli 调用器。
+  /// </summary>
+  /// <param name="log">日志；为 <c>null</c> 时使用 <see cref="NullLog.Instance"/>（生产/测试可显式注入）。</param>
+  public SharpCliInvoker(ILog? log = null) => _log = log ?? NullLog.Instance;
 
   /// <summary>
   /// 构造 Cli 进程参数数组（纯逻辑，便于单元测试断言）。
