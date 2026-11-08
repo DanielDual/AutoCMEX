@@ -105,13 +105,15 @@ public class TestSpellCardPanel : TestClass
     _dm.Bosses[0].Name.ShouldBe("新 Boss");
   }
 
+  /// <summary>写模型（加 Boss + 选中下标）后由 Sync 绑定驱动渲染，不再手动 Refresh 模拟绑定。</summary>
   [Test]
-  public void Refresh_UpdatesTree_WhenBossSelected()
+  public async Task BossModelWrites_RenderTreeViaBinding()
   {
     _dm.Bosses.Add(new Boss { Name = "测试Boss" });
     _dm.Bosses[0].SpellCards.Add(new SpellCard { Name = new AutoValue<string>("符卡1") });
     _panel.SelectBoss(0);
-    _panel.Refresh();
+    await SettleAsync();
+
     var root = _spellCardTree.Object.GetRoot();
     root.ShouldNotBeNull();
     root.GetChildCount().ShouldBeGreaterThan(0);
@@ -120,7 +122,7 @@ public class TestSpellCardPanel : TestClass
   // ==================== 回归测试：修复"导入对应表后 UI 空白" ====================
 
   [Test]
-  public void Import_AutoSelectsFirstBoss_SoTreeIsNotBlank()
+  public async Task Import_AutoSelectsFirstBoss_SoTreeIsNotBlank()
   {
     // 模拟导入：多个 Boss，但此前记录的下标已失效（越界）
     _dm.Settings.SelectedBossIndex.Value = 99;
@@ -131,7 +133,8 @@ public class TestSpellCardPanel : TestClass
     bossB.SpellCards.Add(new SpellCard { Name = new AutoValue<string>("符卡B1") });
     _dm.Bosses.Add(bossB);
 
-    _panel.Refresh();
+    // 绑定路径：Boss 列表变化驱动渲染并把越界下标规范回合法值
+    await SettleAsync();
 
     // 越界下标被规范到首个 Boss，且树非空白
     _bossSelect.Verify(m => m.Select(It.IsAny<int>()), Times.AtLeastOnce());
@@ -142,10 +145,11 @@ public class TestSpellCardPanel : TestClass
   }
 
   [Test]
-  public void Import_EmptyTableResult_ClearsTree()
+  public async Task Import_EmptyTableResult_ClearsTree()
   {
     _dm.Settings.SelectedBossIndex.Value = 0;
-    _panel.Refresh();
+    // 绑定路径：选中下标变化驱动渲染（无 Boss 时规范为 -1 且不建树）
+    await SettleAsync();
 
     _dm.Settings.SelectedBossIndex.Value.ShouldBe(-1);
     // 无 Boss 时树不创建任何节点（GetRoot 为 null，表示无内容展示）
@@ -153,7 +157,7 @@ public class TestSpellCardPanel : TestClass
   }
 
   [Test]
-  public void SelectBoss_SwitchesCurrentBoss_AndRendersItsCards()
+  public async Task SelectBoss_SwitchesCurrentBoss_AndRendersItsCards()
   {
     var bossA = new Boss { Name = "BossA" };
     bossA.SpellCards.Add(new SpellCard { Name = new AutoValue<string>("符卡A1") });
@@ -162,9 +166,9 @@ public class TestSpellCardPanel : TestClass
     bossB.SpellCards.Add(new SpellCard { Name = new AutoValue<string>("符卡B1") });
     _dm.Bosses.Add(bossB);
 
-    // 通过 Sync 模型切换选中
+    // 通过 Sync 模型切换选中：由绑定驱动渲染，不手动 Refresh
     _panel.SelectBoss(1);
-    _panel.Refresh();
+    await SettleAsync();
 
     _dm.Settings.SelectedBossIndex.Value.ShouldBe(1);
     _panel.GetCurrentBoss().ShouldNotBeNull();
@@ -189,7 +193,6 @@ public class TestSpellCardPanel : TestClass
   {
     var boss = AddBoss(("符卡1", "作者A"), ("符卡2", "作者B"));
     _panel.SelectBoss(0);
-    _panel.Refresh();
     await SettleAsync();
 
     var rowBefore = CardRow(0);
@@ -210,7 +213,6 @@ public class TestSpellCardPanel : TestClass
   {
     var boss = AddBoss(("符卡1", ""));
     _panel.SelectBoss(0);
-    _panel.Refresh();
     await SettleAsync();
 
     // 创作者栏就是答案本身：留空即尚未填写，不显示任何占位符
@@ -233,10 +235,10 @@ public class TestSpellCardPanel : TestClass
   [Test]
   public async Task AddedCard_HasEmptyCreatorCell()
   {
+    // 绑定路径：先等 Boss 列表变化驱动渲染（选中下标会被规范到 0），再新增符卡等符卡列表变化驱动重建
     _panel.GetOnAddBoss()();
-    _panel.Refresh();
+    await SettleAsync();
     _panel.GetOnAddSpellCard()();
-    _panel.Refresh();
     await SettleAsync();
 
     CardRow(0).GetText(0).ShouldBe("新符卡");
@@ -249,7 +251,6 @@ public class TestSpellCardPanel : TestClass
   {
     var boss = AddBoss(("符卡1", ""));
     _panel.SelectBoss(0);
-    _panel.Refresh();
     await SettleAsync();
 
     var row = CardRow(0);
@@ -268,7 +269,6 @@ public class TestSpellCardPanel : TestClass
   {
     AddBoss((null!, null!));
     _panel.SelectBoss(0);
-    _panel.Refresh();
     await SettleAsync();
 
     CardRow(0).GetText(0).ShouldBe(string.Empty);
@@ -281,7 +281,6 @@ public class TestSpellCardPanel : TestClass
   {
     var boss = AddBoss(("符卡1", "作者A"), ("符卡2", "作者B"), ("符卡3", "作者C"));
     _panel.SelectBoss(0);
-    _panel.Refresh();
     await SettleAsync();
 
     foreach (var card in boss.SpellCards)
@@ -299,7 +298,6 @@ public class TestSpellCardPanel : TestClass
   {
     var boss = AddBoss(("符卡1", "作者A"));
     _panel.SelectBoss(0);
-    _panel.Refresh();
     await SettleAsync();
 
     var added = new SpellCard
@@ -330,10 +328,9 @@ public class TestSpellCardPanel : TestClass
   {
     var bossA = AddBoss(("符卡A1", "作者A"));
     AddBoss(("符卡B1", "作者B"));
+    // 绑定路径：两次选中下标写入都由绑定驱动，最终渲染选中 Boss 的符卡
     _panel.SelectBoss(0);
-    _panel.Refresh();
     _panel.SelectBoss(1);
-    _panel.Refresh();
     await SettleAsync();
 
     CardRow(0).GetText(0).ShouldBe("符卡B1");
@@ -367,7 +364,6 @@ public class TestSpellCardPanel : TestClass
 
     // 先把绑定立起来：这一步必须做完，否则下面的替换会被首次绑定顺手带上，测不出差异
     _panel.SelectBoss(0);
-    _panel.Refresh();
     await SettleAsync();
     CardRow(0).GetText(0).ShouldBe("符卡1");
 
@@ -381,6 +377,9 @@ public class TestSpellCardPanel : TestClass
       }
     );
     boss.SpellCards = replacement;
+    // 已知限制：直接替换 Boss.SpellCards 列表实例不会被任何 AutoValue/AutoList 订阅观察到
+    // （Boss.SpellCards 是普通属性，不是可观察量），面板没有绑定路径能发现这次替换；
+    // Refresh() 是唯一的收口方式，本用例保留手动调用，属无绑定路径用例。
     _panel.Refresh();
     await SettleAsync();
 

@@ -123,17 +123,19 @@ public class InfoConfigPanelTest : TestClass
     _hintLabel.Text.ShouldContain("信息");
   }
 
+  /// <summary>无目标群时的初始渲染（OnResolved/绑定链路）显示空状态，不手动 Refresh。</summary>
   [Test]
-  public void Refresh_WithoutGroups_ShowsEmptyStatus()
+  public async Task NoTargetGroups_ShowsEmptyStatus()
   {
-    _panel.Refresh();
+    await SettleAsync();
 
     _groupRows.GetChildCount().ShouldBe(0);
     _statusLabel.Text.ShouldBe("尚未配置目标群。");
   }
 
+  /// <summary>写模型新增目标群后由 Sync 绑定驱动重建行，不再手动 Refresh 模拟绑定。</summary>
   [Test]
-  public void Refresh_BuildsRowPerTargetGroupWithEditableFields()
+  public async Task TargetGroupAdd_BuildsRowWithEditableFields()
   {
     _dataManager.Settings.TargetGroups.Add(
       new TargetGroup
@@ -144,7 +146,7 @@ public class InfoConfigPanelTest : TestClass
       }
     );
 
-    _panel.Refresh();
+    await SettleAsync();
 
     _groupRows.GetChildCount().ShouldBe(1);
 
@@ -192,10 +194,11 @@ public class InfoConfigPanelTest : TestClass
   }
 
   [Test]
-  public void RemoveButton_DropsGroupFromModel()
+  public async Task RemoveButton_DropsGroupFromModel()
   {
     _addButton.EmitSignal(BaseButton.SignalName.Pressed);
-    _panel.Refresh();
+    // 绑定路径：列表变化驱动建行（只为拿到删除按钮，不模拟绑定）
+    await SettleAsync();
 
     _groupRows.GetChild(0).GetChild<Button>(3).EmitSignal(BaseButton.SignalName.Pressed);
 
@@ -203,10 +206,11 @@ public class InfoConfigPanelTest : TestClass
   }
 
   [Test]
-  public void CommitChannelId_TrimsAndWritesModel()
+  public async Task CommitChannelId_TrimsAndWritesModel()
   {
     _addButton.EmitSignal(BaseButton.SignalName.Pressed);
-    _panel.Refresh();
+    // 绑定路径：列表变化驱动建行（后续输入是模拟用户操作）
+    await SettleAsync();
 
     var input = _groupRows.GetChild(0).GetChild<LineEdit>(1);
     input.Text = "  10001  ";
@@ -220,7 +224,8 @@ public class InfoConfigPanelTest : TestClass
   {
     _addButton.EmitSignal(BaseButton.SignalName.Pressed);
     _dataManager.Settings.TargetGroups[0].ChannelId.Value = "10001";
-    _panel.Refresh();
+    // 绑定路径：列表变化驱动建行（行内展示模型当前的 10001）
+    await SettleAsync();
 
     var input = _groupRows.GetChild(0).GetChild<LineEdit>(1);
     input.EmitSignal(LineEdit.SignalName.TextSubmitted, "   ");
@@ -237,7 +242,8 @@ public class InfoConfigPanelTest : TestClass
   {
     _dataManager.Settings.TargetGroups.Add(new TargetGroup { ChannelId = { Value = "10001" } });
     _dataManager.Settings.TargetGroups.Add(new TargetGroup { ChannelId = { Value = "10002" } });
-    _panel.Refresh();
+    // 绑定路径：列表变化驱动建行
+    await SettleAsync();
 
     var second = _groupRows.GetChild(1).GetChild<LineEdit>(1);
     second.EmitSignal(LineEdit.SignalName.TextSubmitted, "10001");
@@ -249,10 +255,11 @@ public class InfoConfigPanelTest : TestClass
   }
 
   [Test]
-  public void CommitChannelId_RevertToOriginalAfterWrite_WritesModel()
+  public async Task CommitChannelId_RevertToOriginalAfterWrite_WritesModel()
   {
     _dataManager.Settings.TargetGroups.Add(new TargetGroup { ChannelId = { Value = "10001" } });
-    _panel.Refresh();
+    // 绑定路径：列表变化驱动建行（后续两次提交是模拟用户操作）
+    await SettleAsync();
 
     var input = _groupRows.GetChild(0).GetChild<LineEdit>(1);
 
@@ -266,12 +273,13 @@ public class InfoConfigPanelTest : TestClass
   }
 
   [Test]
-  public void CommitDisplayName_RevertToOriginalAfterWrite_WritesModel()
+  public async Task CommitDisplayName_RevertToOriginalAfterWrite_WritesModel()
   {
     _dataManager.Settings.TargetGroups.Add(
       new TargetGroup { ChannelId = { Value = "10001" }, DisplayName = { Value = "旧群名" } }
     );
-    _panel.Refresh();
+    // 绑定路径：列表变化驱动建行（后续两次提交是模拟用户操作）
+    await SettleAsync();
 
     var input = _groupRows.GetChild(0).GetChild<LineEdit>(2);
 
@@ -284,10 +292,11 @@ public class InfoConfigPanelTest : TestClass
   }
 
   [Test]
-  public void CommitDisplayName_TrimsAndWritesModel()
+  public async Task CommitDisplayName_TrimsAndWritesModel()
   {
     _addButton.EmitSignal(BaseButton.SignalName.Pressed);
-    _panel.Refresh();
+    // 绑定路径：列表变化驱动建行
+    await SettleAsync();
 
     var input = _groupRows.GetChild(0).GetChild<LineEdit>(2);
     input.EmitSignal(LineEdit.SignalName.TextSubmitted, "  示例群  ");
@@ -306,7 +315,8 @@ public class InfoConfigPanelTest : TestClass
         Enabled = { Value = true },
       }
     );
-    _panel.Refresh();
+    // 绑定路径：列表变化驱动建行（回执处理走真实调度，不手动模拟）
+    await SettleAsync();
 
     _panel.DispatchInfoEvent(
       InfoProtocol.GroupListResultEvent,
@@ -343,7 +353,8 @@ public class InfoConfigPanelTest : TestClass
     _dataManager.Settings.TargetGroups.Add(
       new TargetGroup { ChannelId = { Value = "10001" }, DisplayName = { Value = "旧群名" } }
     );
-    _panel.Refresh();
+    // 绑定路径：列表变化驱动建行（之后的外部模型改动仍按 CallDeferred 延迟重建）
+    await SettleAsync();
 
     // Koishi 回执先改了模型，但行重建是 CallDeferred 的：此刻行内文本仍是旧群名
     _dataManager.Settings.TargetGroups[0].DisplayName.Value = "新群名";

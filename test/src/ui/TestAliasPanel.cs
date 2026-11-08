@@ -2,6 +2,7 @@ namespace AutoCMEX;
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI;
@@ -122,11 +123,13 @@ public class TestAliasPanel : TestClass
     _dm.Aliases[0].MainName.ShouldBe("新创作者");
   }
 
+  /// <summary>写模型（加创作者）后由顶层 <c>AutoList</c> 绑定驱动渲染，不再手动 Refresh 模拟绑定。</summary>
   [Test]
-  public void Refresh_UpdatesTree()
+  public async Task ModelAdd_RendersTreeViaBinding()
   {
     _dm.Aliases.Add(new CreatorAlias { MainName = "测试创作者" });
-    _panel.Refresh();
+    await SettleAsync();
+
     var root = _aliasTree.Object.GetRoot();
     root.ShouldNotBeNull();
     root.GetChildCount().ShouldBe(1);
@@ -151,6 +154,13 @@ public class TestAliasPanel : TestClass
     );
   }
 
+  /// <summary>嵌套别名的渲染只能靠面板自己的 Refresh：别名是嵌套 AutoList，增删不冒泡到顶层订阅。</summary>
+  /// <remarks>
+  /// 已知限制：<see cref="CreatorAlias.Aliases"/> 是嵌套 <c>AutoList</c>，其增删不会触发
+  /// <c>DataManager.Aliases</c> 的 <c>OnModify</c>，面板也没有元素级绑定路径能观察到它；
+  /// 生产代码同样是在改完别名后自行调用 <see cref="AliasPanel.Refresh"/>。本用例保留手动
+  /// Refresh，直接验证这条无绑定路径的渲染入口，属已知限制而非「模拟绑定」。
+  /// </remarks>
   [Test]
   public void Refresh_BuildsCreatorRowsWithAliasChildren()
   {
@@ -173,12 +183,13 @@ public class TestAliasPanel : TestClass
   }
 
   [Test]
-  public void OnAliasEdited_CreatorRowWithoutAliases_UpdatesMainName()
+  public async Task OnAliasEdited_CreatorRowWithoutAliases_UpdatesMainName()
   {
     // 没有别名的创作者行同样是叶子，不能被当成别名行处理
     _dm.Aliases.Add(new CreatorAlias { MainName = "甲" });
     _dm.Aliases.Add(new CreatorAlias { MainName = "乙" });
-    _panel.Refresh();
+    // 绑定路径：创作者列表变化驱动渲染（一次性准备，之后的编辑是模拟用户操作）
+    await SettleAsync();
 
     EditItem(CreatorRow(1), "乙改名");
     _panel.GetOnAliasEdited()();
@@ -188,14 +199,15 @@ public class TestAliasPanel : TestClass
   }
 
   [Test]
-  public void OnAliasEdited_AliasRow_UpdatesOnlyThatAlias()
+  public async Task OnAliasEdited_AliasRow_UpdatesOnlyThatAlias()
   {
     _dm.Aliases.Add(new CreatorAlias { MainName = "甲" });
     _dm.Aliases[0].Aliases.Add("a1");
     _dm.Aliases[0].Aliases.Add("a2");
     _dm.Aliases.Add(new CreatorAlias { MainName = "乙" });
     _dm.Aliases[1].Aliases.Add("b1");
-    _panel.Refresh();
+    // 绑定路径：创作者列表变化驱动渲染（嵌套别名在渲染前已就位）
+    await SettleAsync();
 
     EditItem(AliasRow(0, 1), "a2改");
     _panel.GetOnAliasEdited()();
@@ -208,12 +220,13 @@ public class TestAliasPanel : TestClass
   }
 
   [Test]
-  public void OnAddAliasToCreator_AddsToOwnerOfSelectedItem()
+  public async Task OnAddAliasToCreator_AddsToOwnerOfSelectedItem()
   {
     _dm.Aliases.Add(new CreatorAlias { MainName = "甲" });
     _dm.Aliases.Add(new CreatorAlias { MainName = "乙" });
     _dm.Aliases[1].Aliases.Add("b1");
-    _panel.Refresh();
+    // 绑定路径：创作者列表变化驱动渲染
+    await SettleAsync();
     AliasRow(1, 0).Select(0);
 
     _panel.GetOnAddAliasToCreator()();
@@ -225,10 +238,11 @@ public class TestAliasPanel : TestClass
   }
 
   [Test]
-  public void OnAddAliasToCreator_NoSelection_ShowsError()
+  public async Task OnAddAliasToCreator_NoSelection_ShowsError()
   {
     _dm.Aliases.Add(new CreatorAlias { MainName = "甲" });
-    _panel.Refresh();
+    // 绑定路径：创作者列表变化驱动渲染（本用例只验证未选中时的报错，渲染须先完成）
+    await SettleAsync();
 
     _panel.GetOnAddAliasToCreator()();
 
@@ -237,12 +251,13 @@ public class TestAliasPanel : TestClass
   }
 
   [Test]
-  public void OnDeleteSelected_CreatorRow_DeletesOnlyThatCreator()
+  public async Task OnDeleteSelected_CreatorRow_DeletesOnlyThatCreator()
   {
     _dm.Aliases.Add(new CreatorAlias { MainName = "Alice" });
     _dm.Aliases.Add(new CreatorAlias { MainName = "Alice" });
     _dm.Aliases[1].Aliases.Add("A1");
-    _panel.Refresh();
+    // 绑定路径：创作者列表变化驱动渲染
+    await SettleAsync();
     CreatorRow(1).Select(0);
 
     _panel.GetOnDeleteSelected()();
@@ -252,12 +267,13 @@ public class TestAliasPanel : TestClass
   }
 
   [Test]
-  public void OnDeleteSelected_AliasRow_DeletesOnlyThatAlias()
+  public async Task OnDeleteSelected_AliasRow_DeletesOnlyThatAlias()
   {
     _dm.Aliases.Add(new CreatorAlias { MainName = "甲" });
     _dm.Aliases[0].Aliases.Add("a1");
     _dm.Aliases[0].Aliases.Add("a2");
-    _panel.Refresh();
+    // 绑定路径：创作者列表变化驱动渲染（嵌套别名在渲染前已就位）
+    await SettleAsync();
     AliasRow(0, 0).Select(0);
 
     _panel.GetOnDeleteSelected()();
@@ -266,6 +282,13 @@ public class TestAliasPanel : TestClass
     _dm.Aliases[0].Aliases.Count.ShouldBe(1);
     _dm.Aliases[0].Aliases[0].ShouldBe("a2");
     CreatorRow(0).GetChildCount().ShouldBe(1);
+  }
+
+  /// <summary>等两帧：让 <c>CallDeferred(Refresh)</c> 排定的绑定驱动渲染真正执行（规则 30）。</summary>
+  private async Task SettleAsync()
+  {
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
   }
 
   [Test]

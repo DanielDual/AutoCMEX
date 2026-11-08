@@ -74,7 +74,7 @@ public class TestGuessToSpellCardSync : TestClass
   {
     AddBoss(("符卡1", "作者A"), ("符卡2", "作者B"), ("符卡3", "作者C"));
     _spellPanel.SelectBoss(0);
-    _spellPanel.Refresh();
+    // 绑定路径：Boss 列表/选中下标变化驱动面板渲染，不手动 Refresh
     await SettleAsync();
 
     CardRow(0).IsChecked(2).ShouldBeFalse();
@@ -97,7 +97,7 @@ public class TestGuessToSpellCardSync : TestClass
   {
     AddBoss(("符卡1", "作者A"), ("符卡2", "作者B"));
     _spellPanel.SelectBoss(0);
-    _spellPanel.Refresh();
+    // 绑定路径：Boss 列表/选中下标变化驱动面板渲染，不手动 Refresh
     await SettleAsync();
 
     _guessInput.Object.Text = "1作者B 2作者B";
@@ -114,7 +114,7 @@ public class TestGuessToSpellCardSync : TestClass
   {
     AddBoss(("符卡1", ""), ("符卡2", "作者B"), ("符卡3", "作者C"));
     _spellPanel.SelectBoss(0);
-    _spellPanel.Refresh();
+    // 绑定路径：Boss 列表/选中下标变化驱动面板渲染，不手动 Refresh
     await SettleAsync();
 
     _guessInput.Object.Text = "1作者A 2作者B 3作者C";
