@@ -4,6 +4,7 @@
 
 1. 本文是项目最高行为准则，所有AI模型必须遵守
 2. 规则优先级：项目根目录强制规则 > 本文件 > 项目Skill > 全局Skill > AI通用能力
+3. 工程纪律细则（依赖注入 / 节点树与场景 / 数据同步 / 测试体系 / 技术栈 / 流程规范）见 `docs/engineering-guidelines.md`；与本文件冲突时以本文件为准
 
 ## 项目结构
 
@@ -108,3 +109,5 @@
 
 - 项目变更日志：`/CHANGELOG.md`
 - 团队编码规范：`/.editorconfig`
+- 工程纪律与开发规则：[docs/engineering-guidelines.md](docs/engineering-guidelines.md)
+- 技术规格（含设计决策与已知旧账）：`/docs/technical-specification.md`
