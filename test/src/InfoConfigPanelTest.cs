@@ -4,6 +4,7 @@ using System;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Threading.Tasks;
 using AutoCMEX.Core.Info;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Core.WebSocket;
@@ -22,7 +23,8 @@ using Shouldly;
 /// </summary>
 /// <remarks>
 /// 节点用「真实节点 + 适配器」而不是 Mock：本面板的职责就是把数据渲染成行，只有真实节点才能验证
-/// 行内容与信号连线；列表重建由 <c>AutoList</c> 绑定触发，测试中显式调用 <c>Refresh()</c> 模拟。
+/// 行内容与信号连线。行内元素由 <c>AutoValue</c> 绑定驱动重建，因此验证绑定链路的用例必须
+/// 「写模型 → 等帧（<c>CallDeferred</c> 落主线程）→ 断言」，不能显式调 <c>Refresh()</c> 冒充绑定。
 /// </remarks>
 public class InfoConfigPanelTest : TestClass
 {
@@ -174,15 +176,19 @@ public class InfoConfigPanelTest : TestClass
   }
 
   [Test]
-  public void ToggleEnabled_WritesBackToModel()
+  public async Task ToggleEnabled_WritesBackToModelWithoutRebuildingRows()
   {
     _addButton.EmitSignal(BaseButton.SignalName.Pressed);
-    _panel.Refresh();
+    await SettleAsync();
 
-    _groupRows.GetChild(0).GetChild<CheckBox>(0).ButtonPressed = false;
+    var row = _groupRows.GetChild(0);
+    row.GetChild<CheckBox>(0).ButtonPressed = false;
+    await SettleAsync();
 
     _dataManager.Settings.TargetGroups[0].Enabled.Value.ShouldBeFalse();
     _statusLabel.Text.ShouldBe("共 1 个目标群（启用 0 个）。");
+    // 勾选只更新状态、不重建整表：行实例保持不变即没有走进重建分支
+    _groupRows.GetChild(0).ShouldBeSameAs(row);
   }
 
   [Test]
@@ -210,7 +216,7 @@ public class InfoConfigPanelTest : TestClass
   }
 
   [Test]
-  public void CommitChannelId_EmptyKeepsPreviousValue()
+  public async Task CommitChannelId_EmptyKeepsPreviousValue()
   {
     _addButton.EmitSignal(BaseButton.SignalName.Pressed);
     _dataManager.Settings.TargetGroups[0].ChannelId.Value = "10001";
@@ -218,13 +224,16 @@ public class InfoConfigPanelTest : TestClass
 
     var input = _groupRows.GetChild(0).GetChild<LineEdit>(1);
     input.EmitSignal(LineEdit.SignalName.TextSubmitted, "   ");
+    await SettleAsync();
 
     _dataManager.Settings.TargetGroups[0].ChannelId.Value.ShouldBe("10001");
+    // 重建与提示都在下一帧执行：不能在信号回调里同步销毁正在发信号的输入框所在行（C6）
     _statusLabel.Text.ShouldContain("群 ID 不能为空");
+    _groupRows.GetChild(0).GetChild<LineEdit>(1).Text.ShouldBe("10001");
   }
 
   [Test]
-  public void CommitChannelId_DuplicateKeepsPreviousValue()
+  public async Task CommitChannelId_DuplicateKeepsPreviousValue()
   {
     _dataManager.Settings.TargetGroups.Add(new TargetGroup { ChannelId = { Value = "10001" } });
     _dataManager.Settings.TargetGroups.Add(new TargetGroup { ChannelId = { Value = "10002" } });
@@ -232,9 +241,46 @@ public class InfoConfigPanelTest : TestClass
 
     var second = _groupRows.GetChild(1).GetChild<LineEdit>(1);
     second.EmitSignal(LineEdit.SignalName.TextSubmitted, "10001");
+    await SettleAsync();
 
     _dataManager.Settings.TargetGroups[1].ChannelId.Value.ShouldBe("10002");
     _statusLabel.Text.ShouldContain("已存在");
+    _groupRows.GetChild(1).GetChild<LineEdit>(1).Text.ShouldBe("10002");
+  }
+
+  [Test]
+  public void CommitChannelId_RevertToOriginalAfterWrite_WritesModel()
+  {
+    _dataManager.Settings.TargetGroups.Add(new TargetGroup { ChannelId = { Value = "10001" } });
+    _panel.Refresh();
+
+    var input = _groupRows.GetChild(0).GetChild<LineEdit>(1);
+
+    // 先正常改到 10002：写回成功（基线应随之更新）
+    input.EmitSignal(LineEdit.SignalName.TextSubmitted, "10002");
+    _dataManager.Settings.TargetGroups[0].ChannelId.Value.ShouldBe("10002");
+
+    // 再改回建行原值 10001：必须照常写回，不能被当成「模型已被别处改过」的 stale 丢弃
+    input.EmitSignal(LineEdit.SignalName.TextSubmitted, "10001");
+    _dataManager.Settings.TargetGroups[0].ChannelId.Value.ShouldBe("10001");
+  }
+
+  [Test]
+  public void CommitDisplayName_RevertToOriginalAfterWrite_WritesModel()
+  {
+    _dataManager.Settings.TargetGroups.Add(
+      new TargetGroup { ChannelId = { Value = "10001" }, DisplayName = { Value = "旧群名" } }
+    );
+    _panel.Refresh();
+
+    var input = _groupRows.GetChild(0).GetChild<LineEdit>(2);
+
+    input.EmitSignal(LineEdit.SignalName.TextSubmitted, "新群名");
+    _dataManager.Settings.TargetGroups[0].DisplayName.Value.ShouldBe("新群名");
+
+    // 改回建行原值同样要写回（基线已在上一笔写回时更新）
+    input.EmitSignal(LineEdit.SignalName.TextSubmitted, "旧群名");
+    _dataManager.Settings.TargetGroups[0].DisplayName.Value.ShouldBe("旧群名");
   }
 
   [Test]
@@ -247,6 +293,77 @@ public class InfoConfigPanelTest : TestClass
     input.EmitSignal(LineEdit.SignalName.TextSubmitted, "  示例群  ");
 
     _dataManager.Settings.TargetGroups[0].DisplayName.Value.ShouldBe("示例群");
+  }
+
+  [Test]
+  public async Task GroupListResultEvent_RenameUpdatesModelAndRowText()
+  {
+    _dataManager.Settings.TargetGroups.Add(
+      new TargetGroup
+      {
+        ChannelId = { Value = "10001" },
+        DisplayName = { Value = "旧群名" },
+        Enabled = { Value = true },
+      }
+    );
+    _panel.Refresh();
+
+    _panel.DispatchInfoEvent(
+      InfoProtocol.GroupListResultEvent,
+      JsonSerializer.Serialize(
+        new
+        {
+          data = new[]
+          {
+            new
+            {
+              channelId = "10001",
+              guildId = "9001",
+              name = "新群名",
+            },
+          },
+        }
+      )
+    );
+    await SettleAsync();
+
+    var group = _dataManager.Settings.TargetGroups[0];
+    group.DisplayName.Value.ShouldBe("新群名");
+    // 行内展示名由元素级绑定驱动重建：不能停在旧群名上
+    _groupRows.GetChildCount().ShouldBe(1);
+    _groupRows.GetChild(0).GetChild<LineEdit>(2).Text.ShouldBe("新群名");
+    // 群列表刷新不得改动用户勾选
+    group.Enabled.Value.ShouldBeTrue();
+    FindDialog(_panel).DialogText.ShouldContain("更新 1 个群名");
+  }
+
+  [Test]
+  public async Task CommitDisplayName_StaleTextKeepsModelButExplicitClearWrites()
+  {
+    _dataManager.Settings.TargetGroups.Add(
+      new TargetGroup { ChannelId = { Value = "10001" }, DisplayName = { Value = "旧群名" } }
+    );
+    _panel.Refresh();
+
+    // Koishi 回执先改了模型，但行重建是 CallDeferred 的：此刻行内文本仍是旧群名
+    _dataManager.Settings.TargetGroups[0].DisplayName.Value = "新群名";
+    var input = _groupRows.GetChild(0).GetChild<LineEdit>(2);
+
+    // 文本仍等于建行基线 → stale，不能把回执刚更新成的新群名覆盖回旧名
+    input.EmitSignal(LineEdit.SignalName.TextSubmitted, "旧群名");
+    _dataManager.Settings.TargetGroups[0].DisplayName.Value.ShouldBe("新群名");
+
+    await SettleAsync();
+    _groupRows.GetChild(0).GetChild<LineEdit>(2).Text.ShouldBe("新群名");
+
+    // 文本与基线不同（用户显式清空）→ 视为用户意图，正常写回空
+    var cleared = _groupRows.GetChild(0).GetChild<LineEdit>(2);
+    cleared.Text = string.Empty;
+    cleared.EmitSignal(LineEdit.SignalName.TextSubmitted, string.Empty);
+
+    _dataManager.Settings.TargetGroups[0].DisplayName.Value.ShouldBe(string.Empty);
+    await SettleAsync();
+    _groupRows.GetChild(0).GetChild<LineEdit>(2).Text.ShouldBe(string.Empty);
   }
 
   [Test]
@@ -330,6 +447,13 @@ public class InfoConfigPanelTest : TestClass
     _panel.DispatchInfoEvent(InfoProtocol.GroupListResultEvent, "{ not json");
 
     _dataManager.Settings.TargetGroups.ShouldBeEmpty();
+  }
+
+  /// <summary>等两帧让 <c>CallDeferred</c> 排定的重建真正执行（面板不在场景树里，借测试场景的树等帧）。</summary>
+  private async Task SettleAsync()
+  {
+    await _panel.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await _panel.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
   }
 
   /// <summary>取本页懒创建的结果对话框。</summary>

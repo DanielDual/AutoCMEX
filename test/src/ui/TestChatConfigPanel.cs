@@ -2,6 +2,7 @@ namespace AutoCMEX;
 
 using System;
 using System.Collections.Generic;
+using System.Threading.Tasks;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.UI.Settings;
 using Chickensoft.AutoInject;
@@ -11,6 +12,10 @@ using Godot;
 using Moq;
 using Shouldly;
 
+/// <summary>
+/// 群聊配置面板的替身单测：端口提交式去抖、其余控件回写、
+/// 设置值绑定驱动的回填、回填护栏与「切页不写回」纪律。
+/// </summary>
 public class TestChatConfigPanel : TestClass
 {
   private ChatConfigPanel _panel = default!;
@@ -90,6 +95,33 @@ public class TestChatConfigPanel : TestClass
     _toCleanup.Clear();
   }
 
+  /// <summary>等引擎把本帧排队的 <c>CallDeferred</c> 回填执行完（规则 30：绑定回调后要等帧再断言）。</summary>
+  private async Task WaitRefillAsync()
+  {
+    await _panel.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await _panel.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+  }
+
+  /// <summary>为五个设置项各挂一个写入计数绑定（订阅即回放一次，调用方随后清零）。</summary>
+  private List<IDisposable> CountSettingWrites(Action onWrite) =>
+    new()
+    {
+      _dm.Settings.WebSocketPort.Bind().OnValue(_ => onWrite()),
+      _dm.Settings.WebSocketMode.Bind().OnValue(_ => onWrite()),
+      _dm.Settings.MessageFilterMode.Bind().OnValue(_ => onWrite()),
+      _dm.Settings.KoishiWebSocketUrl.Bind().OnValue(_ => onWrite()),
+      _dm.Settings.KoishiPluginPath.Bind().OnValue(_ => onWrite()),
+    };
+
+  /// <summary>释放计数绑定。</summary>
+  private static void DisposeAll(List<IDisposable> bindings)
+  {
+    foreach (var binding in bindings)
+      binding.Dispose();
+
+    bindings.Clear();
+  }
+
   [Test]
   public void Panel_IsNotNull()
   {
@@ -122,73 +154,224 @@ public class TestChatConfigPanel : TestClass
   }
 
   [Test]
-  public void Refresh_PullsSettingsIntoControls()
+  public async Task ExternalSettingsChange_RefillsEveryControlWithoutWritingBack()
   {
-    _dm.Settings.WebSocketPort.Value = 5200;
-    _dm.Settings.WebSocketMode.Value = "Client";
-    _dm.Settings.MessageFilterMode.Value = "ai";
-    _dm.Settings.KoishiWebSocketUrl.Value = "ws://localhost:5140";
+    var writes = 0;
+    var bindings = CountSettingWrites(() => writes++);
+    writes = 0;
 
-    _panel.Refresh();
+    try
+    {
+      _dm.Settings.WebSocketPort.Value = 5200;
+      _dm.Settings.WebSocketMode.Value = "Client";
+      _dm.Settings.MessageFilterMode.Value = "ai";
+      _dm.Settings.KoishiWebSocketUrl.Value = "ws://localhost:5140";
+      _dm.Settings.KoishiPluginPath.Value = @"koishi\external\auto-cmex";
 
-    _portInput.VerifySet(m => m.Value = 5200);
-    _modeSelect.Verify(m => m.Select(1), Times.AtLeastOnce);
-    _filterSelect.Verify(m => m.Select(1), Times.AtLeastOnce);
-    _koishiUrlRow.VerifySet(m => m.Visible = true);
-    _koishiUrlInput.VerifySet(m => m.Text = "ws://localhost:5140");
+      await WaitRefillAsync();
+
+      _portInput.VerifySet(m => m.Value = 5200);
+      _modeSelect.Verify(m => m.Select(1), Times.AtLeastOnce);
+      _filterSelect.Verify(m => m.Select(1), Times.AtLeastOnce);
+      _koishiUrlRow.VerifySet(m => m.Visible = true);
+      _koishiUrlInput.VerifySet(m => m.Text = "ws://localhost:5140");
+      _pluginPathLabel.VerifySet(m => m.Text = It.Is<string>(s => s.Contains("auto-cmex")));
+
+      // 回填是程序化写控件：不许反向写回设置（否则只是打开本页就触发一次自动保存）
+      writes.ShouldBe(5);
+    }
+    finally
+    {
+      DisposeAll(bindings);
+    }
   }
 
   [Test]
-  public void Refresh_ShowsUrlRowOnlyInClientMode()
+  public async Task ExternalModeChange_ShowsUrlRowOnlyInClientMode()
   {
     _dm.Settings.WebSocketMode.Value = "Server";
-
-    _panel.Refresh();
-
+    await WaitRefillAsync();
     _koishiUrlRow.VerifySet(m => m.Visible = false);
+
+    _dm.Settings.WebSocketMode.Value = "Client";
+    await WaitRefillAsync();
+    _koishiUrlRow.VerifySet(m => m.Visible = true);
   }
 
+  /// <summary>
+  /// 端口连改只写一次：真机 SpinBox 每次改值都同步发 <c>value_changed</c>，
+  /// 逐次写模型会让 MainWindow 每 tick 重启一次 WebSocket 并重置保存防抖（S10）。
+  /// </summary>
   [Test]
-  public void PortChanged_UserDriven_WritesBack()
+  public async Task PortChanges_AreDebouncedIntoOneWrite()
   {
-    _portInput.Raise(m => m.ValueChanged += null, 5200d);
+    var writes = 0;
+    var binding = _dm.Settings.WebSocketPort.Bind().OnValue(_ => writes++);
+    writes = 0;
 
-    _dm.Settings.WebSocketPort.Value.ShouldBe(5200);
+    try
+    {
+      _portInput.Raise(m => m.ValueChanged += null, 5200d);
+      _portInput.Raise(m => m.ValueChanged += null, 5201d);
+      _portInput.Raise(m => m.ValueChanged += null, 5202d);
+
+      // 去抖窗口内不写模型 → 不触发 WebSocket 重启、不重置保存防抖
+      _dm.Settings.WebSocketPort.Value.ShouldBe(5140);
+      writes.ShouldBe(0);
+
+      // 替身面板不入树，引擎不会驱动 _Process，手工喂 delta（同 GifFramePlayerTest 的做法）
+      _panel._Process(ChatConfigPanel.PortCommitDebounceSeconds / 2);
+      _dm.Settings.WebSocketPort.Value.ShouldBe(5140);
+      writes.ShouldBe(0);
+
+      _panel._Process(ChatConfigPanel.PortCommitDebounceSeconds);
+      _dm.Settings.WebSocketPort.Value.ShouldBe(5202);
+      writes.ShouldBe(1);
+
+      // 写回后绑定排的回填不许再写第二笔
+      await WaitRefillAsync();
+      writes.ShouldBe(1);
+    }
+    finally
+    {
+      binding.Dispose();
+    }
   }
 
   [Test]
-  public void KoishiUrl_TextSubmitted_WritesBackTrimmedValue()
+  public void PortChange_EqualToCurrentValue_DoesNotWrite()
+  {
+    var writes = 0;
+    var binding = _dm.Settings.WebSocketPort.Bind().OnValue(_ => writes++);
+    writes = 0;
+
+    try
+    {
+      _portInput.Raise(m => m.ValueChanged += null, 5140d);
+      _panel._Process(ChatConfigPanel.PortCommitDebounceSeconds);
+
+      writes.ShouldBe(0);
+    }
+    finally
+    {
+      binding.Dispose();
+    }
+  }
+
+  [Test]
+  public async Task PortChange_IsClampedBeforeWriteBack()
+  {
+    _portInput.Raise(m => m.ValueChanged += null, 70000d);
+    _panel._Process(ChatConfigPanel.PortCommitDebounceSeconds);
+
+    _dm.Settings.WebSocketPort.Value.ShouldBe(65535);
+
+    await WaitRefillAsync();
+  }
+
+  [Test]
+  public async Task ModeSelect_UserDriven_WritesBackAndShowsUrlRow()
+  {
+    _modeSelect.Raise(m => m.ItemSelected += null, 1L);
+
+    _dm.Settings.WebSocketMode.Value.ShouldBe("Client");
+    _koishiUrlRow.VerifySet(m => m.Visible = true);
+
+    // 写模型后绑定会排一次回填：等它跑完，顺带确保回填不反向写回（否则会产生第二笔写）
+    var writes = 0;
+    var binding = _dm.Settings.WebSocketMode.Bind().OnValue(_ => writes++);
+    writes = 0;
+    try
+    {
+      await WaitRefillAsync();
+      writes.ShouldBe(0);
+    }
+    finally
+    {
+      binding.Dispose();
+    }
+  }
+
+  [Test]
+  public async Task FilterSelect_UserDriven_WritesBack()
+  {
+    _filterSelect.Raise(m => m.ItemSelected += null, 2L);
+
+    _dm.Settings.MessageFilterMode.Value.ShouldBe("strict_then_ai");
+
+    await WaitRefillAsync();
+    _dm.Settings.MessageFilterMode.Value.ShouldBe("strict_then_ai");
+  }
+
+  [Test]
+  public async Task KoishiUrl_TextSubmitted_WritesBackTrimmedValue()
   {
     _koishiUrlInput.Raise(m => m.TextSubmitted += null, "  ws://localhost:5140  ");
 
     _dm.Settings.KoishiWebSocketUrl.Value.ShouldBe("ws://localhost:5140");
     _koishiUrlInput.VerifySet(m => m.Text = "ws://localhost:5140");
+
+    await WaitRefillAsync();
+    _dm.Settings.KoishiWebSocketUrl.Value.ShouldBe("ws://localhost:5140");
   }
 
   [Test]
-  public void KoishiUrl_TextSubmitted_KeepsUnchangedValue()
+  public async Task KoishiUrl_TextSubmitted_KeepsUnchangedValue()
   {
     _dm.Settings.KoishiWebSocketUrl.Value = "ws://localhost:5140";
 
     _koishiUrlInput.Raise(m => m.TextSubmitted += null, "ws://localhost:5140");
 
     _dm.Settings.KoishiWebSocketUrl.Value.ShouldBe("ws://localhost:5140");
+
+    await WaitRefillAsync();
+    _dm.Settings.KoishiWebSocketUrl.Value.ShouldBe("ws://localhost:5140");
   }
 
   [Test]
-  public void PluginPathLabel_ShowsNotInstalled_ByDefault()
+  public async Task PluginPathLabel_ShowsNotInstalled_ByDefault()
   {
+    await WaitRefillAsync();
+
     _pluginPathLabel.VerifySet(m => m.Text = It.Is<string>(s => s.Contains("未安装")));
   }
 
   [Test]
-  public void PluginPathLabel_ShowsInstalledPath()
+  public async Task PluginPathLabel_ShowsInstalledPath()
   {
     const string dest = @"koishi\plugins\auto-cmex";
     _dm.Settings.KoishiPluginPath.Value = dest;
 
-    _panel.Refresh();
+    await WaitRefillAsync();
 
     _pluginPathLabel.VerifySet(m => m.Text = It.Is<string>(s => s.Contains(dest)));
+  }
+
+  /// <summary>
+  /// 切页（隐藏再显示）不该产生任何写回/保存：控件由绑定持续对齐，切页不再手动刷新，
+  /// 回填期间的伪变更也被 <c>_applyingModel</c> 挡掉。
+  /// </summary>
+  [Test]
+  public async Task PageSwitch_DoesNotWriteBackToSettings()
+  {
+    var writes = 0;
+    var bindings = CountSettingWrites(() => writes++);
+    writes = 0;
+
+    try
+    {
+      _panel.Visible = false;
+      _panel.Visible = true;
+
+      await WaitRefillAsync();
+
+      writes.ShouldBe(0);
+      _dm.Settings.WebSocketMode.Value.ShouldBe("Server");
+      _dm.Settings.WebSocketPort.Value.ShouldBe(5140);
+    }
+    finally
+    {
+      DisposeAll(bindings);
+    }
   }
 }

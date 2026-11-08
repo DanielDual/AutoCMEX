@@ -53,7 +53,10 @@ public partial class LogPanel : Control, ILogPanel
   // 待处理日志队列(用于跨线程安全)
   private readonly System.Collections.Concurrent.ConcurrentQueue<LogEntry> _pending = new();
 
-  // 已知模块集合,用于筛选下拉框(动态扩充)
+  // 待注册模块名队列:OnNewLogEntry 可能在写日志线程被调用,只能入队,注册留到主线程 _Process
+  private readonly System.Collections.Concurrent.ConcurrentQueue<string> _pendingModules = new();
+
+  // 已知模块集合,用于筛选下拉框(动态扩充)。只在主线程访问(_Process / RefreshFromBuffer)
   private readonly HashSet<string> _knownModules = new(StringComparer.Ordinal);
 
   /// <summary>当前过滤级别。</summary>
@@ -114,11 +117,18 @@ public partial class LogPanel : Control, ILogPanel
       _writer.OnNewLogEntry -= OnNewLogEntry;
   }
 
+  /// <summary>
+  /// 新日志回调。<b>可能在写日志线程被调用</b>：这里只做队列操作，
+  /// 模块注册（改筛选下拉与 <see cref="_knownModules"/>）必须留到主线程 <see cref="_Process"/>。
+  /// </summary>
+  /// <param name="entry">新日志条目。</param>
   private void OnNewLogEntry(LogEntry entry)
   {
     if (_paused || _writer == null)
       return;
-    EnsureModuleRegistered(entry.Module);
+
+    EnqueuePendingModule(entry.Module);
+
     if (entry.Level < CurrentMinLevel)
       return;
     if (!string.IsNullOrEmpty(CurrentModule) && entry.Module != CurrentModule)
@@ -126,10 +136,25 @@ public partial class LogPanel : Control, ILogPanel
     _pending.Enqueue(entry);
   }
 
+  /// <summary>把待注册模块名入队(写日志线程安全；去重在主线程的 <see cref="EnsureModuleRegistered"/> 里做)。</summary>
+  /// <param name="module">模块名。</param>
+  private void EnqueuePendingModule(string? module)
+  {
+    // 不能在这里查 _knownModules:那是主线程独占的 HashSet
+    if (string.IsNullOrEmpty(module))
+      return;
+
+    _pendingModules.Enqueue(module);
+  }
+
   public override void _Process(double delta)
   {
     if (_paused)
       return;
+
+    // 先在本帧把新模块名注册进筛选下拉(写日志线程只入队),再消费日志条目
+    DrainPendingModules();
+
     if (_pending.IsEmpty)
       return;
     // 节流:每个 _Process 最多处理 200 条,避免积压造成卡顿
@@ -212,6 +237,17 @@ public partial class LogPanel : Control, ILogPanel
     _writer?.Clear();
   }
 
+  /// <summary>主线程排空待注册模块名队列。</summary>
+  private void DrainPendingModules()
+  {
+    while (_pendingModules.TryDequeue(out var module))
+      EnsureModuleRegistered(module);
+  }
+
+  /// <summary>
+  /// 把模块名注册进筛选下拉(仅主线程调用:会改控件与 <see cref="_knownModules"/>)。
+  /// </summary>
+  /// <param name="module">模块名。</param>
   private void EnsureModuleRegistered(string module)
   {
     if (string.IsNullOrEmpty(module) || _knownModules.Contains(module))

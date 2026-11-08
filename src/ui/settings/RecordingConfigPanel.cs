@@ -1,7 +1,9 @@
 namespace AutoCMEX.UI.Settings;
 
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Threading.Tasks;
 using AutoCMEX.Core.Recording;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
@@ -28,6 +30,10 @@ using Godot;
 /// <see cref="EngineLocator.TryValidate"/>、<see cref="RecordingSandbox.EstimateFootprint"/>）。
 /// </para>
 /// <para>
+/// 配置值由 Sync 绑定驱动回填（规则 18/19）；磁盘占用估算不参与构造与每次输入，而是交给
+/// 300ms 去抖的后台探针，结果按「引擎目录 + game/ 修改时间」缓存后回主线程渲染。
+/// </para>
+/// <para>
 /// 交互入口都留了公开方法（<see cref="CommitEngineDir"/>、<see cref="ApplyParallelism"/> 等），
 /// 便于单测直接驱动，不必模拟控件事件。
 /// </para>
@@ -37,11 +43,41 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   private static readonly Color _okColor = new(0.62f, 0.86f, 0.52f);
   private static readonly Color _warnColor = new(0.96f, 0.68f, 0.36f);
 
+  /// <summary>磁盘探针的去抖时延（秒）：连续 tick 只落一次递归枚举。</summary>
+  private const double ProbeDebounceSeconds = 0.3;
+
   private readonly DataManager _dm;
   private readonly RecordingConfig _config;
   private bool _syncing;
 
-  /// <summary>构建分组：控件一次建好，随后同步配置值并渲染状态。</summary>
+  /// <summary>8 个配置项的 Sync 绑定（规则 20：在 <see cref="_ExitTree"/> 释放）。</summary>
+  private readonly List<IDisposable> _bindings = new();
+
+  /// <summary>磁盘探针的去抖定时器（单次触发，重复请求只重启它）。</summary>
+  private Timer? _probeTimer;
+
+  /// <summary>还没进树时排下的探针请求，由 <see cref="_Ready"/> 补排一次。</summary>
+  private bool _probeRequested;
+
+  /// <summary>正在建立配置绑定：订阅回放不排回填（构造时紧接着会整体回填一次）。</summary>
+  private bool _isBindingConfigValues;
+
+  /// <summary>上次估算结果对应的引擎目录（缓存键的一半）。</summary>
+  private string _cachedEngineDir = string.Empty;
+
+  /// <summary>上次估算时 game/ 的 UTC 修改时间（缓存键的另一半）。</summary>
+  private DateTime _cachedGameDirWriteUtc = DateTime.MinValue;
+
+  /// <summary>上次估算的单 worker 字节数。</summary>
+  private long _cachedFootprintBytes;
+
+  /// <summary>是否已有可复用的估算缓存。</summary>
+  private bool _hasFootprintCache;
+
+  /// <summary>本面板实际执行过几次磁盘占用估算（测试用探针计数；生产代码不读取）。</summary>
+  private int _footprintProbeRuns;
+
+  /// <summary>构建分组：控件一次建好，回填配置值并渲染常数级状态（磁盘占用由进树后的去抖探针补）。</summary>
   /// <param name="dataManager">数据管理器（提供录制配置、合并配置与自动保存）。</param>
   /// <exception cref="ArgumentNullException"><paramref name="dataManager"/> 为空。</exception>
   public RecordingConfigPanel(DataManager dataManager)
@@ -52,9 +88,16 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     BuildHeader();
     BuildBody();
     BuildDialogs();
-    SyncFromConfig();
-    RefreshStatuses();
+    BindConfigValues();
+    SyncControlsFromConfig();
+    RefreshProbes();
   }
+
+  /// <summary>本面板实际执行过几次磁盘占用估算（测试用探针计数；生产代码不读取）。</summary>
+  internal int FootprintProbeRuns => _footprintProbeRuns;
+
+  /// <summary>清零磁盘估算计数（测试用；生产代码不调用）。</summary>
+  internal void ResetFootprintProbeCounterForTests() => _footprintProbeRuns = 0;
 
   #region Controls
 
@@ -129,11 +172,14 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
 
   #endregion
 
-  /// <summary>把配置值同步到控件，并重渲染全部状态（每次「信息」类别页显示时调用）。</summary>
+  /// <summary>进页刷新：清空上一次的操作提示，回填配置值并重渲染状态（每次「信息」类别页显示时调用）。</summary>
   public void Refresh()
   {
-    SyncFromConfig();
-    RefreshStatuses();
+    // 进页清掉上一次的提示：否则一条旧提示会永久驻留并盖住本次操作结果
+    ActionLabel.Text = string.Empty;
+
+    SyncControlsFromConfig();
+    RefreshProbes();
   }
 
   /// <summary>提交引擎目录：校验通过才写回模型，否则保留原值并提示原因。</summary>
@@ -144,7 +190,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     if (string.Equals(_config.EngineDir.Value, value, StringComparison.Ordinal))
     {
       SyncEngineDirControl();
-      RefreshStatuses();
+      RefreshProbes();
       return;
     }
 
@@ -152,7 +198,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     {
       SyncEngineDirControl();
       ActionLabel.Text = $"引擎目录无效：{reason}（已保留原值）";
-      RefreshStatuses();
+      RefreshProbes();
       return;
     }
 
@@ -160,7 +206,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     _dm.TriggerAutoSave();
     SyncEngineDirControl();
     ActionLabel.Text = value.Length == 0 ? "已清空引擎目录。" : $"已设置引擎目录：{value}";
-    RefreshStatuses();
+    RefreshProbes();
   }
 
   /// <summary>提交沙箱根目录：留空即默认目录；非空且不可用时保留原值并提示。</summary>
@@ -171,7 +217,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     if (string.Equals(_config.SandboxRoot.Value, value, StringComparison.Ordinal))
     {
       SyncSandboxRootControl();
-      RefreshStatuses();
+      RefreshProbes();
       return;
     }
 
@@ -179,7 +225,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     {
       SyncSandboxRootControl();
       ActionLabel.Text = $"{reason}（已保留原值）";
-      RefreshStatuses();
+      RefreshProbes();
       return;
     }
 
@@ -190,7 +236,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
       value.Length == 0
         ? $"已恢复默认沙箱根：{RecordingSandbox.GetDefaultRootDir()}"
         : $"已设置沙箱根：{value}";
-    RefreshStatuses();
+    RefreshProbes();
   }
 
   /// <summary>恢复默认沙箱根（等价于清空）。</summary>
@@ -228,7 +274,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     if (string.IsNullOrWhiteSpace(sharpEditorPath))
     {
       ActionLabel.Text = "请先在「整合」板块设置 Editor Sharp 目录，再来推断引擎目录。";
-      RefreshStatuses();
+      RefreshProbes();
       return;
     }
 
@@ -236,7 +282,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     if (string.IsNullOrWhiteSpace(inferred))
     {
       ActionLabel.Text = "未从 Sharp 目录推断出引擎目录，请手工选择。";
-      RefreshStatuses();
+      RefreshProbes();
       return;
     }
 
@@ -261,7 +307,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     {
       ActionLabel.Text = ex.Message;
     }
-    RefreshStatuses();
+    RefreshProbes();
   }
 
   /// <summary>一键启用弹幕录制器（会写引擎目录，仅在用户点击后调用）。</summary>
@@ -275,29 +321,49 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     {
       ActionLabel.Text = ex.Message;
     }
-    RefreshStatuses();
+    RefreshProbes();
   }
 
-  /// <summary>只重渲染状态（不触碰配置值控件，避免打断正在进行的输入）。</summary>
-  public void RefreshStatuses()
+  /// <summary>
+  /// 重渲染状态：插件检查与目录校验是常数级操作，保持同步；磁盘占用估算交给去抖后的后台探针。
+  /// </summary>
+  /// <remarks>
+  /// 进页、提交引擎/沙箱目录、改并行度都会走到这里；300ms 内的多次请求只落一次磁盘枚举，
+  /// 且结果按「引擎目录 + game/ 修改时间」缓存，两者没变就直接沿用，不再递归扫盘。
+  /// </remarks>
+  public void RefreshProbes()
   {
     var engineDir = _config.EngineDir.Value;
     var inspection = PluginDeployer.Inspect(engineDir);
 
     RefreshEngineStatus(engineDir, inspection);
     RefreshPluginStatus(inspection);
-    RefreshDiskHint(engineDir, inspection);
 
-    // 操作提示只在有内容时占位（各写入动作都以 RefreshStatuses() 收尾，故这里统一收敛可见性）
+    // 操作提示只在有内容时占位（各写入动作都以 RefreshProbes() 收尾，故这里统一收敛可见性）
     ActionLabel.Visible = ActionLabel.Text.Length > 0;
 
     InferEngineDirButton.Disabled = string.IsNullOrWhiteSpace(
       _dm.MergeConfig.SharpEditorPath.Value
     );
-    LastOutputLabel.Text =
-      _config.LastOutputDir.Value.Length == 0
-        ? "上次输出目录：尚未录制过。"
-        : $"上次输出目录：{_config.LastOutputDir.Value}";
+
+    if (!inspection.EngineDirUsable)
+    {
+      SetStatus(DiskHintLabel, "沙箱空间提示：先设置有效的引擎目录，之后才能估算占用。", false);
+      return;
+    }
+
+    var gameDirWriteUtc = ReadLastWriteTimeUtc(EngineLocator.GetGameDir(engineDir));
+    if (
+      _hasFootprintCache
+      && string.Equals(_cachedEngineDir, engineDir, StringComparison.Ordinal)
+      && _cachedGameDirWriteUtc == gameDirWriteUtc
+    )
+    {
+      RenderDiskHint(_cachedFootprintBytes);
+      return;
+    }
+
+    QueueFootprintProbe();
   }
 
   /// <summary>构建分组标题：一条分隔线 + 普通文本标题，整组常显，不再用折叠开关。</summary>
@@ -431,7 +497,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     pluginRow.AddChild(EnableRecorderButton);
 
     RefreshPluginButton = new Button { Text = "重新检查" };
-    RefreshPluginButton.Pressed += RefreshStatuses;
+    RefreshPluginButton.Pressed += RefreshProbes;
     pluginRow.AddChild(RefreshPluginButton);
     AddChild(pluginRow);
 
@@ -576,11 +642,15 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
       ActionLabel.Text = $"已更新为 {clamped}。";
     }
     SyncSpinBox(box, clamped);
-    RefreshStatuses();
+    RefreshProbes();
   }
 
-  /// <summary>把模型里的配置值一次性回填到控件（回填期间挂起写入回调）。</summary>
-  private void SyncFromConfig()
+  /// <summary>把模型里的配置值一次性回填到控件（纯内存操作，不读写磁盘）。</summary>
+  /// <remarks>
+  /// 只做「模型 → 控件」的回填；插件/目录/磁盘提示等状态渲染由 <see cref="RefreshProbes"/> 负责，
+  /// 回填期间挂起写入回调，避免刷新把界面上的值当成用户输入再写回模型。
+  /// </remarks>
+  private void SyncControlsFromConfig()
   {
     _syncing = true;
     try
@@ -592,12 +662,20 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
       SyncSpinBox(FirstIntervalBox, RecordingConfig.ClampInterval(_config.FirstInterval.Value));
       SyncSpinBox(SecondIntervalBox, RecordingConfig.ClampInterval(_config.SecondInterval.Value));
       SyncSpinBox(ScalePercentBox, RecordingConfig.ClampScalePercent(_config.ScalePercent.Value));
+      RefreshLastOutputLabel();
     }
     finally
     {
       _syncing = false;
     }
   }
+
+  /// <summary>把上次输出目录配置值回填到展示行。</summary>
+  private void RefreshLastOutputLabel() =>
+    LastOutputLabel.Text =
+      _config.LastOutputDir.Value.Length == 0
+        ? "上次输出目录：尚未录制过。"
+        : $"上次输出目录：{_config.LastOutputDir.Value}";
 
   /// <summary>把引擎目录配置值回填到输入框。</summary>
   private void SyncEngineDirControl() => EngineDirEdit.Text = _config.EngineDir.Value;
@@ -621,6 +699,207 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
       _syncing = outer;
     }
   }
+
+  #region 配置绑定与磁盘探针
+
+  /// <summary>为 8 个录制配置项挂值绑定：别处改配置时把值回填进控件（规则 18/19）。</summary>
+  /// <remarks>
+  /// 订阅会立刻用当前值回放一次，构造期先抑制这次回放（紧接着就整体回填）；之后的真实变化
+  /// 只排 <c>CallDeferred</c>，不在绑定回调栈里碰控件。回填期间由 <c>_syncing</c> 护栏阻断
+  /// SpinBox 的写回，避免「回填 → 写回 → 再回填」自激。只有引擎目录/沙箱根/并行度会改变
+  /// 磁盘提示，故这三项连带重排探针，其余只回填控件。
+  /// </remarks>
+  private void BindConfigValues()
+  {
+    // 订阅即回放一次：构造时紧接着会整体回填，这里的回放不必再排 8 次延迟任务
+    _isBindingConfigValues = true;
+    try
+    {
+      _bindings.Add(
+        _config.EngineDir.Bind().OnValue(_ => OnConfigValueChanged(refreshProbes: true))
+      );
+      _bindings.Add(
+        _config.SandboxRoot.Bind().OnValue(_ => OnConfigValueChanged(refreshProbes: true))
+      );
+      _bindings.Add(
+        _config.Parallelism.Bind().OnValue(_ => OnConfigValueChanged(refreshProbes: true))
+      );
+      _bindings.Add(
+        _config.MaxFrame.Bind().OnValue(_ => OnConfigValueChanged(refreshProbes: false))
+      );
+      _bindings.Add(
+        _config.FirstInterval.Bind().OnValue(_ => OnConfigValueChanged(refreshProbes: false))
+      );
+      _bindings.Add(
+        _config.SecondInterval.Bind().OnValue(_ => OnConfigValueChanged(refreshProbes: false))
+      );
+      _bindings.Add(
+        _config.ScalePercent.Bind().OnValue(_ => OnConfigValueChanged(refreshProbes: false))
+      );
+      _bindings.Add(
+        _config.LastOutputDir.Bind().OnValue(_ => OnConfigValueChanged(refreshProbes: false))
+      );
+    }
+    finally
+    {
+      _isBindingConfigValues = false;
+    }
+  }
+
+  /// <summary>配置值被别处改动：回填与探针都调度到主线程（规则 19：绑定回调里不碰控件）。</summary>
+  /// <param name="refreshProbes">是否连带重排磁盘探针。</param>
+  private void OnConfigValueChanged(bool refreshProbes)
+  {
+    if (_isBindingConfigValues)
+    {
+      return;
+    }
+
+    CallDeferred(nameof(FlushConfigValues), refreshProbes);
+  }
+
+  /// <summary>回填配置值控件，必要时重排磁盘探针（公开以便 <c>CallDeferred</c> 按名调用，不属于对外契约）。</summary>
+  /// <param name="refreshProbes">是否连带重排磁盘探针。</param>
+  public void FlushConfigValues(bool refreshProbes)
+  {
+    SyncControlsFromConfig();
+    if (refreshProbes)
+    {
+      RefreshProbes();
+    }
+  }
+
+  /// <inheritdoc/>
+  public override void _Ready()
+  {
+    // 构造期还没进树：那时排下的探针请求在这里补排一次（Timer 只有在树里才会走）
+    if (_probeRequested)
+    {
+      _probeRequested = false;
+      QueueFootprintProbe();
+    }
+  }
+
+  /// <inheritdoc/>
+  public override void _ExitTree()
+  {
+    // 规则 20：绑定必须在节点退出时释放；探针定时器也停掉，避免对已离场面板回填
+    foreach (var binding in _bindings)
+    {
+      binding.Dispose();
+    }
+
+    _bindings.Clear();
+    _probeRequested = false;
+
+    var probeTimer = _probeTimer;
+    if (probeTimer is not null && GodotObject.IsInstanceValid(probeTimer))
+    {
+      probeTimer.Stop();
+    }
+
+    base._ExitTree();
+  }
+
+  /// <summary>排一次去抖的磁盘探针：300ms 内的多次请求合并成一次。</summary>
+  /// <remarks>
+  /// 还没进树时只记下请求，由 <see cref="_Ready"/> 补排；不在场景树里起 Timer 不会走。
+  /// </remarks>
+  private void QueueFootprintProbe()
+  {
+    if (!IsInsideTree())
+    {
+      _probeRequested = true;
+      return;
+    }
+
+    var timer = _probeTimer;
+    if (timer is null || !GodotObject.IsInstanceValid(timer))
+    {
+      timer = new Timer { OneShot = true, WaitTime = ProbeDebounceSeconds };
+      timer.Timeout += OnFootprintDebounceElapsed;
+      AddChild(timer);
+      _probeTimer = timer;
+    }
+
+    timer.Start();
+  }
+
+  /// <summary>去抖到期：在线程池里递归枚举 game/ 估算沙箱占用，结果回主线程渲染。</summary>
+  /// <remarks>
+  /// <see cref="RecordingSandbox.EstimateFootprint"/> 会递归枚举 game/ 全树，是主线程卡顿的来源；
+  /// <c>await Task.Run</c> 的续体由 Godot 同步上下文回到主线程，回填仍走 <c>CallDeferred</c>。
+  /// </remarks>
+  private async void OnFootprintDebounceElapsed()
+  {
+    try
+    {
+      var engineDir = _config.EngineDir.Value;
+      if (!EngineLocator.TryValidate(engineDir, out _))
+      {
+        return;
+      }
+
+      var engineExe = EngineLocator.FindEngineExe(engineDir);
+      var engineExeName = engineExe is null ? string.Empty : Path.GetFileName(engineExe);
+      var gameDirWriteUtc = ReadLastWriteTimeUtc(EngineLocator.GetGameDir(engineDir));
+
+      var perWorker = await Task.Run(() =>
+        RecordingSandbox.EstimateFootprint(engineDir, string.Empty, engineExeName ?? string.Empty)
+      );
+
+      _footprintProbeRuns++;
+
+      if (!GodotObject.IsInstanceValid(this) || !IsInsideTree())
+      {
+        return;
+      }
+
+      CallDeferred(nameof(ApplyFootprintResult), perWorker, engineDir, gameDirWriteUtc.Ticks);
+    }
+    catch (Exception ex)
+    {
+      // 扫描期间目录被删/没有权限/面板已释放：保留上一次提示，等下一次刷新再试
+      GD.PushWarning($"RecordingConfigPanel: 磁盘占用估算失败：{ex.Message}");
+    }
+  }
+
+  /// <summary>把后台探针结果写进缓存并渲染磁盘提示（公开以便 <c>CallDeferred</c> 按名调用）。</summary>
+  /// <param name="perWorkerBytes">单 worker 的估算字节数。</param>
+  /// <param name="engineDir">发起探针时的引擎目录。</param>
+  /// <param name="gameDirWriteUtcTicks">发起探针时 game/ 的 UTC 修改时间（ticks）。</param>
+  public void ApplyFootprintResult(long perWorkerBytes, string engineDir, long gameDirWriteUtcTicks)
+  {
+    // 探针跑完前用户已换引擎目录：这次结果作废，等新目录那轮探针
+    if (!string.Equals(_config.EngineDir.Value, engineDir, StringComparison.Ordinal))
+    {
+      return;
+    }
+
+    _cachedEngineDir = engineDir;
+    _cachedGameDirWriteUtc = new DateTime(gameDirWriteUtcTicks, DateTimeKind.Utc);
+    _cachedFootprintBytes = perWorkerBytes;
+    _hasFootprintCache = true;
+
+    RenderDiskHint(perWorkerBytes);
+  }
+
+  /// <summary>读取目录的 UTC 修改时间；目录不存在或不可读时按「无时间戳」处理。</summary>
+  /// <param name="path">目录路径。</param>
+  /// <returns>修改时间；无法读取时为 <see cref="DateTime.MinValue"/>。</returns>
+  private static DateTime ReadLastWriteTimeUtc(string path)
+  {
+    try
+    {
+      return Directory.Exists(path) ? Directory.GetLastWriteTimeUtc(path) : DateTime.MinValue;
+    }
+    catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+    {
+      return DateTime.MinValue;
+    }
+  }
+
+  #endregion
 
   /// <summary>渲染引擎目录状态行。</summary>
   /// <param name="engineDir">当前配置的引擎目录。</param>
@@ -695,23 +974,10 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
       : $"{displayName}：{state}（{status.Detail}）";
   }
 
-  /// <summary>渲染沙箱空间提示：单份占用 × 并行度 与所在卷剩余空间对比。</summary>
-  /// <param name="engineDir">当前配置的引擎目录。</param>
-  /// <param name="inspection">插件检查结果（含引擎目录可用性）。</param>
-  private void RefreshDiskHint(string engineDir, RecordingPluginInspection inspection)
+  /// <summary>按单 worker 估算值渲染沙箱空间提示：并行度 × 单份占用 与所在卷剩余空间对比。</summary>
+  /// <param name="perWorker">单 worker 的估算字节数（探针结果或缓存）。</param>
+  private void RenderDiskHint(long perWorker)
   {
-    if (!inspection.EngineDirUsable)
-    {
-      SetStatus(DiskHintLabel, "沙箱空间提示：先设置有效的引擎目录，之后才能估算占用。", false);
-      return;
-    }
-
-    var engineExe = EngineLocator.FindEngineExe(engineDir);
-    var perWorker = RecordingSandbox.EstimateFootprint(
-      engineDir,
-      string.Empty,
-      engineExe is null ? string.Empty : Path.GetFileName(engineExe)
-    );
     var parallelism = RecordingConfig.ClampParallelism(_config.Parallelism.Value);
     var required = perWorker * parallelism;
 

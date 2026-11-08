@@ -4,6 +4,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading.Tasks;
 using AutoCMEX.Core.Recording;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
@@ -21,6 +22,8 @@ using Shouldly;
 /// 用真实的 <see cref="RecordingConfigPanel"/> + 真实临时引擎目录：本分组的职责是「把盘上状态渲染成
 /// 控件、把控件输入写回配置」，只有真实节点与真实目录才能同时验证这两条；控件事件不模拟，直接调
 /// 面板留出的公开入口（<c>CommitEngineDir</c>/<c>ApplyParallelism</c>/…）。
+/// 面板统一挂到真实宿主节点下：300ms 去抖探针的 <see cref="Timer"/> 与 <c>_ExitTree</c> 解绑
+/// 只有在场景树里才会真的走。
 /// </remarks>
 public class RecordingConfigPanelTest : TestClass
 {
@@ -34,6 +37,10 @@ public class RecordingConfigPanelTest : TestClass
   private string _missingDir = string.Empty;
   private DataManager _dm = default!;
   private RecordingConfigPanel _panel = default!;
+
+  /// <summary>面板宿主：面板必须进场景树，磁盘探针的 300ms 去抖 Timer 才会走。</summary>
+  private Node _host = default!;
+
   private readonly List<RecordingConfigPanel> _panels = new();
 
   public RecordingConfigPanelTest(Node testScene)
@@ -72,6 +79,8 @@ public class RecordingConfigPanelTest : TestClass
       new Mock<ILog>().Object
     );
 
+    _host = new Node();
+    TestScene.AddChild(_host);
     _panel = NewPanel();
   }
 
@@ -80,10 +89,19 @@ public class RecordingConfigPanelTest : TestClass
   {
     foreach (var panel in _panels)
     {
-      panel.QueueFree();
+      if (GodotObject.IsInstanceValid(panel) && !panel.IsQueuedForDeletion())
+      {
+        panel.QueueFree();
+      }
     }
 
     _panels.Clear();
+
+    if (_host is not null && GodotObject.IsInstanceValid(_host) && !_host.IsQueuedForDeletion())
+    {
+      _host.QueueFree();
+    }
+
     _dm?.Dispose();
 
     if (Directory.Exists(_root))
@@ -193,7 +211,7 @@ public class RecordingConfigPanelTest : TestClass
   }
 
   [Test]
-  public void CommitSandboxRoot_WithExistingDirectory_WritesConfig()
+  public async Task CommitSandboxRoot_WithExistingDirectory_WritesConfig()
   {
     _dm.RecordingConfig.EngineDir.Value = _engineDir;
     var panel = NewPanel();
@@ -202,7 +220,8 @@ public class RecordingConfigPanelTest : TestClass
 
     _dm.RecordingConfig.SandboxRoot.Value.ShouldBe(_sandboxRoot);
     panel.ActionLabel.Text.ShouldContain("已设置沙箱根");
-    panel.DiskHintLabel.Text.ShouldContain(_sandboxRoot);
+    // 磁盘占用是异步探针算的：等去抖 + 后台估算 + 回填后再断言文案
+    await WaitForDiskHintAsync(panel, _sandboxRoot);
   }
 
   [Test]
@@ -250,21 +269,101 @@ public class RecordingConfigPanelTest : TestClass
   }
 
   [Test]
-  public void RefreshStatuses_WithReadyPlugins_ReportsReadyAndActionableButtons()
+  public void Constructor_DoesNotProbeDiskFootprint()
+  {
+    _dm.RecordingConfig.EngineDir.Value = _engineDir;
+    _dm.RecordingConfig.SandboxRoot.Value = _sandboxRoot;
+
+    var panel = NewPanel();
+
+    // 构造只做常数级检查（插件/目录校验）与纯内存回填：递归枚举推迟到进树后的去抖探针
+    panel.FootprintProbeRuns.ShouldBe(0);
+  }
+
+  [Test]
+  public async Task ContinuousParallelismChanges_ProbeDiskFootprintOnlyOnce()
   {
     _dm.RecordingConfig.EngineDir.Value = _engineDir;
     _dm.RecordingConfig.SandboxRoot.Value = _sandboxRoot;
     var panel = NewPanel();
 
-    panel.RefreshStatuses();
+    // 先等首轮探针落定并清零计数，避免把构造期排的那次算进本次观测
+    await WaitForDiskHintAsync(panel, $"并行度 {RecordingConfig.DefaultParallelism}");
+    panel.ResetFootprintProbeCounterForTests();
+
+    // 改掉 game/ 的修改时间让缓存失效，下一次刷新必须真正重算
+    File.WriteAllText(Path.Combine(_engineDir, EngineLocator.GameDirName, "touched.txt"), "x");
+
+    // 同一个去抖窗口内连改三次并行度：只应落一次磁盘枚举
+    panel.ApplyParallelism(4);
+    panel.ApplyParallelism(5);
+    panel.ApplyParallelism(6);
+
+    await WaitForDiskHintAsync(panel, "并行度 6");
+
+    panel.FootprintProbeRuns.ShouldBe(1);
+  }
+
+  [Test]
+  public async Task ChangeParallelismAfterFirstProbe_ReusesCachedFootprint()
+  {
+    _dm.RecordingConfig.EngineDir.Value = _engineDir;
+    _dm.RecordingConfig.SandboxRoot.Value = _sandboxRoot;
+    var panel = NewPanel();
+
+    await WaitForDiskHintAsync(panel, $"并行度 {RecordingConfig.DefaultParallelism}");
+    panel.FootprintProbeRuns.ShouldBe(1);
+
+    _dm.RecordingConfig.Parallelism.Value = 3;
+
+    await WaitForDiskHintAsync(panel, "并行度 3");
+
+    // 引擎目录与 game/ 修改时间都没变：复用缓存，不再递归扫盘
+    panel.FootprintProbeRuns.ShouldBe(1);
+  }
+
+  [Test]
+  public async Task LastOutputDirChange_RefreshesLabelThroughBinding()
+  {
+    var panel = NewPanel();
+    var outputDir = Path.Combine(_root, "out");
+
+    _dm.RecordingConfig.LastOutputDir.Value = outputDir;
+
+    // 绑定回调只排 CallDeferred，等一帧落到主线程后再断言
+    await panel.ToSignal(TestScene.GetTree(), "process_frame");
+
+    panel.LastOutputLabel.Text.ShouldContain(outputDir);
+  }
+
+  [Test]
+  public void Refresh_ClearsStaleActionHintOnPageEntry()
+  {
+    _panel.CommitEngineDir(_missingDir);
+    _panel.ActionLabel.Text.ShouldNotBeEmpty();
+
+    _panel.Refresh();
+
+    _panel.ActionLabel.Text.ShouldBeEmpty();
+    _panel.ActionLabel.Visible.ShouldBeFalse();
+  }
+
+  [Test]
+  public async Task RefreshProbes_WithReadyPlugins_ReportsReadyAndActionableButtons()
+  {
+    _dm.RecordingConfig.EngineDir.Value = _engineDir;
+    _dm.RecordingConfig.SandboxRoot.Value = _sandboxRoot;
+    var panel = NewPanel();
+
+    panel.RefreshProbes();
 
     panel.PluginStatusLabel.Text.ShouldContain("autocmex：已安装并启用");
     panel.PluginStatusLabel.Text.ShouldContain("danmaku_recorder：已安装并启用");
     // 自家插件可随时重装（升级后刷新），第三方录制器已启用时无事可做
     panel.InstallPluginButton.Disabled.ShouldBeFalse();
     panel.EnableRecorderButton.Disabled.ShouldBeTrue();
+    await WaitForDiskHintAsync(panel, "并行度");
     panel.DiskHintLabel.Text.ShouldContain(_sandboxRoot);
-    panel.DiskHintLabel.Text.ShouldContain("并行度");
   }
 
   [Test]
@@ -360,7 +459,7 @@ public class RecordingConfigPanelTest : TestClass
   }
 
   [Test]
-  public void RefreshStatuses_WithDisabledPlugins_ReportsReasonAndKeepsButtonsConsistent()
+  public void RefreshProbes_WithDisabledPlugins_ReportsReasonAndKeepsButtonsConsistent()
   {
     WriteManifest(
       $$"""
@@ -373,7 +472,7 @@ public class RecordingConfigPanelTest : TestClass
     _dm.RecordingConfig.EngineDir.Value = _engineDir;
     var panel = NewPanel();
 
-    panel.RefreshStatuses();
+    panel.RefreshProbes();
 
     panel.PluginStatusLabel.Text.ShouldContain("autocmex：已安装但被禁用（引擎不会加载）");
     panel.PluginStatusLabel.Text.ShouldContain("danmaku_recorder：已安装但被禁用");
@@ -383,13 +482,13 @@ public class RecordingConfigPanelTest : TestClass
   }
 
   [Test]
-  public void RefreshStatuses_WithBrokenManifest_DisablesEveryDeployButton()
+  public void RefreshProbes_WithBrokenManifest_DisablesEveryDeployButton()
   {
     WriteManifest("{ not json");
     _dm.RecordingConfig.EngineDir.Value = _engineDir;
     var panel = NewPanel();
 
-    panel.RefreshStatuses();
+    panel.RefreshProbes();
 
     panel.PluginStatusLabel.Text.ShouldContain("插件清单损坏，已停止一切部署动作");
     // 坏清单不拿去写：两个部署按钮都要停
@@ -398,13 +497,13 @@ public class RecordingConfigPanelTest : TestClass
   }
 
   [Test]
-  public void RefreshStatuses_WithoutManifest_KeepsInstallAvailableWithReason()
+  public void RefreshProbes_WithoutManifest_KeepsInstallAvailableWithReason()
   {
     File.Delete(Path.Combine(_pluginsDir, PluginDeployer.ManifestFileName));
     _dm.RecordingConfig.EngineDir.Value = _engineDir;
     var panel = NewPanel();
 
-    panel.RefreshStatuses();
+    panel.RefreshProbes();
 
     // 全新引擎（清单还没生成）上不能把安装也堵死，否则用户无从下手
     panel.PluginStatusLabel.Text.ShouldContain("插件清单不存在");
@@ -439,13 +538,34 @@ public class RecordingConfigPanelTest : TestClass
     panel.ActionLabel.Text.ShouldContain("没有弹幕录制器条目");
   }
 
-  /// <summary>新建一个面板（同一 DataManager，便于验证「从配置回填」）。</summary>
+  /// <summary>新建一个已进场景树的面板（同一 DataManager，便于验证「从配置回填」与去抖探针）。</summary>
   /// <returns>已建好的面板。</returns>
   private RecordingConfigPanel NewPanel()
   {
     var panel = new RecordingConfigPanel(_dm);
+    _host.AddChild(panel);
     _panels.Add(panel);
     return panel;
+  }
+
+  /// <summary>等磁盘提示出现指定文案：覆盖 300ms 去抖 + 后台估算 + <c>CallDeferred</c> 回填。</summary>
+  /// <param name="panel">目标面板（必须已在场景树里）。</param>
+  /// <param name="expected">期望包含的文案。</param>
+  private async Task WaitForDiskHintAsync(RecordingConfigPanel panel, string expected)
+  {
+    var tree = TestScene.GetTree();
+    for (var attempt = 0; attempt < 60; attempt++)
+    {
+      if (panel.DiskHintLabel.Text.Contains(expected, StringComparison.Ordinal))
+      {
+        return;
+      }
+
+      await panel.ToSignal(tree, "process_frame");
+      await panel.ToSignal(tree.CreateTimer(0.05), "timeout");
+    }
+
+    panel.DiskHintLabel.Text.ShouldContain(expected);
   }
 
   /// <summary>写一个插件文件（相对 <c>game/plugins/</c>）。</summary>

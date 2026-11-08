@@ -2,6 +2,7 @@ namespace AutoCMEX;
 
 using System;
 using System.Threading.Tasks;
+using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Settings;
@@ -27,6 +28,14 @@ public class TestModelEntryPanelRuntime : TestClass
   {
     if (_host != null && !_host.IsQueuedForDeletion())
       _host.QueueFree();
+  }
+
+  /// <summary>等待若干帧（<c>CallDeferred</c> 与 Sync 绑定回调都在主线程消息队列里排队）。</summary>
+  /// <param name="frames">等待帧数。</param>
+  private async Task SettleAsync(int frames = 2)
+  {
+    for (var i = 0; i < frames; i++)
+      await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
   }
 
   [Test]
@@ -162,5 +171,56 @@ public class TestModelEntryPanelRuntime : TestClass
     await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
 
     panel.ModelList.GetChildren().Count.ShouldBe(4);
+  }
+
+  /// <summary>
+  /// 回归（S6）：新增模型后逐项填完端点/模型 Id/密钥（只写数据模型，不手动 Refresh），
+  /// 下拉项必须解除 disabled 并能被激活。
+  /// 旧实现只绑 AiModels 列表：列表本身没变，元素字段写入不触发任何刷新，
+  /// 下拉项一直停在上一次的 disabled 态 → 本会话无法激活 → 猜测页「模糊化」永久灰。
+  /// </summary>
+  [Test]
+  public async Task ModelFieldWrites_ReEnableSelectItem_AndAllowActivation()
+  {
+    _host = new Node();
+    TestScene.AddChild(_host);
+
+    var dm = new DataManager(
+      System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"AutoCMEX_Test_{Guid.NewGuid():N}"),
+      new AesEncryptor("test-key")
+    );
+    dm.LoadAll();
+
+    var panel = GD.Load<PackedScene>("res://src/ui/settings/AiModelConfigPanel.tscn")
+      .Instantiate<AiModelConfigPanel>();
+    (panel as IAutoInit).IsTesting = true;
+    panel.FakeDependency<DataManager>(dm);
+    _host.AddChild(panel);
+    await SettleAsync();
+
+    var select = (OptionButton)panel.FindChild("ActiveModelSelect", owned: false, recursive: true)!;
+    select.ItemCount.ShouldBe(1, "初始只有「(未选择)」占位项");
+
+    // 与用户操作同路径：点「新增模型」
+    var addModelBtn = (Button)panel.FindChild("AddModelBtn", owned: false, recursive: true)!;
+    addModelBtn.EmitSignal(BaseButton.SignalName.Pressed);
+    await SettleAsync();
+
+    select.ItemCount.ShouldBe(2);
+    select.IsItemDisabled(1).ShouldBeTrue("空模型不能激活（缺端点/Id/密钥）");
+
+    // 用户在条目里逐项填写：只写数据模型，刷新由元素级绑定驱动
+    var model = dm.Settings.AiModels[0];
+    model.EndpointUrl.Value = "https://api.example.com/v1";
+    model.ModelId.Value = "gpt-4o-mini";
+    model.EncryptedApiKey.Value = "cipher-text";
+    await SettleAsync();
+
+    AiServiceFactory.IsModelValid(model).ShouldBeTrue("用例前提：三个字段填完后模型应判为有效");
+    select.IsItemDisabled(1).ShouldBeFalse("字段填完后下拉项必须解除禁用");
+
+    // 可激活：选中第 1 项写入激活模型 Id
+    select.EmitSignal(OptionButton.SignalName.ItemSelected, 1L);
+    dm.Settings.ActiveAiModelId.Value.ShouldBe(model.Id.Value);
   }
 }

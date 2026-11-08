@@ -85,6 +85,11 @@ public partial class ModelEntryPanel : VBoxContainer
   /// <summary>
   /// 设置测试按钮回调
   /// </summary>
+  /// <remarks>
+  /// 「测试连接」是 <c>async void</c>，等待网络期间模型条目可能已被重建或整页被销毁
+  /// （删/加模型会重建列表，关设置页会 QueueFree）：两个 <c>await</c> 之后都必须确认
+  /// 节点还有效且仍在树内，不能对已释放节点赋值。
+  /// </remarks>
   public void SetTestCallback(Func<Task<bool>> testFunc)
   {
     TestBtn.Pressed += async () =>
@@ -92,12 +97,24 @@ public partial class ModelEntryPanel : VBoxContainer
       TestBtn.Disabled = true;
       TestBtn.Text = "测试中...";
       var success = await testFunc();
+
+      if (!IsInsideTreeSafe())
+        return;
+
       TestBtn.Disabled = false;
       TestBtn.Text = success ? "连接成功" : "连接失败";
       await ToSignal(GetTree().CreateTimer(2), "timeout");
+
+      if (!IsInsideTreeSafe())
+        return;
+
       TestBtn.Text = "测试连接";
     };
   }
+
+  /// <summary>节点是否还有效且仍在场景树内（<c>async void</c> 续体里碰控件前的双检）。</summary>
+  /// <returns>可以安全操作节点时为 <c>true</c>。</returns>
+  private bool IsInsideTreeSafe() => GodotObject.IsInstanceValid(this) && IsInsideTree();
 
   /// <summary>
   /// 设置删除按钮回调

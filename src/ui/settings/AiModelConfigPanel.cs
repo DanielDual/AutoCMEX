@@ -1,6 +1,7 @@
 namespace AutoCMEX.UI.Settings;
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
 using AutoCMEX;
@@ -40,6 +41,17 @@ public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
   private AppSettings _settings = new();
   private AutoList<AiModelConfig>.Binding? _aiModelsBinding;
 
+  /// <summary>每个模型元素内部字段的绑定（模型 Id / 格式 / 端点 / 密钥）。</summary>
+  /// <remarks>
+  /// 列表级 <c>OnModify</c> 只在模型增删时触发，改元素字段列表本身没有任何变化；
+  /// 只绑列表会让下拉项的可用态与标签停在上一次的状态（新模型填完 Key 仍是灰的）。
+  /// 重挂范式对齐 <see cref="AutoCMEX.UI.Info.BossDataWatcher"/>。
+  /// </remarks>
+  private readonly List<IDisposable> _modelFieldBindings = new();
+
+  /// <summary>是否正在重挂元素级绑定（Subscribe 时会立刻回放一次，抑制这类伪变更）。</summary>
+  private bool _isRebindingModelFields;
+
   public override void _Notification(int what)
   {
     this.Notify(what);
@@ -47,6 +59,8 @@ public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
     {
       _aiModelsBinding?.Dispose();
       _aiModelsBinding = null;
+
+      DisposeModelFieldBindings();
     }
   }
 
@@ -90,11 +104,69 @@ public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
     _dm?.TriggerAutoSave();
   }
 
+  /// <summary>
+  /// 全量刷新：先重挂模型元素级绑定（模型增删后旧绑定要释放），再重画下拉、超时与条目列表。
+  /// </summary>
   public void Refresh()
   {
+    RebindModelFieldBindings();
+
     RefreshModelSelect();
     RefreshTimeout();
     RefreshModelList();
+  }
+
+  /// <summary>
+  /// 为每个模型的 <see cref="AiModelConfig.ModelId"/> / <c>ApiFormat</c> /
+  /// <c>EndpointUrl</c> / <c>EncryptedApiKey</c> 挂值绑定，字段变化时只重画下拉。
+  /// </summary>
+  /// <remarks>
+  /// 重挂期间抑制回调：<see cref="AutoValue{T}"/> 订阅会立刻用当前值回放一次，
+  /// 不抑制的话每次模型增删都要按「模型数 × 4」排一串刷新（与 BossDataWatcher 同理）。
+  /// 抑制窗口内的真实变化不会丢：<see cref="Refresh"/> 紧接着就会整体重画一次。
+  /// </remarks>
+  private void RebindModelFieldBindings()
+  {
+    DisposeModelFieldBindings();
+
+    if (_dm is null)
+      return;
+
+    _isRebindingModelFields = true;
+    try
+    {
+      foreach (var model in _settings.AiModels)
+      {
+        // 四个字段共同决定下拉项：ModelId/ApiFormat 是标签，EndpointUrl/Key 参与可用性判定
+        _modelFieldBindings.Add(model.ModelId.Bind().OnValue(_ => OnModelFieldChanged()));
+        _modelFieldBindings.Add(model.ApiFormat.Bind().OnValue(_ => OnModelFieldChanged()));
+        _modelFieldBindings.Add(model.EndpointUrl.Bind().OnValue(_ => OnModelFieldChanged()));
+        _modelFieldBindings.Add(model.EncryptedApiKey.Bind().OnValue(_ => OnModelFieldChanged()));
+      }
+    }
+    finally
+    {
+      _isRebindingModelFields = false;
+    }
+  }
+
+  /// <summary>释放全部模型元素级绑定（模型被删除或本面板退出时）。</summary>
+  private void DisposeModelFieldBindings()
+  {
+    foreach (var binding in _modelFieldBindings)
+      binding.Dispose();
+
+    _modelFieldBindings.Clear();
+  }
+
+  /// <summary>模型字段变化：只重画下拉（不重建条目列表，避免正在输入的条目被销毁）。</summary>
+  private void OnModelFieldChanged()
+  {
+    if (_isRebindingModelFields)
+      return;
+
+    // 写方可能在数据层线程（改模型、导入配置），UI 必须调度到主线程
+    CallDeferred(nameof(RefreshModelSelect));
   }
 
   private void RefreshModelSelect()

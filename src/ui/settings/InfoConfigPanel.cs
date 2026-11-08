@@ -26,6 +26,11 @@ using Godot;
 /// <c>AutoList</c> 绑定驱动的重建负责，不手工推 UI。
 /// </para>
 /// <para>
+/// 行内字段（群 ID / 展示名 / 启用）另挂元素级 <c>AutoValue</c> 绑定：Koishi 回执改的是元素字段，
+/// 列表级 <c>OnModify</c> 看不到，只靠它会让行停在旧值；行自己提交的写回不再触发重建，
+/// 重建请求统一经 <c>CallDeferred</c> 落到主线程。
+/// </para>
+/// <para>
 /// 与 Koishi 的交互：Koishi 回传的群列表经 <see cref="InfoEventBus"/> 投递到本页
 /// （<see cref="InfoProtocol.GroupListResultEvent"/>），由 <c>GroupDirectoryService</c> 并入同一份
 /// 目标群列表；这里负责手工增删与命名纠正，两处显示同一份数据。
@@ -97,6 +102,21 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
 
   private readonly List<Control> _rows = new();
 
+  /// <summary>行内元素（展示名 / 群 ID / 启用）的 AutoValue 绑定；重建行前统一释放。</summary>
+  /// <remarks>
+  /// 列表级 <c>OnModify</c> 只在增删时触发；Koishi 回执改的是元素字段，不挂元素级绑定就一直停在旧行上。
+  /// </remarks>
+  private readonly List<IDisposable> _rowBindings = new();
+
+  /// <summary>正在重建行：元素绑定的「订阅即回调」不得再请求一次重建，否则会自激成每帧重建。</summary>
+  private bool _isRebuildingRows;
+
+  /// <summary>正在把本行用户输入写回模型：此时元素绑定回调不请求重建（本行已经是最新值）。</summary>
+  private bool _isWritingFromRow;
+
+  /// <summary>已排队一次列表重建：同一帧内多处元素变化合并为一次。</summary>
+  private volatile bool _refreshQueued;
+
   /// <inheritdoc/>
   public override void _Notification(int what)
   {
@@ -105,6 +125,9 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
     {
       _binding?.Dispose();
       _binding = null;
+
+      DisposeRowBindings();
+      _refreshQueued = false;
 
       InfoEvents.Received -= OnInfoEventReceived;
     }
@@ -130,7 +153,9 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
       return;
 
     _settings = _dm.Settings;
-    _groupDirectory = new GroupDirectoryService(_dm, Server);
+
+    // 传访问器而不是实例：WebSocket 重启会重建实例并释放旧实例，查群列表时必须取「当前」那一个
+    _groupDirectory = new GroupDirectoryService(_dm, () => Server);
     _binding = _settings.TargetGroups.Bind().OnModify(OnTargetGroupsChanged);
     Refresh();
     EnsureRecordingSection();
@@ -152,23 +177,47 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
   }
 
   /// <summary>按当前数据重建目标群行（供绑定回调与测试调用）。</summary>
+  /// <remarks>
+  /// 重建前释放旧的元素级绑定：旧行马上会被释放，绑定继续回调只会操作已释放节点。
+  /// 重建期间抑制元素绑定的「订阅即回调」，否则每挂一条绑定就再排一次重建，变成每帧重建。
+  /// </remarks>
   public void Refresh()
   {
-    foreach (var row in _rows)
+    _refreshQueued = false;
+    DisposeRowBindings();
+
+    _isRebuildingRows = true;
+    try
     {
-      GroupRows.RemoveChild(row);
-      row.QueueFree();
+      foreach (var row in _rows)
+      {
+        GroupRows.RemoveChild(row);
+        row.QueueFree();
+      }
+
+      _rows.Clear();
+
+      foreach (var group in _settings.TargetGroups)
+        _rows.Add(BuildRow(group));
     }
-
-    _rows.Clear();
-
-    foreach (var group in _settings.TargetGroups)
-      _rows.Add(BuildRow(group));
+    finally
+    {
+      _isRebuildingRows = false;
+    }
 
     StatusLabel.Text =
       _settings.TargetGroups.Count == 0
         ? "尚未配置目标群。"
         : $"共 {_settings.TargetGroups.Count} 个目标群（启用 {CountEnabled()} 个）。";
+  }
+
+  /// <summary>释放上一轮行内元素绑定。</summary>
+  private void DisposeRowBindings()
+  {
+    foreach (var binding in _rowBindings)
+      binding.Dispose();
+
+    _rowBindings.Clear();
   }
 
   private Control BuildRow(TargetGroup group)
@@ -182,34 +231,46 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
     };
     enabled.Toggled += pressed =>
     {
-      group.Enabled.Value = pressed;
+      // 勾选只更新状态、不重建整表：写模型时抑制元素绑定，避免同一次点击触发全表重建
+      WriteFromRow(() => group.Enabled.Value = pressed);
       _dm?.TriggerAutoSave();
       UpdateStatus();
     };
     row.AddChild(enabled);
 
+    var baseline = new RowBaseline
+    {
+      ChannelId = group.ChannelId.Value,
+      DisplayName = group.DisplayName.Value,
+    };
+
     var channelId = new LineEdit
     {
-      Text = group.ChannelId.Value,
+      Text = baseline.ChannelId,
       PlaceholderText = "群 ID（channelId）",
       CustomMinimumSize = new Vector2(180, 0),
       SizeFlagsHorizontal = SizeFlags.ExpandFill,
     };
     // 只在提交/失焦时写回：逐键写回会被绑定重建打断输入
-    channelId.TextSubmitted += text => CommitChannelId(group, text);
-    channelId.FocusExited += () => CommitChannelId(group, channelId.Text);
+    channelId.TextSubmitted += text => CommitChannelId(group, text, baseline);
+    channelId.FocusExited += () => CommitChannelId(group, channelId.Text, baseline);
     row.AddChild(channelId);
 
     var displayName = new LineEdit
     {
-      Text = group.DisplayName.Value,
+      Text = baseline.DisplayName,
       PlaceholderText = "展示名（可留空）",
       CustomMinimumSize = new Vector2(180, 0),
       SizeFlagsHorizontal = SizeFlags.ExpandFill,
     };
-    displayName.TextSubmitted += text => CommitDisplayName(group, text);
-    displayName.FocusExited += () => CommitDisplayName(group, displayName.Text);
+    displayName.TextSubmitted += text => CommitDisplayName(group, text, baseline);
+    displayName.FocusExited += () => CommitDisplayName(group, displayName.Text, baseline);
     row.AddChild(displayName);
+
+    // 元素级绑定：Koishi 回执之类的「别处改动」也要让行跟上（列表级 OnModify 不覆盖字段变化）
+    _rowBindings.Add(group.Enabled.Bind().OnValue(_ => OnRowElementChanged()));
+    _rowBindings.Add(group.ChannelId.Bind().OnValue(_ => OnRowElementChanged()));
+    _rowBindings.Add(group.DisplayName.Bind().OnValue(_ => OnRowElementChanged()));
 
     var remove = new Button { Text = "删除" };
     remove.Pressed += () =>
@@ -224,39 +285,115 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
     return row;
   }
 
-  private void CommitChannelId(TargetGroup group, string text)
+  /// <summary>元素字段被行外改动时排一次重建；本行自己的写回与建行回放不再触发。</summary>
+  private void OnRowElementChanged()
+  {
+    if (_isRebuildingRows || _isWritingFromRow)
+      return;
+
+    QueueRefresh();
+  }
+
+  /// <summary>把同帧内多次重建请求合并成一次（绑定回调里只调度，规则 19）。</summary>
+  private void QueueRefresh()
+  {
+    if (_refreshQueued)
+      return;
+
+    _refreshQueued = true;
+    CallDeferred(nameof(FlushRefresh));
+  }
+
+  /// <summary>执行排队中的重建（公开以便 <c>CallDeferred</c> 按名调用，不属于对外契约）。</summary>
+  public void FlushRefresh()
+  {
+    _refreshQueued = false;
+    Refresh();
+  }
+
+  /// <summary>重建列表后显示一条提示（公开以便 <c>CallDeferred</c> 按名调用，不属于对外契约）。</summary>
+  /// <param name="notice">提示文本。</param>
+  /// <remarks>
+  /// 失败提示必须等重建之后再写：<see cref="Refresh"/> 会重置 <see cref="StatusLabel"/>，
+  /// 且不能在输入框正在发信号的调用栈里同步重建它所在的行（会销毁发信号者）。
+  /// </remarks>
+  public void RefreshWithNotice(string notice)
+  {
+    Refresh();
+    StatusLabel.Text = notice;
+  }
+
+  /// <summary>把本行用户输入写回模型；期间元素绑定视为「已与模型一致」，不排重建。</summary>
+  /// <param name="write">写回动作。</param>
+  private void WriteFromRow(Action write)
+  {
+    _isWritingFromRow = true;
+    try
+    {
+      write();
+    }
+    finally
+    {
+      _isWritingFromRow = false;
+    }
+  }
+
+  private void CommitChannelId(TargetGroup group, string text, RowBaseline baseline)
   {
     var value = (text ?? string.Empty).Trim();
     if (string.Equals(group.ChannelId.Value, value, StringComparison.Ordinal))
+    {
+      // 文本已与模型一致：基线跟上当前值，后续「改回该值」才不会被误判成 stale
+      baseline.ChannelId = value;
       return;
+    }
 
-    // 先重建列表再写提示：Refresh() 会重置 StatusLabel，顺序反了提示看不见
+    // 文本仍等于本行基线：说明是别处（Koishi 回执）改了模型，不是用户输入，以模型为准
+    if (string.Equals(value, baseline.ChannelId, StringComparison.Ordinal))
+    {
+      QueueRefresh();
+      return;
+    }
+
+    // C6：不在这里同步 Refresh()——它会销毁正在发信号的输入框所在行
     if (value.Length == 0)
     {
-      Refresh();
-      StatusLabel.Text = "群 ID 不能为空，已保留原值。";
+      CallDeferred(nameof(RefreshWithNotice), "群 ID 不能为空，已保留原值。");
       return;
     }
 
     if (IsDuplicated(group, value))
     {
-      Refresh();
-      StatusLabel.Text = $"群 ID {value} 已存在，已保留原值。";
+      CallDeferred(nameof(RefreshWithNotice), $"群 ID {value} 已存在，已保留原值。");
       return;
     }
 
-    group.ChannelId.Value = value;
+    WriteFromRow(() => group.ChannelId.Value = value);
+    baseline.ChannelId = value;
     _dm?.TriggerAutoSave();
     UpdateStatus();
   }
 
-  private void CommitDisplayName(TargetGroup group, string text)
+  private void CommitDisplayName(TargetGroup group, string text, RowBaseline baseline)
   {
     var value = (text ?? string.Empty).Trim();
     if (string.Equals(group.DisplayName.Value, value, StringComparison.Ordinal))
+    {
+      // 文本已与模型一致：基线跟上当前值，后续「改回该值」才不会被误判成 stale
+      baseline.DisplayName = value;
       return;
+    }
 
-    group.DisplayName.Value = value;
+    // 写回前以模型当前值为准：文本仍等于本行基线（说明别处已改名）就按模型重建，不用旧文本覆盖。
+    // 文本与基线不同（含用户显式清空成空串）一律视为用户意图，正常写回。
+    if (string.Equals(value, baseline.DisplayName, StringComparison.Ordinal))
+    {
+      QueueRefresh();
+      return;
+    }
+
+    WriteFromRow(() => group.DisplayName.Value = value);
+    baseline.DisplayName = value;
     _dm?.TriggerAutoSave();
     UpdateStatus();
   }
@@ -290,7 +427,8 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
   private void UpdateStatus() =>
     StatusLabel.Text = $"共 {_settings.TargetGroups.Count} 个目标群（启用 {CountEnabled()} 个）。";
 
-  private void OnTargetGroupsChanged() => CallDeferred(nameof(Refresh));
+  /// <summary>目标群列表增删：排一次重建（与元素级变化合并成一次）。</summary>
+  private void OnTargetGroupsChanged() => QueueRefresh();
 
   /// <summary>本页被切显示时刷新录制分组状态（「整合」板块的 Editor Sharp 目录可能刚改过，影响「从 Sharp 目录推断」是否可用）。</summary>
   private void OnVisibilityChanged()
@@ -356,12 +494,33 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
 
     using (document)
     {
-      var added = _groupDirectory.HandleGroupListResult(document.RootElement);
+      var added = _groupDirectory.HandleGroupListResult(document.RootElement, out var renamed);
       if (added < 0)
         return;
 
-      PresentMessage("群列表已更新", $"新增 {added} 个目标群，请在下方启用需要发布的群。");
+      // 回执可能只改元素字段（群名）：列表级 OnModify 不触发，这里显式排一次重建；
+      // 与元素绑定排的重建合并为同一帧一次
+      QueueRefresh();
+      PresentMessage("群列表已更新", BuildGroupListMessage(added, renamed));
     }
+  }
+
+  /// <summary>拼群列表回执的结果提示（新增与改名分开说，避免「刷新了但界面没变」的误解）。</summary>
+  /// <param name="added">新增的目标群数量。</param>
+  /// <param name="renamed">被更名的已有目标群数量。</param>
+  /// <returns>面向用户的提示文本。</returns>
+  private static string BuildGroupListMessage(int added, int renamed)
+  {
+    if (added > 0 && renamed > 0)
+      return $"新增 {added} 个目标群，更新 {renamed} 个群名，请在下方启用需要发布的群。";
+
+    if (added > 0)
+      return $"新增 {added} 个目标群，请在下方启用需要发布的群。";
+
+    if (renamed > 0)
+      return $"更新 {renamed} 个群名。";
+
+    return "群列表没有变化。";
   }
 
   /// <summary>显示一条结果消息（对话框懒创建；未入树时不弹窗，仅保留文本供测试断言）。</summary>
@@ -396,5 +555,22 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
       }
     );
     _dm?.TriggerAutoSave();
+  }
+
+  /// <summary>
+  /// 一行内文本字段的「建行基线」：建行时取模型值，成功写回后随模型更新。
+  /// </summary>
+  /// <remarks>
+  /// 只用于区分「用户没改过这一格、是别处改了模型」与「用户确实改成了这个值」。
+  /// 若基线停留在建行时的值，用户把值改回建行原值（如群 ID 10001 → 10002 → 10001）
+  /// 会被误判成 stale 而静默丢弃。
+  /// </remarks>
+  private sealed class RowBaseline
+  {
+    /// <summary>群 ID 基线。</summary>
+    public string ChannelId { get; set; } = string.Empty;
+
+    /// <summary>展示名基线。</summary>
+    public string DisplayName { get; set; } = string.Empty;
   }
 }
