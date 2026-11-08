@@ -104,6 +104,13 @@ public sealed partial class RecordingRunPanel : AcceptDialog
   public void Start(RecordingRequest request)
   {
     ArgumentNullException.ThrowIfNull(request);
+    if (_runner is null)
+    {
+      throw new InvalidOperationException(
+        "RecordingRunPanel 必须通过带 runner 的构造创建；无参构造仅供 Introspection 元数据使用。"
+      );
+    }
+
     if (IsRunning)
     {
       return;

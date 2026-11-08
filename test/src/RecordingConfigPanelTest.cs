@@ -136,13 +136,22 @@ public class RecordingConfigPanelTest : TestClass
   }
 
   [Test]
-  public void Refresh_PicksUpConfigChangedOutsideThePanel()
+  public async Task EngineDirChange_RefreshesControlsThroughBinding()
   {
     _dm.RecordingConfig.EngineDir.Value = _engineDir;
 
-    _panel.Refresh();
+    // 走绑定路径（OnValue → CallDeferred 回填），不手动 Refresh。
+    for (var i = 0; i < 30; i++)
+    {
+      if (!string.Equals(_panel.EngineDirEdit.Text, _engineDir, StringComparison.Ordinal))
+        await _panel.ToSignal(TestScene.GetTree(), "process_frame");
+      else
+        break;
+    }
 
     _panel.EngineDirEdit.Text.ShouldBe(_engineDir);
+    for (var i = 0; i < 30 && !_panel.EngineStatusLabel.Text.Contains("引擎目录可用"); i++)
+      await _panel.ToSignal(TestScene.GetTree(), "process_frame");
     _panel.EngineStatusLabel.Text.ShouldContain("引擎目录可用");
   }
 
@@ -345,6 +354,7 @@ public class RecordingConfigPanelTest : TestClass
     _panel.CommitEngineDir(_missingDir);
     _panel.ActionLabel.Text.ShouldNotBeEmpty();
 
+    // 进页清空是 Refresh() 的显式行为，没有对应的模型字段可绑定，故保留手动调用。
     _panel.Refresh();
 
     _panel.ActionLabel.Text.ShouldBeEmpty();
@@ -432,6 +442,7 @@ public class RecordingConfigPanelTest : TestClass
     Directory.CreateDirectory(sharpDir);
     _dm.MergeConfig.SharpEditorPath.Value = sharpDir;
 
+    // 面板只绑 RecordingConfig；SharpEditorPath 属 MergeConfig，无绑定路径，刷新按钮态只能手动 Refresh。
     _panel.Refresh();
     _panel.InferEngineDirButton.Disabled.ShouldBeFalse();
 
@@ -451,6 +462,7 @@ public class RecordingConfigPanelTest : TestClass
     Directory.CreateDirectory(sharpDir);
     _dm.MergeConfig.SharpEditorPath.Value = sharpDir;
 
+    // 同上：SharpEditorPath 无绑定路径，保留手动刷新。
     _panel.Refresh();
     _panel.InferEngineDirButton.Disabled.ShouldBeFalse();
 

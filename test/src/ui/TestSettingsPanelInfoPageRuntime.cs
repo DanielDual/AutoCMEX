@@ -90,6 +90,8 @@ public class TestSettingsPanelInfoPageRuntime : TestClass
     var groupScroll = _panel.GetNode<ScrollContainer>("%GroupScroll");
 
     var section = info.RecordingSection.ShouldNotBeNull();
+    // 动态创建的分组必须真的解析到宿主页提供的数据管理器；只建控件不解析依赖时本断言会失败。
+    section.DataManager.ShouldBeSameAs(_dm);
     pageBody.GetChild(pageBody.GetChildCount() - 1).ShouldBe(section);
     groupScroll.GetIndex().ShouldBeLessThan(section.GetIndex());
     section.SectionTitle.Text.ShouldBe("符卡 GIF 录制设置");
