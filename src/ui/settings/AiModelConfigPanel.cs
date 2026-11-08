@@ -20,7 +20,7 @@ using Godot;
 /// AI 模型配置面板 — 独立场景，管理 AI 模型的选择、编辑和测试
 /// </summary>
 [Meta(typeof(IAutoNode))]
-public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
+public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel, IProvide<DataManager>
 {
   [Node("%ActiveModelSelect")]
   public IOptionButton ActiveModelSelect { get; set; } = default!;
@@ -36,6 +36,15 @@ public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
 
   [Dependency]
   public DataManager DataManager => this.DependOn<DataManager>();
+
+  /// <summary>
+  /// 提供给模型行面板（<see cref="ModelEntryPanel"/>）的数据管理器。
+  /// </summary>
+  /// <remarks>
+  /// 行面板是运行时逐条实例化的 AutoInject 节点，它们的 <c>[Dependency] DataManager</c> 需要
+  /// 最近的祖先 provider；本面板是它们的直接宿主，故把同一个实例往下提供，不另造服务。
+  /// </remarks>
+  DataManager IProvide<DataManager>.Value() => _dm!;
 
   private DataManager? _dm;
   private AppSettings _settings = new();
@@ -83,6 +92,10 @@ public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
       // UI 由 AutoList 绑定驱动：模型列表增删时自动重建刷新，
       // 事件处理器只写数据模型，不手动推 UI（符合重构核心原则）。
       _aiModelsBinding = _settings.AiModels.Bind().OnModify(() => CallDeferred(nameof(Refresh)));
+
+      // 先 Provide 再建行：行面板的 [Dependency] DataManager 解析自本面板，未初始化会一直挂着等
+      this.Provide();
+
       Refresh();
     }
   }
@@ -210,10 +223,12 @@ public partial class AiModelConfigPanel : VBoxContainer, IAiModelConfigPanel
       var entry = GD.Load<PackedScene>("res://src/ui/settings/ModelEntryPanel.tscn")
         .Instantiate<ModelEntryPanel>();
 
-      // 先加入节点树，触发 AutoConnect 连接其 [Node] 子节点，再执行 Setup，
-      // 避免在 Setup 访问 FormatOption 等节点时它们尚未解析（此前抛 NullReferenceException）。
+      // 先赋行级入参再入树：AutoInject 在 EnterTree 解析 [Node]、在 Ready 解析 [Dependency]
+      // 并回填控件，因此 AddChild 之后 Model 必须已经是目标模型。
+      entry.Model = model;
       ModelList.AddChild(entry);
-      entry.Setup(model, _dm);
+
+      // 命令类回调（测试连接 / 删除）仍由本面板注入：它们是行为而非依赖。
       entry.SetTestCallback(() => TestModelConnection(model));
       entry.SetDeleteCallback(() =>
       {

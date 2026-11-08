@@ -4,6 +4,7 @@
 [ext_resource type="PackedScene" uid="uid://cb6agaer6y6bb" path="res://src/ui/info/GifSetPanel.tscn" id="2_gifset"]
 [ext_resource type="PackedScene" uid="uid://b4ccjtqoneh0e" path="res://src/ui/info/GuessingTablePanel.tscn" id="3_guessing"]
 [ext_resource type="PackedScene" uid="uid://0kau4wocslml" path="res://src/ui/info/CreatorRemainingPanel.tscn" id="4_creator"]
+[ext_resource type="PackedScene" uid="uid://cf207h7rjdsqq" path="res://src/ui/info/ActivityRulePanel.tscn" id="5_activity"]
 
 [node name="Control" type="Control" unique_id=2075855882]
 layout_mode = 3
@@ -74,6 +75,13 @@ size_flags_horizontal = 3
 size_flags_vertical = 3
 
 [node name="CreatorRemainingPanel" type="VBoxContainer" parent="Root/Layout/TopScroll/Columns" unique_id=1587351980 instance=ExtResource("4_creator")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="ActivityRulePanel" type="VBoxContainer" parent="Root/Layout/TopScroll/Columns" unique_id=1830296745 instance=ExtResource("5_activity")]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(320, 0)
 layout_mode = 2

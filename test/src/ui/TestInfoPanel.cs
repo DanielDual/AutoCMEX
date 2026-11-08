@@ -397,11 +397,15 @@ public class TestInfoPanel : TestClass
     panel.ColumnPanels[2].ShouldBeOfType<CreatorRemainingPanel>();
     panel.ColumnPanels[3].ShouldBeOfType<ActivityRulePanel>();
 
-    foreach (var column in panel.ColumnPanels)
+    for (var i = 0; i < panel.ColumnPanels.Count; i++)
     {
+      var column = panel.ColumnPanels[i];
       column.ShouldNotBeNull();
       // 每栏保底最小宽度，窗口变窄时交给上栏横向滚动，而不是把栏压变形
       column!.CustomMinimumSize.X.ShouldBe(320f);
+      // 四栏全部是场景内实例（不是运行时 AddChild 装配），顺序由场景保证
+      column.GetParent().ShouldBe(columns, $"第 {i + 1} 栏应是场景里的 Columns 直接子节点");
+      column.GetIndex().ShouldBe(i, $"四栏顺序：第 {i + 1} 栏的索引应为 {i}");
     }
   }
 
@@ -411,7 +415,7 @@ public class TestInfoPanel : TestClass
   /// </summary>
   /// <remarks>
   /// 顺序由场景保证（GIF 集栏必须是 Columns 的第一个子节点），依赖来自信息面板的 provider；
-  /// 这两条任一被改回手动装配都会让本用例失败，同时也是「其余三栏仍运行时装配」的对照。
+  /// 这两条任一被改回手动装配都会让本用例失败。
   /// </remarks>
   [Test]
   public async Task GifSetColumn_IsSceneInstanceWithInjectedDependencies()
@@ -460,6 +464,34 @@ public class TestInfoPanel : TestClass
     creator.DataManager.ShouldBeSameAs(_dm);
     guessing.DataService.ShouldBeSameAs(creator.DataService, "两栏应共用信息面板提供的数据服务");
     guessing.Watcher.ShouldBeSameAs(creator.Watcher, "两栏应共用信息面板提供的观察者");
+  }
+
+  /// <summary>
+  /// 批3-C 装配契约：活动规则栏同样是 <c>InfoPanel.tscn</c> 里的场景内实例 + AutoInject 依赖注入，
+  /// 不再由信息面板在运行时 <c>AddChild</c> 并用 <c>Setup(...)</c> 手动传依赖。
+  /// </summary>
+  /// <remarks>
+  /// 与前三栏同一范式：位置由场景固定（第四位），DataManager 来自信息面板的 provider；
+  /// 依赖注入生效的直接证据是模型里的规则文本已回填到输入框。
+  /// </remarks>
+  [Test]
+  public async Task ActivityRuleColumn_IsSceneInstanceWithInjectedDependency()
+  {
+    CreateDataManager();
+    _dm.InfoConfig.ActivityRule.Value = "活动规则正文";
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var columns = panel.GetNode<HBoxContainer>("%Columns");
+    var column = panel.GetNode<ActivityRulePanel>("%ActivityRulePanel");
+
+    column.GetParent().ShouldBe(columns, "活动规则栏应是场景内实例，父节点为场景里的 Columns");
+    column.GetIndex().ShouldBe(3, "四栏顺序：活动规则栏排第四");
+    column.DataManager.ShouldBeSameAs(_dm, "依赖应由信息面板 provider 注入，而不是运行时传参");
+
+    var edit = (TextEdit)column.FindChild("RuleEdit", owned: false, recursive: true)!;
+    edit.Text.ShouldBe("活动规则正文", "依赖解析后应把模型里的规则文本回填到输入框");
   }
 
   /// <summary>
@@ -1077,6 +1109,48 @@ public class TestInfoPanel : TestClass
     _sent.Count.ShouldBe(1, "单栏发布不得连带其它栏");
     SentKind(_sent[0]).ShouldBe("GifSet");
     FindDialog(panel).DialogText.ShouldContain("共 1 项，成功 1 项");
+  }
+
+  /// <summary>
+  /// 批3-C 重入护栏：同一栏首次发布还没结束时再次触发，只发一次。
+  /// </summary>
+  /// <remarks>
+  /// 事件化之后栏位自己的忙碌态只覆盖同步派发段，覆盖不到真正的串行发送区间（等回执）；
+  /// 双击/连点会让同一套内容并发发两遍（两条 requestId 各等各的回执）。过滤必须发生在
+  /// 信息面板的收口处，且只挡在飞请求、不锁死栏位。
+  /// </remarks>
+  [Test]
+  public async Task ColumnPublish_DoubleTriggerWhileInFlight_SendsOnce()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    ImportGifSet();
+    EnableGroup("10001");
+    _dm.InfoConfig.ActivityRule.Value = "活动规则正文";
+
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var rule = (ActivityRulePanel)panel.ColumnPanels[3]!;
+    rule.PublishButton.Disabled.ShouldBeFalse();
+    var button = FindButton(rule, "PublishButton");
+
+    // 同一帧内连点两次：第一次的发布还在等回执，第二次必须被丢弃
+    button.EmitSignal(BaseButton.SignalName.Pressed);
+    button.EmitSignal(BaseButton.SignalName.Pressed);
+
+    (await PumpPublishAsync(panel, 1)).ShouldBeTrue();
+    await SettleAsync(panel);
+
+    _sent.Count.ShouldBe(1, "首次发布未完成时同一栏的重复触发必须被丢弃");
+    SentKind(_sent[0]).ShouldBe("ActivityRule");
+
+    // 上一轮结束后再点仍可正常发布：护栏只挡在飞请求，不把栏位锁死
+    button.EmitSignal(BaseButton.SignalName.Pressed);
+    (await PumpPublishAsync(panel, 2)).ShouldBeTrue();
+    await SettleAsync(panel);
+
+    _sent.Count.ShouldBe(2, "上一轮发布结束后应能重新发布同一栏");
+    SentKind(_sent[1]).ShouldBe("ActivityRule");
   }
 
   [Test]

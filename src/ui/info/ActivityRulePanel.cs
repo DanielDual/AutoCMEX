@@ -21,9 +21,13 @@ using Godot;
 /// <see cref="TextEdit.Text"/> 赋值同样会触发 <see cref="TextEdit.TextChanged"/>，因此用
 /// <c>_isApplyingModel</c> 区分"用户输入"与"模型回灌"，避免回灌被当成用户输入而反复触发保存。
 /// </para>
+/// <para>
+/// 本栏是 <c>InfoPanel.tscn</c> 里的场景内实例：依赖由信息面板经 AutoInject 提供，发布改为抛
+/// <see cref="PublishRequested"/> 事件，不再有 <c>Setup(...)</c> 手动注入。
+/// </para>
 /// </remarks>
 [Meta(typeof(IAutoNode))]
-public partial class ActivityRulePanel : VBoxContainer
+public partial class ActivityRulePanel : VBoxContainer, IActivityRulePanel
 {
   [Node("%RuleEdit")]
   public ITextEdit RuleEdit { get; set; } = default!;
@@ -31,9 +35,14 @@ public partial class ActivityRulePanel : VBoxContainer
   [Node("%PublishButton")]
   public IButton PublishButton { get; set; } = default!;
 
-  private DataManager? _dataManager;
+  /// <summary>数据管理器（由信息面板经 AutoInject 提供，与发布编排同源）。</summary>
+  [Dependency]
+  public DataManager DataManager => this.DependOn<DataManager>();
+
+  /// <summary>本栏发布请求：由信息面板订阅后统一编排串行发布（本栏不再持有发布回调）。</summary>
+  public event Action? PublishRequested;
+
   private InfoConfig? _config;
-  private ColumnPublishHandler? _publish;
   private AutoValue<string>.Binding? _ruleBinding;
   private bool _isApplyingModel;
   private bool _isPublishing;
@@ -48,46 +57,39 @@ public partial class ActivityRulePanel : VBoxContainer
     _ruleBinding = null;
   }
 
-  /// <summary>AutoInject 节点注入完成（依赖注入前，无需额外动作）。</summary>
-  public void OnReady() { }
-
-  /// <summary>AutoInject 依赖解析完成（本栏无依赖，无需额外动作）。</summary>
-  public void OnResolved() { }
-
-  /// <summary>
-  /// 装配本栏；由信息面板在本节点加入场景树后调用。
-  /// </summary>
-  /// <param name="dataManager">数据管理器（规则文本的持久化入口）。</param>
-  /// <param name="publish">本栏发布回调。</param>
-  public void Setup(DataManager dataManager, ColumnPublishHandler publish)
+  /// <summary>AutoInject 节点注入完成：只挂信号，依赖待解析后再绑定数据。</summary>
+  /// <remarks>
+  /// 信号连接放这里而不是 <see cref="OnResolved"/>：<c>OnReady</c> 每个节点实例只执行一次，
+  /// 而依赖重新解析（节点重新入树）会再次触发 <see cref="OnResolved"/>，重复连接信号会报
+  /// "already connected"。
+  /// </remarks>
+  public void OnReady()
   {
-    _dataManager = dataManager;
-    _config = dataManager.InfoConfig;
-    _publish = publish;
-
-    // 先落初值再挂绑定：初值赋值不应被当成用户输入
-    RuleEdit.Text = _config.ActivityRule.Value ?? string.Empty;
     RuleEdit.TextChanged += OnRuleTextChanged;
-    _ruleBinding = _config.ActivityRule.Bind().OnValue(OnRuleValueChanged);
-
     PublishButton.Pressed += OnPublishPressed;
     UpdatePublishButtonState();
   }
 
-  private void OnRuleTextChanged()
+  /// <summary>AutoInject 依赖解析完成：回填规则文本并挂模型绑定。</summary>
+  /// <remarks>
+  /// 可重复进入（节点重新入树）：绑定先释放再重挂，避免同一路变化排队多次；
+  /// 初值在挂绑定前落盘，回放时文本已相等故不会写成"用户输入"。
+  /// </remarks>
+  public void OnResolved()
   {
-    if (_config is null || _isApplyingModel)
-      return;
+    _config = DataManager.InfoConfig;
 
-    if (string.Equals(_config.ActivityRule.Value, RuleEdit.Text, StringComparison.Ordinal))
-      return;
+    ApplyRuleText(_config.ActivityRule.Value);
 
-    _config.ActivityRule.Value = RuleEdit.Text;
-    _dataManager?.TriggerAutoSave();
+    _ruleBinding?.Dispose();
+    _ruleBinding = _config.ActivityRule.Bind().OnValue(OnRuleValueChanged);
+
     UpdatePublishButtonState();
   }
 
-  private void OnRuleValueChanged(string? value)
+  /// <summary>把模型值回灌到输入框；回灌期间屏蔽"用户输入"分支。</summary>
+  /// <param name="value">规则文本。</param>
+  private void ApplyRuleText(string? value)
   {
     var text = value ?? string.Empty;
     if (string.Equals(text, RuleEdit.Text, StringComparison.Ordinal))
@@ -102,26 +104,42 @@ public partial class ActivityRulePanel : VBoxContainer
     {
       _isApplyingModel = false;
     }
+  }
 
+  private void OnRuleTextChanged()
+  {
+    if (_config is null || _isApplyingModel)
+      return;
+
+    if (string.Equals(_config.ActivityRule.Value, RuleEdit.Text, StringComparison.Ordinal))
+      return;
+
+    _config.ActivityRule.Value = RuleEdit.Text;
+    DataManager.TriggerAutoSave();
     UpdatePublishButtonState();
   }
 
-  private void OnPublishPressed()
+  private void OnRuleValueChanged(string? value)
   {
-    if (_publish is null || _isPublishing)
-      return;
-
-    // 规则文本是即时读模型发布的，发布期间只做忙碌态标记
-    _ = PublishAsync();
+    ApplyRuleText(value);
+    UpdatePublishButtonState();
   }
 
-  private async System.Threading.Tasks.Task PublishAsync()
+  /// <summary>发布按钮：触发 <see cref="PublishRequested"/>，由信息面板统一编排发布。</summary>
+  /// <remarks>
+  /// 事件同步派发，因此这里的忙碌态只覆盖派发段；真正的串行发送、失败即停、重试与
+  /// 「同一栏重复触发只发一次」的护栏由信息面板的发布编排负责（单栏与「一键转发」共用同一条链路）。
+  /// </remarks>
+  private void OnPublishPressed()
   {
+    if (_isPublishing)
+      return;
+
     _isPublishing = true;
-    PublishButton.Disabled = true;
+    UpdatePublishButtonState();
     try
     {
-      await _publish!();
+      PublishRequested?.Invoke();
     }
     finally
     {
@@ -133,7 +151,7 @@ public partial class ActivityRulePanel : VBoxContainer
 
   private void UpdatePublishButtonState()
   {
-    if (PublishButton is null)
+    if (PublishButton is null || RuleEdit is null)
       return;
 
     PublishButton.Disabled = _isPublishing || string.IsNullOrWhiteSpace(RuleEdit.Text);

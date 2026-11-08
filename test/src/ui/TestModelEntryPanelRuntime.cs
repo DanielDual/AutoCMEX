@@ -1,6 +1,7 @@
 namespace AutoCMEX;
 
 using System;
+using System.Linq;
 using System.Threading.Tasks;
 using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Storage;
@@ -30,6 +31,18 @@ public class TestModelEntryPanelRuntime : TestClass
       _host.QueueFree();
   }
 
+  /// <summary>造一个临时的 <see cref="DataManager"/>（行面板的 [Dependency] 与自动保存入口）。</summary>
+  /// <returns>已加载的数据管理器。</returns>
+  private static DataManager CreateDataManager()
+  {
+    var dm = new DataManager(
+      System.IO.Path.Combine(System.IO.Path.GetTempPath(), $"AutoCMEX_Test_{Guid.NewGuid():N}"),
+      new AesEncryptor("test-key")
+    );
+    dm.LoadAll();
+    return dm;
+  }
+
   /// <summary>等待若干帧（<c>CallDeferred</c> 与 Sync 绑定回调都在主线程消息队列里排队）。</summary>
   /// <param name="frames">等待帧数。</param>
   private async Task SettleAsync(int frames = 2)
@@ -48,6 +61,8 @@ public class TestModelEntryPanelRuntime : TestClass
     var entry = GD.Load<PackedScene>("res://src/ui/settings/ModelEntryPanel.tscn")
       .Instantiate<ModelEntryPanel>();
     (entry as IAutoInit).IsTesting = true;
+    // 行面板的 DataManager 是环境依赖（运行期由 AiModelConfigPanel 提供），这里伪造一份
+    entry.FakeDependency<DataManager>(CreateDataManager());
 
     _host.AddChild(entry);
 
@@ -61,8 +76,12 @@ public class TestModelEntryPanelRuntime : TestClass
     entry.DeleteBtn.ShouldNotBeNull();
   }
 
+  /// <summary>
+  /// 批3-C：行级模型不再走 <c>Setup(model, dm)</c>，改为入树前赋 <see cref="ModelEntryPanel.Model"/>；
+  /// 依赖由 <c>[Dependency] DataManager</c> 提供，Ready 后由依赖解析回填控件。
+  /// </summary>
   [Test]
-  public void DynamicInstance_Setup_PopulatesFields()
+  public void DynamicInstance_ModelProperty_PopulatesFieldsAfterResolve()
   {
     _host = new Node();
     TestScene.AddChild(_host);
@@ -70,19 +89,61 @@ public class TestModelEntryPanelRuntime : TestClass
     var entry = GD.Load<PackedScene>("res://src/ui/settings/ModelEntryPanel.tscn")
       .Instantiate<ModelEntryPanel>();
     (entry as IAutoInit).IsTesting = true;
-    _host.AddChild(entry);
 
     var model = new AiModelConfig
     {
-      ApiFormat = new Chickensoft.Sync.Primitives.AutoValue<string>("OpenAI"),
+      ApiFormat = new Chickensoft.Sync.Primitives.AutoValue<string>("Anthropic"),
       EndpointUrl = new Chickensoft.Sync.Primitives.AutoValue<string>("https://api.example.com/v1"),
       ModelId = new Chickensoft.Sync.Primitives.AutoValue<string>("model-x"),
+      EncryptedApiKey = new Chickensoft.Sync.Primitives.AutoValue<string>("cipher-text"),
     };
 
-    entry.Setup(model, dm: null);
+    // 与 AiModelConfigPanel.RefreshModelList 相同的顺序：先赋行级入参，再加入场景树
+    entry.Model = model;
+    entry.FakeDependency<DataManager>(CreateDataManager());
+    _host.AddChild(entry);
 
     entry.UrlInput.Text.ShouldBe("https://api.example.com/v1");
     entry.ModelIdInput.Text.ShouldBe("model-x");
+    entry.KeyInput.Text.ShouldBe("cipher-text");
+    entry.FormatOption.Selected.ShouldBe(1, "Anthropic 应对应下拉的第二项");
+  }
+
+  /// <summary>
+  /// 批3-C：行面板的编辑必须写回模型（原来挂在 <c>Setup</c> 的匿名处理器里，迁移后由 OnReady 只挂一次）。
+  /// </summary>
+  [Test]
+  public void RowEdits_WriteBackToModel()
+  {
+    _host = new Node();
+    TestScene.AddChild(_host);
+
+    var dm = CreateDataManager();
+    var model = new AiModelConfig
+    {
+      Id = new Chickensoft.Sync.Primitives.AutoValue<string>("id-edit"),
+    };
+
+    var entry = GD.Load<PackedScene>("res://src/ui/settings/ModelEntryPanel.tscn")
+      .Instantiate<ModelEntryPanel>();
+    (entry as IAutoInit).IsTesting = true;
+    entry.Model = model;
+    entry.FakeDependency<DataManager>(dm);
+    _host.AddChild(entry);
+
+    var urlInput = (LineEdit)entry.FindChild("UrlInput", owned: false, recursive: true)!;
+    urlInput.Text = "https://edited.example/v1";
+    urlInput.EmitSignal(LineEdit.SignalName.TextChanged, urlInput.Text);
+    model.EndpointUrl.Value.ShouldBe("https://edited.example/v1");
+
+    var modelIdInput = (LineEdit)entry.FindChild("ModelIdInput", owned: false, recursive: true)!;
+    modelIdInput.Text = "model-edited";
+    modelIdInput.EmitSignal(LineEdit.SignalName.TextChanged, modelIdInput.Text);
+    model.ModelId.Value.ShouldBe("model-edited");
+
+    var format = (OptionButton)entry.FindChild("FormatOption", owned: false, recursive: true)!;
+    format.EmitSignal(OptionButton.SignalName.ItemSelected, 1L);
+    model.ApiFormat.Value.ShouldBe("Anthropic");
   }
 
   [Test]
@@ -127,6 +188,15 @@ public class TestModelEntryPanelRuntime : TestClass
     // 则根因收敛到 RefreshModelList 本身。
     panel.ActiveModelSelect.ItemCount.ShouldBe(4);
     panel.ModelList.GetChildren().Count.ShouldBe(3);
+
+    // 批3-C：每行是「先赋 Model 再入树」，且行的 [Dependency] DataManager 解析自本面板的 provider
+    var entries = panel.ModelList.GetChildren().OfType<ModelEntryPanel>().ToList();
+    entries.Count.ShouldBe(3);
+    for (var i = 0; i < entries.Count; i++)
+    {
+      entries[i].Model.ShouldBeSameAs(dm.Settings.AiModels[i], "每行应绑定自己的模型");
+      entries[i].UrlInput.ShouldNotBeNull("依赖解析后 [Node] 应已注入");
+    }
   }
 
   [Test]

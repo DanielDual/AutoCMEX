@@ -41,11 +41,6 @@ public partial class InfoPanel
     IProvide<PublishService>,
     IProvide<BossDataWatcher>
 {
-  private const string ActivityRulePanelScenePath = "res://src/ui/info/ActivityRulePanel.tscn";
-
-  /// <summary>单栏最小宽度（像素）；窗口更窄时由上栏横向滚动承接，而不是把四栏挤变形。</summary>
-  private const int ColumnMinWidth = 320;
-
   /// <summary>
   /// 猜测表自动推送的防抖窗口（秒）：一次猜测会连着触发多次数据变化，
   /// 等它们收敛成一张表再发，避免群里被中间态的表图刷屏。
@@ -53,9 +48,6 @@ public partial class InfoPanel
   private const double AutoPublishDebounceSeconds = 1.5;
 
   #region AutoConnect Nodes
-
-  [Node("%Columns")]
-  public IHBoxContainer Columns { get; set; } = default!;
 
   [Node("%ForwardAllButton")]
   public IButton ForwardAllButton { get; set; } = default!;
@@ -71,9 +63,13 @@ public partial class InfoPanel
   [Node("%GuessingTablePanel")]
   public IGuessingTablePanel GuessingTablePanelNode { get; set; } = default!;
 
-  /// <summary>创作者剩余表栏（场景内实例，经 AutoInject 注入）；活动规则栏仍是运行时装配。</summary>
+  /// <summary>创作者剩余表栏（场景内实例，经 AutoInject 注入）。</summary>
   [Node("%CreatorRemainingPanel")]
   public ICreatorRemainingPanel CreatorRemainingPanelNode { get; set; } = default!;
+
+  /// <summary>活动规则栏（场景内实例，经 AutoInject 注入）。</summary>
+  [Node("%ActivityRulePanel")]
+  public IActivityRulePanel ActivityRulePanelNode { get; set; } = default!;
 
   #endregion
 
@@ -114,8 +110,6 @@ public partial class InfoPanel
   private GifSetService? _gifSets;
   private PublishService? _publisher;
 
-  private ActivityRulePanel? _activityRulePanel;
-
   /// <summary>
   /// 两张表栏共用的数据观察者：本面板创建并释放，两栏只订阅其
   /// <see cref="BossDataWatcher.Changed"/>。
@@ -142,7 +136,16 @@ public partial class InfoPanel
   private AcceptDialog? _reportDialog;
   private Button? _retryButton;
   private PublishReport? _lastReport;
+
+  /// <summary>「一键转发」/ 自动推送的在飞标记（只用于禁用顶部按钮，单栏发布另见 <see cref="_publishingKinds"/>）。</summary>
   private bool _isPublishing;
+
+  /// <summary>单栏发布的在飞栏位（仅主线程）：首次发布未结束时同一栏的重复触发直接丢弃。</summary>
+  /// <remarks>
+  /// 栏位的事件是同步派发的，栏位自己的忙碌态只覆盖派发段，覆盖不到真正的串行发送区间；
+  /// 重入过滤放在这里，和「一键转发」的 <see cref="_isPublishing"/> 各管一条链，互不改语义。
+  /// </remarks>
+  private readonly HashSet<PublishItemKind> _publishingKinds = new();
 
   /// <summary>自动推送防抖计时器；每次表变化都重启它，因此只在最后一次变化后触发一次。</summary>
   private Timer? _autoPublishTimer;
@@ -166,7 +169,7 @@ public partial class InfoPanel
 
     _autoPublishTimer?.Stop();
 
-    // 三栏都是场景内子节点：先退订它们的事件，避免本面板释放后仍有回调指过来
+    // 四栏都是场景内子节点：先退订它们的事件，避免本面板释放后仍有回调指过来
     UnsubscribeColumnEvents();
 
     // 两栏在 _ExitTree 里先退订（子节点先于父节点退出），这里才是共享观察者的唯一释放点
@@ -183,7 +186,7 @@ public partial class InfoPanel
     AutoPublishGuessingTable.Toggled += OnAutoPublishToggled;
   }
 
-  /// <summary>AutoInject 依赖解析完成：创建并提供子栏所需服务，再装配其余三栏与顶部操作行。</summary>
+  /// <summary>AutoInject 依赖解析完成：创建并提供子栏所需服务，再订阅四栏事件、绑数据与顶部操作行。</summary>
   /// <remarks>
   /// <see cref="IProvide{T}"/> 的服务必须先创建、再 <c>Provide()</c>：场景内实例的 GIF 集栏在
   /// 依赖解析时会等待本面板 provider 初始化，Provide 之后它才会执行自己的 <c>OnResolved</c>。
@@ -201,14 +204,12 @@ public partial class InfoPanel
     // 因为写入可能来自 WebSocket 线程池（猜测模块在 Task.Run 里改数据）。
     _watcher = new BossDataWatcher(_dm, static action => Callable.From(action).CallDeferred());
 
-    // 先订阅三栏事件再提供服务：Provide 会立刻驱动场景内实例的 OnResolved，
+    // 先订阅四栏事件再提供服务：Provide 会立刻驱动场景内实例的 OnResolved，
     // 那次首次重建若正好判出「表变了」会抛 TableChanged，晚订阅就漏掉了。
     SubscribeColumnEvents();
 
-    // 再提供服务：三栏都是场景内实例，它们的依赖在等本面板的 provider 初始化
+    // 再提供服务：四栏都是场景内实例，它们的依赖在等本面板的 provider 初始化
     this.Provide();
-
-    BuildColumns();
 
     _targetGroupsBinding = _dm.Settings.TargetGroups.Bind().OnModify(OnTargetGroupsChanged);
     RebindTargetGroupFieldBindings();
@@ -274,8 +275,8 @@ public partial class InfoPanel
   /// 四栏引用，顺序为 GIF 集 → 猜测表 → 创作者表 → 活动规则。
   /// </summary>
   /// <remarks>
-  /// 前三栏来自 <c>InfoPanel.tscn</c> 的场景内实例（顺序已由场景保证），活动规则栏仍是运行时装配；
-  /// 供面板级测试断言装配结果，装载失败的栏位为 null 且已记录错误。
+  /// 四栏都是 <c>InfoPanel.tscn</c> 的场景内实例（顺序由场景保证），依赖由本面板经 AutoInject 提供、
+  /// 发布请求经各栏事件收口；供面板级测试断言装配结果。
   /// </remarks>
   public IReadOnlyList<Control?> ColumnPanels =>
     new Control?[]
@@ -283,41 +284,10 @@ public partial class InfoPanel
       GifSetPanelNode as Control,
       GuessingTablePanelNode as Control,
       CreatorRemainingPanelNode as Control,
-      _activityRulePanel,
+      ActivityRulePanelNode as Control,
     };
 
-  /// <summary>装配仍是运行时构建的栏位（活动规则栏等到批3-C 再迁移进场景）。</summary>
-  private void BuildColumns()
-  {
-    _activityRulePanel = InstantiateColumn<ActivityRulePanel>(ActivityRulePanelScenePath);
-    _activityRulePanel?.Setup(_dm!, CreateColumnHandler(PublishItemKind.ActivityRule));
-  }
-
-  private T? InstantiateColumn<T>(string scenePath)
-    where T : Control
-  {
-    var scene = GD.Load<PackedScene>(scenePath);
-    if (scene is null)
-    {
-      GD.PushError($"InfoPanel: 栏位场景加载失败：{scenePath}");
-      return null;
-    }
-
-    var column = scene.Instantiate<T>();
-    column.CustomMinimumSize = new Vector2(ColumnMinWidth, 0);
-    column.SizeFlagsHorizontal = SizeFlags.ExpandFill;
-    column.SizeFlagsVertical = SizeFlags.ExpandFill;
-
-    Columns.AddChild(column);
-
-    // 注意：Setup 依赖 [Node] 注入结果，必须在 AddChild 之后调用
-    return column;
-  }
-
-  private ColumnPublishHandler CreateColumnHandler(PublishItemKind kind) =>
-    () => PublishColumnAsync(kind);
-
-  /// <summary>订阅三栏的事件（先退订再挂，依赖重复解析时不会重复挂接）。</summary>
+  /// <summary>订阅四栏的事件（先退订再挂，依赖重复解析时不会重复挂接）。</summary>
   private void SubscribeColumnEvents()
   {
     UnsubscribeColumnEvents();
@@ -328,9 +298,11 @@ public partial class InfoPanel
     GuessingTablePanelNode.TableChanged += OnGuessingTableChanged;
 
     CreatorRemainingPanelNode.PublishRequested += OnCreatorRemainingPublishRequested;
+
+    ActivityRulePanelNode.PublishRequested += OnActivityRulePublishRequested;
   }
 
-  /// <summary>退订三栏的事件：本面板退出前、子节点即将释放时调用。</summary>
+  /// <summary>退订四栏的事件：本面板退出前、子节点即将释放时调用。</summary>
   /// <remarks>场景内实例在 <c>OnReady</c> 之前未注入，故逐个判空。</remarks>
   private void UnsubscribeColumnEvents()
   {
@@ -345,6 +317,9 @@ public partial class InfoPanel
 
     if (CreatorRemainingPanelNode is not null)
       CreatorRemainingPanelNode.PublishRequested -= OnCreatorRemainingPublishRequested;
+
+    if (ActivityRulePanelNode is not null)
+      ActivityRulePanelNode.PublishRequested -= OnActivityRulePublishRequested;
   }
 
   /// <summary>GIF 集栏的发布请求。</summary>
@@ -359,16 +334,30 @@ public partial class InfoPanel
   private async void OnCreatorRemainingPublishRequested() =>
     await PublishColumnSafelyAsync(PublishItemKind.CreatorRemainingTable);
 
+  /// <summary>活动规则栏的发布请求。</summary>
+  private async void OnActivityRulePublishRequested() =>
+    await PublishColumnSafelyAsync(PublishItemKind.ActivityRule);
+
   /// <summary>
   /// 单栏发布请求的统一收口：复用本面板的发布编排（串行、失败即停、结果对话框）。
   /// </summary>
   /// <remarks>
+  /// <para>
   /// 栏位只抛事件、不持有发布回调；<c>async void</c> 是事件处理器的既定形态，
   /// 异常必须在此收口，否则会被 Godot 的同步上下文吞掉。
+  /// </para>
+  /// <para>
+  /// 同一栏的重入护栏：事件是同步派发的，栏位自己的忙碌态只覆盖派发段，
+  /// 「首次发布还没结束就再点一次」若不过滤会并发发出同一套内容（双击、连点）。
+  /// 这里按 <see cref="PublishItemKind"/> 记在飞请求，重复触发直接丢弃，收尾时释放。
+  /// </para>
   /// </remarks>
   /// <param name="kind">要发布的栏位。</param>
   private async Task PublishColumnSafelyAsync(PublishItemKind kind)
   {
+    if (!_publishingKinds.Add(kind))
+      return;
+
     try
     {
       await PublishColumnAsync(kind);
@@ -376,6 +365,10 @@ public partial class InfoPanel
     catch (Exception ex)
     {
       GD.PushWarning($"InfoPanel: {PublishOrder.GetTitle(kind)}发布失败：{ex.Message}");
+    }
+    finally
+    {
+      _publishingKinds.Remove(kind);
     }
   }
 

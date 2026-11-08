@@ -12,6 +12,17 @@ using Godot;
 /// <summary>
 /// 模型条目面板 — 独立场景，展示和编辑单个 AI 模型配置
 /// </summary>
+/// <remarks>
+/// <para>
+/// 本面板由 <see cref="AiModelConfigPanel"/> 按模型逐条实例化，因此「展示哪个模型」是行级入参：
+/// 用 <see cref="Model"/> 属性在入树前赋值，而不是构造注入或依赖注入。
+/// </para>
+/// <para>
+/// 数据管理器是<b>环境依赖</b>（自动保存入口），由最近的祖先 provider 经 AutoInject 提供
+/// （运行期由 <see cref="AiModelConfigPanel"/> 逐行提供，面板级测试用 <c>FakeDependency</c>）；
+/// <see cref="Model"/> 非注入。
+/// </para>
+/// </remarks>
 [Meta(typeof(IAutoNode))]
 public partial class ModelEntryPanel : VBoxContainer
 {
@@ -36,11 +47,21 @@ public partial class ModelEntryPanel : VBoxContainer
   [Node("%DeleteBtn")]
   public IButton DeleteBtn { get; set; } = default!;
 
-  private AiModelConfig _model = default!;
-  private DataManager? _dm;
+  /// <summary>数据管理器（自动保存入口，由祖先 provider 经 AutoInject 提供）。</summary>
+  [Dependency]
+  public DataManager DataManager => this.DependOn<DataManager>();
+
+  /// <summary>本行展示/编辑的模型；由创建方在加入场景树前赋值（per-row 入参，非注入）。</summary>
+  public AiModelConfig Model { get; set; } = default!;
 
   public override void _Notification(int what) => this.Notify(what);
 
+  /// <summary>AutoInject 节点注入完成：只挂信号与初始化下拉项，模型回填待依赖解析后再做。</summary>
+  /// <remarks>
+  /// 信号连接放这里而不是 <see cref="OnResolved"/>：<c>OnReady</c> 每个节点实例只执行一次，
+  /// 而依赖重新解析（节点重新入树）会再次触发 <see cref="OnResolved"/>，重复连接信号会报
+  /// "already connected"。
+  /// </remarks>
   public void OnReady()
   {
     FormatOption.AddItem("OpenAI");
@@ -48,38 +69,26 @@ public partial class ModelEntryPanel : VBoxContainer
     FormatOption.ItemSelected += OnFormatChanged;
 
     ToggleKeyBtn.Toggled += OnToggleKey;
+
+    UrlInput.TextChanged += OnUrlTextChanged;
+    ModelIdInput.TextChanged += OnModelIdTextChanged;
+    KeyInput.TextChanged += OnApiKeyTextChanged;
   }
 
-  public void OnResolved() { }
-
-  /// <summary>
-  /// 设置模型数据和 DataManager 引用
-  /// </summary>
-  public void Setup(AiModelConfig model, DataManager? dm)
+  /// <summary>AutoInject 依赖解析完成：把 <see cref="Model"/> 回填到控件。</summary>
+  /// <remarks>
+  /// 可重复进入（节点重新入树）；控件赋值（<c>LineEdit.Text</c> / <c>OptionButton.Select</c>）
+  /// 不会回发变更信号，因此重复回填不会写成"用户输入"。
+  /// </remarks>
+  public void OnResolved()
   {
-    _model = model;
-    _dm = dm;
+    if (Model is null)
+      return;
 
-    FormatOption.Select(model.ApiFormat.Value == "Anthropic" ? 1 : 0);
-    UrlInput.Text = model.EndpointUrl.Value;
-    ModelIdInput.Text = model.ModelId.Value;
-    KeyInput.Text = model.EncryptedApiKey.Value;
-
-    UrlInput.TextChanged += (text) =>
-    {
-      _model.EndpointUrl.Value = text;
-      _dm?.TriggerAutoSave();
-    };
-    ModelIdInput.TextChanged += (text) =>
-    {
-      _model.ModelId.Value = text;
-      _dm?.TriggerAutoSave();
-    };
-    KeyInput.TextChanged += (text) =>
-    {
-      _model.EncryptedApiKey.Value = text;
-      _dm?.TriggerAutoSave();
-    };
+    FormatOption.Select(Model.ApiFormat.Value == "Anthropic" ? 1 : 0);
+    UrlInput.Text = Model.EndpointUrl.Value;
+    ModelIdInput.Text = Model.ModelId.Value;
+    KeyInput.Text = Model.EncryptedApiKey.Value;
   }
 
   /// <summary>
@@ -124,10 +133,40 @@ public partial class ModelEntryPanel : VBoxContainer
     DeleteBtn.Pressed += deleteAction;
   }
 
+  private void OnUrlTextChanged(string text)
+  {
+    if (Model is null)
+      return;
+
+    Model.EndpointUrl.Value = text;
+    DataManager.TriggerAutoSave();
+  }
+
+  private void OnModelIdTextChanged(string text)
+  {
+    if (Model is null)
+      return;
+
+    Model.ModelId.Value = text;
+    DataManager.TriggerAutoSave();
+  }
+
+  private void OnApiKeyTextChanged(string text)
+  {
+    if (Model is null)
+      return;
+
+    Model.EncryptedApiKey.Value = text;
+    DataManager.TriggerAutoSave();
+  }
+
   private void OnFormatChanged(long index)
   {
-    _model.ApiFormat.Value = index == 1 ? "Anthropic" : "OpenAI";
-    _dm?.TriggerAutoSave();
+    if (Model is null)
+      return;
+
+    Model.ApiFormat.Value = index == 1 ? "Anthropic" : "OpenAI";
+    DataManager.TriggerAutoSave();
   }
 
   private void OnToggleKey(bool on)
