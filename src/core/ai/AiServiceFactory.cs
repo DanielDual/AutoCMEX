@@ -35,7 +35,11 @@ public class AiServiceFactory
   public virtual IAiService GetActiveService()
   {
     var config = GetActiveModelConfig();
-    return CreateService(config, _dataManager.Settings.AiTimeoutSeconds.Value, _log);
+    // 按具体实现类取模块日志器，保持日志面板的模块筛选粒度。
+    var moduleLog = string.Equals(config.ApiFormat.Value, "Anthropic", StringComparison.Ordinal)
+      ? _dataManager.GetLogger(nameof(AnthropicService))
+      : _dataManager.GetLogger(nameof(OpenAiService));
+    return CreateService(config, _dataManager.Settings.AiTimeoutSeconds.Value, moduleLog);
   }
 
   /// <summary>

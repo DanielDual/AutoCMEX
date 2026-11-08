@@ -172,9 +172,8 @@ public partial class MainWindow
   /// <remarks>
   /// Godot 拆解节点树时子节点先退出，设置面板会在自己的退出回调里把去抖窗口内尚未提交的
   /// 端口编辑写回模型；若不提前置位，这笔写入会经配置绑定触发一次 WebSocket 重启，
-  /// 而此刻 <see cref="AutoCMEX.Main"/> 已关闭日志服务 → 异步重启会在拆解期失败并重建日志。
-  /// 这里必须显式置位：不能依赖 <c>OnWMCloseRequest</c> 之类的 AutoOn 回调与 <c>_ExitTree</c>
-  /// 的时序（后者晚于子面板退出）。
+  /// 在拆解期再启停/重建实例是不允许的（会留下多余实例并碰正在释放的节点）。
+  /// 这里必须显式置位：不能只依赖 <c>_ExitTree</c> 的时序（后者晚于子面板退出）。
   /// </remarks>
   public override void _Notification(int what)
   {

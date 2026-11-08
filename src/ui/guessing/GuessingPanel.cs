@@ -90,8 +90,8 @@ public partial class GuessingPanel : Control, IGuessingPanel
   private bool _isRetrying;
 
   /// <summary>本面板日志：依赖解析时按模块名取自 <see cref="DataManager.GetLogger"/>（生产为 ILogService 模块 logger，测试为 NullLog）。</summary>
-  /// <remarks>解析前为 null；所有使用点都在 OnResolved 之后（按钮/重试等用户交互），不会提前触碰。</remarks>
-  private ILog _log = default!;
+  /// <remarks>解析前退回 NullLog 兜底；所有使用点都在 OnResolved 之后（按钮/重试等用户交互）。</remarks>
+  private ILog _log = NullLog.Instance;
 
   /// <summary>
   /// 测试用：获取 OnClearDropped 委托

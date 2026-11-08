@@ -49,7 +49,7 @@ public class DataManager : IDisposable
   /// 同时避免核心层反向依赖启动层的静态日志定位。
   /// </summary>
   /// <remarks>
-  /// 默认返回本管理器自身的日志器（<see cref="Log"/>）；生产由 MainWindow 注入
+  /// 默认返回本管理器自身的日志器（<c>_log</c>）；生产由 MainWindow 注入
   /// <c>_logService.GetLogger</c> 的取用器，测试不需要改动。
   /// </remarks>
   private readonly Func<string, ILog> _loggerFactory;

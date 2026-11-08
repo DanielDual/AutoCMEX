@@ -132,8 +132,8 @@ public partial class MergePanel : Control, IMergePanel
   private DataManager? _dm;
 
   /// <summary>本面板日志：依赖解析时按模块名取自 <see cref="DataManager.GetLogger"/>（生产为 ILogService 模块 logger，测试为 NullLog）。</summary>
-  /// <remarks>解析前为 null；唯一使用点在导入失败的用户交互路径上，不会提前触碰。</remarks>
-  private ILog _log = default!;
+  /// <remarks>解析前退回 NullLog 兜底；唯一使用点在导入失败的用户交互路径上。</remarks>
+  private ILog _log = NullLog.Instance;
 
   private AutoList<CreatorPackage>.Binding? _creatorPackagesBinding;
   private AutoList<SpellCardMappingEntry>.Binding? _mappingBinding;
