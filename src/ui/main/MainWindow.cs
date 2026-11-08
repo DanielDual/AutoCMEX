@@ -234,8 +234,7 @@ public partial class MainWindow
     }
     catch (Exception ex)
     {
-      AppLogs
-        .GetOrCreate()
+      _logService
         .GetLogger(nameof(MainWindow))
         .Err($"MainWindow: flush pending save failed: {ex.GetType().Name}: {ex.Message}");
     }
@@ -246,36 +245,49 @@ public partial class MainWindow
     var isTesting = (this as IAutoInit).IsTesting;
     if (!isTesting)
     {
+      // 唯一 bootstrap：生产装配需要一个「取得 ILogService」的起点（Main 启动时已初始化，这里只是取用）。
+      // 此后本窗口内所有手动构造的服务都从这里显式取模块 logger，UI 层不再静态定位日志；
+      // AppLogs 只保留 Main.cs 启动与这一处 bootstrap。
+      _logService = AppLogs.GetOrCreate();
+
       // 初始化核心服务
       var dataDir = ProjectSettings.GlobalizePath("user://data/");
       var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(dataDir));
+      // 模块日志取用器：核心服务经 DataManager.GetLogger 取到带模块名的日志，核心层因此不需要
+      // 静态日志定位；测试用 4 参构造（工厂默认退回注入的 log），既有用例无需改动。
       // 自动保存的「捕获 + 序列化」必须回主线程执行：防抖到期在池线程，只把原子写盘留在池线程，
       // 避免池线程枚举活的 AutoList（含 Boss.SpellCards 等嵌套集合）。
-      var dataLog = AppLogs.GetOrCreate().GetLogger(nameof(DataManager));
       _dataManager = new DataManager(
         dataDir,
         encryptor,
-        dataLog,
-        action => Callable.From(action).CallDeferred()
+        _logService.GetLogger(nameof(DataManager)),
+        action => Callable.From(action).CallDeferred(),
+        module => _logService.GetLogger(module)
       );
       _dataManager.LoadAll();
 
-      _aiServiceFactory = new AiServiceFactory(_dataManager);
+      var aiLog = _logService.GetLogger(nameof(AiServiceFactory));
+      _aiServiceFactory = new AiServiceFactory(_dataManager, aiLog);
 
       _guessResponseHandler = new GuessResponseHandler();
-      _guessPipeline = new GuessPipeline(_guessResponseHandler, _dataManager.Aliases);
+      _guessPipeline = new GuessPipeline(
+        _guessResponseHandler,
+        _dataManager.Aliases,
+        _logService.GetLogger(nameof(GuessPipeline))
+      );
       var droppedGuessRepository = new DroppedGuessRepository();
       _guessProcessingService = new GuessProcessingService(
         _dataManager,
         _aiServiceFactory,
         _guessResponseHandler,
-        droppedGuessRepository
+        droppedGuessRepository,
+        _logService.GetLogger(nameof(GuessProcessingService))
       );
 
       // 初始化 WebSocket（Server 或 Client 模式）。实例的创建/启停/重启统一走 WebSocketLifecycle：
       // 配置绑定的 OnValue 是「订阅即回调」，启动时三个绑定会连打三次重启，
       // 必须由它串行化并跳过「配置其实没变」的重复重启，否则会留下继续连接却无人引用的孤儿实例。
-      var wsLog = AppLogs.GetOrCreate().GetLogger("WebSocket");
+      var wsLog = _logService.GetLogger("WebSocket");
       var wsInitializer = new WebSocketInitializer(wsLog, _guessProcessingService, _infoEvents);
       _webSocketLifecycle = new WebSocketLifecycle(wsInitializer.CreateServer, wsLog);
       _webSocketServer = _webSocketLifecycle.Create(_dataManager.Settings);
@@ -283,11 +295,9 @@ public partial class MainWindow
       // 丢包重试协调器：在 lifecycle 之后构造，重试成功时经它向活跃端点推送回复
       _droppedGuessRetryService = new DroppedGuessRetryService(
         _guessProcessingService,
-        _webSocketLifecycle
+        _webSocketLifecycle,
+        _logService.GetLogger(nameof(DroppedGuessRetryService))
       );
-
-      // 初始化日志服务
-      _logService = AppLogs.GetOrCreate();
 
       // 订阅配置变更事件，自动重启 WebSocket（保存 Binding 引用以便释放）
       _webSocketModeBinding = _dataManager
@@ -376,8 +386,7 @@ public partial class MainWindow
     }
     catch (Exception ex)
     {
-      AppLogs
-        .GetOrCreate()
+      _logService
         .GetLogger("WebSocket")
         .Err($"MainWindow: restart WebSocket failed: {ex.GetType().Name}: {ex.Message}");
     }

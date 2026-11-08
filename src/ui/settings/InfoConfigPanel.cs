@@ -166,8 +166,13 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel, IProvide
     // 必须先 Provide 再挂子节点，否则子节点的依赖解析会一直等 provider 初始化。
     this.Provide();
 
-    // 传访问器而不是实例：WebSocket 重启会重建实例并释放旧实例，查群列表时必须取「当前」那一个
-    _groupDirectory = new GroupDirectoryService(_dm, () => Server);
+    // 传访问器而不是实例：WebSocket 重启会重建实例并释放旧实例，查群列表时必须取「当前」那一个；
+    // 日志按本服务模块名取自 DataManager 的工厂，不再走 core 的静态日志定位兜底。
+    _groupDirectory = new GroupDirectoryService(
+      _dm,
+      () => Server,
+      _dm.GetLogger(nameof(GroupDirectoryService))
+    );
     _binding = _settings.TargetGroups.Bind().OnModify(OnTargetGroupsChanged);
     Refresh();
     EnsureRecordingSection();

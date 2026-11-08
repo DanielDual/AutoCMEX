@@ -88,7 +88,10 @@ public partial class GuessingPanel : Control, IGuessingPanel
   private AutoList<AiModelConfig>.Binding? _aiModelsBinding;
   private AutoList<DroppedGuess>.Binding? _droppedGuessesBinding;
   private bool _isRetrying;
-  private ILog _log = AppLogs.GetOrCreate().GetLogger(nameof(GuessingPanel));
+
+  /// <summary>本面板日志：依赖解析时按模块名取自 <see cref="DataManager.GetLogger"/>（生产为 ILogService 模块 logger，测试为 NullLog）。</summary>
+  /// <remarks>解析前为 null；所有使用点都在 OnResolved 之后（按钮/重试等用户交互），不会提前触碰。</remarks>
+  private ILog _log = default!;
 
   /// <summary>
   /// 测试用：获取 OnClearDropped 委托
@@ -128,6 +131,7 @@ public partial class GuessingPanel : Control, IGuessingPanel
   public void OnResolved()
   {
     _dm = DataManager;
+    _log = _dm.GetLogger(nameof(GuessingPanel));
     _guessProcessingService = GuessProcessingService;
     _retryService = DroppedGuessRetryService;
 
@@ -252,7 +256,7 @@ public partial class GuessingPanel : Control, IGuessingPanel
     ResponseDisplay.Text = "[color=gray]正在调用 AI...[/color]";
     try
     {
-      var fuzzifier = new AiFuzzifier(AiServiceFactory, _dm.Aliases);
+      var fuzzifier = new AiFuzzifier(AiServiceFactory, _dm.Aliases, _log);
       var result = await fuzzifier.FuzzifyAsync(text);
       if (AiFuzzifier.IsNotAGuessResult(result))
       {

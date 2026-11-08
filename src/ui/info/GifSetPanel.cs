@@ -741,12 +741,16 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
   /// <param name="progress">进度回调。</param>
   /// <param name="cancellationToken">取消令牌。</param>
   /// <returns>本轮结果。</returns>
-  private static Task<RecordingRunResult> RunRecordingAsync(
+  /// <remarks>
+  /// 非静态：日志按 <c>Recording</c> 模块名取自 <see cref="DataManager.GetLogger"/>（生产经 MainWindow
+  /// 注入的工厂转给 ILogService；测试退回 NullLog），不再在 UI 层做静态日志定位。
+  /// </remarks>
+  private Task<RecordingRunResult> RunRecordingAsync(
     RecordingRequest request,
     IProgress<RecordingProgress>? progress,
     CancellationToken cancellationToken
   ) =>
-    new RecordingOrchestrator(AppLogs.GetOrCreate().GetLogger("Recording")).RunAsync(
+    new RecordingOrchestrator(_dataManager!.GetLogger("Recording")).RunAsync(
       request,
       progress,
       cancellationToken

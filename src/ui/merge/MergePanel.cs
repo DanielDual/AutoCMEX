@@ -130,7 +130,10 @@ public partial class MergePanel : Control, IMergePanel
   #endregion
 
   private DataManager? _dm;
-  private readonly ILog _log = AppLogs.GetOrCreate().GetLogger(nameof(MergePanel));
+
+  /// <summary>本面板日志：依赖解析时按模块名取自 <see cref="DataManager.GetLogger"/>（生产为 ILogService 模块 logger，测试为 NullLog）。</summary>
+  /// <remarks>解析前为 null；唯一使用点在导入失败的用户交互路径上，不会提前触碰。</remarks>
+  private ILog _log = default!;
 
   private AutoList<CreatorPackage>.Binding? _creatorPackagesBinding;
   private AutoList<SpellCardMappingEntry>.Binding? _mappingBinding;
@@ -196,6 +199,8 @@ public partial class MergePanel : Control, IMergePanel
     _dm = DataManager;
     if (_dm == null)
       return;
+
+    _log = _dm.GetLogger(nameof(MergePanel));
 
     _creatorPackagesBinding = _dm.CreatorPackages.Bind().OnModify(OnCreatorPackagesChanged);
     _mappingBinding = _dm
@@ -651,7 +656,7 @@ public partial class MergePanel : Control, IMergePanel
       return false;
     }
 
-    var invoker = new SharpCliInvoker();
+    var invoker = new SharpCliInvoker(_log);
     var ok = invoker.Run(
       sharpDir,
       engine.MergedProjectPath,
@@ -688,7 +693,8 @@ public partial class MergePanel : Control, IMergePanel
       _dm,
       template,
       IncludeLstgesToggle.ButtonPressed,
-      ObfuscateLuaToggle.ButtonPressed
+      ObfuscateLuaToggle.ButtonPressed,
+      _log
     );
     var result = engine.BuildAndMerge();
     if (!result.IsSuccess)
@@ -725,7 +731,7 @@ public partial class MergePanel : Control, IMergePanel
       ))
       .ToList();
     var outPath = Path.Combine(_dm.MergeConfig.OutputDir.Value, "spellcard_mapping.csv");
-    new SpellCardMappingExporter().Export(bossName, rows, outPath);
+    new SpellCardMappingExporter(_log).Export(bossName, rows, outPath);
     ConflictList.AddItem($"[完成] 对应表已导出：{outPath}");
   }
 

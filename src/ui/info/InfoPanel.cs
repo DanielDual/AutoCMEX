@@ -200,11 +200,20 @@ public partial class InfoPanel
   public void OnResolved()
   {
     _dm = DataManager;
-    _dataService = new InfoDataService(_dm);
-    _gifSets = new GifSetService(_dm, _dm.DataDir);
+    // 逐服务取带模块名的日志（生产由 MainWindow 注入的工厂转给 ILogService；测试退回 NullLog），
+    // 不再让 core 服务各自走静态日志定位兜底，也不让所有日志都归到 DataManager 名下。
+    _dataService = new InfoDataService(_dm, _dm!.GetLogger(nameof(InfoDataService)));
+    _gifSets = new GifSetService(_dm, _dm.DataDir, _dm.GetLogger(nameof(GifSetService)));
 
     // 传访问器而不是实例：WebSocket 重启会重建实例并释放旧实例，发布时必须取「当前」那一个
-    _publisher = new PublishService(_dm, _dataService, _gifSets, () => Server);
+    _publisher = new PublishService(
+      _dm,
+      _dataService,
+      _gifSets,
+      () => Server,
+      new TableImageFactory(),
+      _dm.GetLogger(nameof(PublishService))
+    );
 
     // 两表栏共用一个观察者；结构变更（重挂符卡属性绑定）经 dispatcher 回到主线程执行，
     // 因为写入可能来自 WebSocket 线程池（猜测模块在 Task.Run 里改数据）。
