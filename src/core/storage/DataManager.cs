@@ -131,16 +131,6 @@ public class DataManager : IDisposable
   public string DataDir => _dataDir;
 
   /// <summary>
-  /// 本管理器使用的日志器。
-  /// </summary>
-  /// <remarks>
-  /// 供上层为同源子服务/子模块取日志，避免它们再依赖启动层的静态日志定位；
-  /// 默认构造时为 <see cref="NullLog.Instance"/>，生产由启动装配显式注入真实日志器。
-  /// 需要按模块名取独立日志器时用 <see cref="GetLogger(string)"/>。
-  /// </remarks>
-  public ILog Log => _log;
-
-  /// <summary>
   /// 取指定模块的日志器。
   /// </summary>
   /// <param name="moduleName">模块名（一般为类名/子系统名，如 <c>Recording</c>）。</param>

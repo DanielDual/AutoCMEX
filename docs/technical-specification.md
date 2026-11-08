@@ -395,6 +395,7 @@ P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完�
 - **数据 → UI**：一律由 Sync 绑定驱动（规则 18），绑定回调里只调度 `CallDeferred`（规则 19）；绑定在 `_ExitTree` 全部释放（规则 20）。
 - **栏位 → 面板**：子栏不持有发布回调，而是抛事件——`IGifSetPanel` / `IGuessingTablePanel` / `ICreatorRemainingPanel` / `IActivityRulePanel` 的 `PublishRequested`，猜测表另有 `TableChanged`；由信息面板订阅后统一编排串行发布与防抖推送。四栏都是 `InfoPanel.tscn` 的场景内实例，依赖（`DataManager` / `InfoDataService` / `BossDataWatcher` 等）由信息面板经 `IProvide` 统一提供；接口同时暴露 `SetPublishBusy`，让面板把「发布中」忙碌态回灌给栏位（事件同步派发，栏位自己判断不出在飞区间）。
 - **在飞护栏**：信息面板按 `PublishItemKind` 记录在飞的单栏发布（`_publishingKinds`），重复触发直接丢弃；在飞期间经对应栏的 `SetPublishBusy` 把该栏发布按钮置灰，收尾与异常路径都在 `finally` 复位。「一键转发」与自动推送仍走 `_isPublishing`，两条链互不影响。
+- **日志注入（已清）**：服务与面板改为显式注入 `ILog`（`DataManager.GetLogger(module)` 按模块名取、保留日志模块筛选），`AppLogs` 静态入口只保留在 `Main.cs` 启动层与 `MainWindow` 的一次 bootstrap。
 
 ### 测试纪律
 
@@ -407,7 +408,6 @@ P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完�
 - **录制两面板未场景化**：`RecordingConfigPanel` / `RecordingRunPanel` 的控件仍由 C# 构建、无独立 `.tscn`（规则 7/8/13 的文档化例外，见「配置与插件部署」「录制入口」两节）。
 - **少量测试仍手动刷新**：多数「改完模型手动 `Refresh`」的用例已改为「写模型 → 等帧 → 断言」；剩余几处是面板确无绑定路径（替换列表实例、嵌套别名列表、进页清空提示、依赖 `MergeConfig.SharpEditorPath` 的按钮态）或固定帧等待，已就地注释。
 - **规则未落自动守护**：规则已迁入 `docs/engineering-guidelines.md`，按约定暂不引入 analyzer/CI 守护，新代码靠评审拦。
-- **日志注入已完成**：服务与面板改为显式注入 `ILog`（`DataManager.GetLogger(module)` 保留模块名），`AppLogs` 静态入口只保留在 `Main.cs` 启动层与 `MainWindow` 的一次 bootstrap。
 - **设置板块仍有空类别页**：左侧 7 个类别里「猜测」「整合」「帮助」「通用」4 页仍为空占位（「AI 模型」「群聊」「信息」3 页已实现）。
 
 ---
