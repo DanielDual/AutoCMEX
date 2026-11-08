@@ -41,9 +41,6 @@ public partial class InfoPanel
     IProvide<PublishService>,
     IProvide<BossDataWatcher>
 {
-  private const string GuessingTablePanelScenePath = "res://src/ui/info/GuessingTablePanel.tscn";
-  private const string CreatorRemainingPanelScenePath =
-    "res://src/ui/info/CreatorRemainingPanel.tscn";
   private const string ActivityRulePanelScenePath = "res://src/ui/info/ActivityRulePanel.tscn";
 
   /// <summary>单栏最小宽度（像素）；窗口更窄时由上栏横向滚动承接，而不是把四栏挤变形。</summary>
@@ -66,9 +63,17 @@ public partial class InfoPanel
   [Node("%AutoPublishGuessingTable")]
   public ICheckBox AutoPublishGuessingTable { get; set; } = default!;
 
-  /// <summary>GIF 集栏（场景内实例，经 AutoInject 注入）；其余三栏仍是运行时装配。</summary>
+  /// <summary>GIF 集栏（场景内实例，经 AutoInject 注入）。</summary>
   [Node("%GifSetPanel")]
   public IGifSetPanel GifSetPanelNode { get; set; } = default!;
+
+  /// <summary>符卡猜测情况表栏（场景内实例，经 AutoInject 注入）。</summary>
+  [Node("%GuessingTablePanel")]
+  public IGuessingTablePanel GuessingTablePanelNode { get; set; } = default!;
+
+  /// <summary>创作者剩余表栏（场景内实例，经 AutoInject 注入）；活动规则栏仍是运行时装配。</summary>
+  [Node("%CreatorRemainingPanel")]
+  public ICreatorRemainingPanel CreatorRemainingPanelNode { get; set; } = default!;
 
   #endregion
 
@@ -109,8 +114,6 @@ public partial class InfoPanel
   private GifSetService? _gifSets;
   private PublishService? _publisher;
 
-  private GuessingTablePanel? _guessingTablePanel;
-  private CreatorRemainingPanel? _creatorRemainingPanel;
   private ActivityRulePanel? _activityRulePanel;
 
   /// <summary>
@@ -163,9 +166,8 @@ public partial class InfoPanel
 
     _autoPublishTimer?.Stop();
 
-    // GIF 集栏是场景内子节点：先退订它的事件，避免本面板释放后仍有回调指过来
-    if (GifSetPanelNode is not null)
-      GifSetPanelNode.PublishRequested -= OnGifSetPublishRequested;
+    // 三栏都是场景内子节点：先退订它们的事件，避免本面板释放后仍有回调指过来
+    UnsubscribeColumnEvents();
 
     // 两栏在 _ExitTree 里先退订（子节点先于父节点退出），这里才是共享观察者的唯一释放点
     _watcher?.Dispose();
@@ -199,12 +201,12 @@ public partial class InfoPanel
     // 因为写入可能来自 WebSocket 线程池（猜测模块在 Task.Run 里改数据）。
     _watcher = new BossDataWatcher(_dm, static action => Callable.From(action).CallDeferred());
 
-    // 先提供服务：GIF 集栏是场景内实例，它正在等本面板的 provider 初始化
-    this.Provide();
+    // 先订阅三栏事件再提供服务：Provide 会立刻驱动场景内实例的 OnResolved，
+    // 那次首次重建若正好判出「表变了」会抛 TableChanged，晚订阅就漏掉了。
+    SubscribeColumnEvents();
 
-    // 重复解析（节点重新入树）会再次走到这里，先退订避免重复挂接
-    GifSetPanelNode.PublishRequested -= OnGifSetPublishRequested;
-    GifSetPanelNode.PublishRequested += OnGifSetPublishRequested;
+    // 再提供服务：三栏都是场景内实例，它们的依赖在等本面板的 provider 初始化
+    this.Provide();
 
     BuildColumns();
 
@@ -272,37 +274,21 @@ public partial class InfoPanel
   /// 四栏引用，顺序为 GIF 集 → 猜测表 → 创作者表 → 活动规则。
   /// </summary>
   /// <remarks>
-  /// GIF 集栏来自 <c>InfoPanel.tscn</c> 的场景内实例（顺序已由场景保证），其余三栏仍是运行时装配；
+  /// 前三栏来自 <c>InfoPanel.tscn</c> 的场景内实例（顺序已由场景保证），活动规则栏仍是运行时装配；
   /// 供面板级测试断言装配结果，装载失败的栏位为 null 且已记录错误。
   /// </remarks>
   public IReadOnlyList<Control?> ColumnPanels =>
     new Control?[]
     {
       GifSetPanelNode as Control,
-      _guessingTablePanel,
-      _creatorRemainingPanel,
+      GuessingTablePanelNode as Control,
+      CreatorRemainingPanelNode as Control,
       _activityRulePanel,
     };
 
+  /// <summary>装配仍是运行时构建的栏位（活动规则栏等到批3-C 再迁移进场景）。</summary>
   private void BuildColumns()
   {
-    _guessingTablePanel = InstantiateColumn<GuessingTablePanel>(GuessingTablePanelScenePath);
-    _guessingTablePanel?.Setup(
-      _watcher!,
-      _dataService!,
-      CreateColumnHandler(PublishItemKind.GuessingTable),
-      OnGuessingTableChanged
-    );
-
-    _creatorRemainingPanel = InstantiateColumn<CreatorRemainingPanel>(
-      CreatorRemainingPanelScenePath
-    );
-    _creatorRemainingPanel?.Setup(
-      _watcher!,
-      _dataService!,
-      CreateColumnHandler(PublishItemKind.CreatorRemainingTable)
-    );
-
     _activityRulePanel = InstantiateColumn<ActivityRulePanel>(ActivityRulePanelScenePath);
     _activityRulePanel?.Setup(_dm!, CreateColumnHandler(PublishItemKind.ActivityRule));
   }
@@ -331,20 +317,65 @@ public partial class InfoPanel
   private ColumnPublishHandler CreateColumnHandler(PublishItemKind kind) =>
     () => PublishColumnAsync(kind);
 
-  /// <summary>GIF 集栏的发布请求：复用本面板的单栏发布编排（串行、失败即停、结果对话框）。</summary>
+  /// <summary>订阅三栏的事件（先退订再挂，依赖重复解析时不会重复挂接）。</summary>
+  private void SubscribeColumnEvents()
+  {
+    UnsubscribeColumnEvents();
+
+    GifSetPanelNode.PublishRequested += OnGifSetPublishRequested;
+
+    GuessingTablePanelNode.PublishRequested += OnGuessingTablePublishRequested;
+    GuessingTablePanelNode.TableChanged += OnGuessingTableChanged;
+
+    CreatorRemainingPanelNode.PublishRequested += OnCreatorRemainingPublishRequested;
+  }
+
+  /// <summary>退订三栏的事件：本面板退出前、子节点即将释放时调用。</summary>
+  /// <remarks>场景内实例在 <c>OnReady</c> 之前未注入，故逐个判空。</remarks>
+  private void UnsubscribeColumnEvents()
+  {
+    if (GifSetPanelNode is not null)
+      GifSetPanelNode.PublishRequested -= OnGifSetPublishRequested;
+
+    if (GuessingTablePanelNode is not null)
+    {
+      GuessingTablePanelNode.PublishRequested -= OnGuessingTablePublishRequested;
+      GuessingTablePanelNode.TableChanged -= OnGuessingTableChanged;
+    }
+
+    if (CreatorRemainingPanelNode is not null)
+      CreatorRemainingPanelNode.PublishRequested -= OnCreatorRemainingPublishRequested;
+  }
+
+  /// <summary>GIF 集栏的发布请求。</summary>
+  private async void OnGifSetPublishRequested() =>
+    await PublishColumnSafelyAsync(PublishItemKind.GifSet);
+
+  /// <summary>符卡猜测情况表栏的发布请求。</summary>
+  private async void OnGuessingTablePublishRequested() =>
+    await PublishColumnSafelyAsync(PublishItemKind.GuessingTable);
+
+  /// <summary>创作者剩余表栏的发布请求。</summary>
+  private async void OnCreatorRemainingPublishRequested() =>
+    await PublishColumnSafelyAsync(PublishItemKind.CreatorRemainingTable);
+
+  /// <summary>
+  /// 单栏发布请求的统一收口：复用本面板的发布编排（串行、失败即停、结果对话框）。
+  /// </summary>
   /// <remarks>
-  /// 栏位只抛 <see cref="IGifSetPanel.PublishRequested"/>，不持有发布回调；<c>async void</c> 是
-  /// 事件处理器的既定形态，异常必须在此收口，否则会被 Godot 的同步上下文吞掉。
+  /// 栏位只抛事件、不持有发布回调；<c>async void</c> 是事件处理器的既定形态，
+  /// 异常必须在此收口，否则会被 Godot 的同步上下文吞掉。
   /// </remarks>
-  private async void OnGifSetPublishRequested()
+  /// <param name="kind">要发布的栏位。</param>
+  private async Task PublishColumnSafelyAsync(PublishItemKind kind)
   {
     try
     {
-      await PublishColumnAsync(PublishItemKind.GifSet);
+      await PublishColumnAsync(kind);
     }
     catch (Exception ex)
     {
-      GD.PushWarning($"InfoPanel: GIF 集发布失败：{ex.Message}");
+      GD.PushWarning($"InfoPanel: {PublishOrder.GetTitle(kind)}发布失败：{ex.Message}");
     }
   }
 

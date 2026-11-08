@@ -2,6 +2,8 @@
 
 [ext_resource type="Script" uid="uid://bq7n2xk4mveas" path="res://src/ui/info/InfoPanel.cs" id="1_yr6mn"]
 [ext_resource type="PackedScene" uid="uid://cb6agaer6y6bb" path="res://src/ui/info/GifSetPanel.tscn" id="2_gifset"]
+[ext_resource type="PackedScene" uid="uid://b4ccjtqoneh0e" path="res://src/ui/info/GuessingTablePanel.tscn" id="3_guessing"]
+[ext_resource type="PackedScene" uid="uid://0kau4wocslml" path="res://src/ui/info/CreatorRemainingPanel.tscn" id="4_creator"]
 
 [node name="Control" type="Control" unique_id=2075855882]
 layout_mode = 3
@@ -58,6 +60,20 @@ size_flags_vertical = 3
 theme_override_constants/separation = 10
 
 [node name="GifSetPanel" type="VBoxContainer" parent="Root/Layout/TopScroll/Columns" unique_id=2106386142 instance=ExtResource("2_gifset")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="GuessingTablePanel" type="VBoxContainer" parent="Root/Layout/TopScroll/Columns" unique_id=1060832517 instance=ExtResource("3_guessing")]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(320, 0)
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="CreatorRemainingPanel" type="VBoxContainer" parent="Root/Layout/TopScroll/Columns" unique_id=1587351980 instance=ExtResource("4_creator")]
 unique_name_in_owner = true
 custom_minimum_size = Vector2(320, 0)
 layout_mode = 2

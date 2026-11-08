@@ -432,6 +432,37 @@ public class TestInfoPanel : TestClass
   }
 
   /// <summary>
+  /// 批3-B 装配契约：两张表栏同样是 <c>InfoPanel.tscn</c> 里的场景内实例 + AutoInject 依赖注入，
+  /// 不再由信息面板在运行时 <c>AddChild</c> 并用 <c>Setup(...)</c> 手动传依赖。
+  /// </summary>
+  /// <remarks>
+  /// 顺序由场景保证（猜测表栏第二、创作者表栏第三），依赖来自信息面板的 provider：
+  /// 两栏共用同一个 <see cref="InfoDataService"/> 与同一个 <see cref="BossDataWatcher"/>。
+  /// </remarks>
+  [Test]
+  public async Task TableColumns_AreSceneInstancesWithInjectedDependencies()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var columns = panel.GetNode<HBoxContainer>("%Columns");
+    var guessing = panel.GetNode<GuessingTablePanel>("%GuessingTablePanel");
+    var creator = panel.GetNode<CreatorRemainingPanel>("%CreatorRemainingPanel");
+
+    guessing.GetParent().ShouldBe(columns, "猜测表栏应是场景内实例，父节点为场景里的 Columns");
+    creator.GetParent().ShouldBe(columns, "创作者表栏应是场景内实例，父节点为场景里的 Columns");
+    guessing.GetIndex().ShouldBe(1, "四栏顺序：猜测表栏排第二");
+    creator.GetIndex().ShouldBe(2, "四栏顺序：创作者表栏排第三");
+
+    // 依赖由信息面板 provider 注入：数据管理器与发布编排同源，两栏共用同一个数据服务与观察者
+    guessing.DataManager.ShouldBeSameAs(_dm);
+    creator.DataManager.ShouldBeSameAs(_dm);
+    guessing.DataService.ShouldBeSameAs(creator.DataService, "两栏应共用信息面板提供的数据服务");
+    guessing.Watcher.ShouldBeSameAs(creator.Watcher, "两栏应共用信息面板提供的观察者");
+  }
+
+  /// <summary>
   /// 四栏的排版契约：标题在最上、正文在中、发布按钮在最下，且四栏铺满上栏宽度。
   /// </summary>
   /// <remarks>
@@ -596,11 +627,8 @@ public class TestInfoPanel : TestClass
     var guessing = (GuessingTablePanel)panel.ColumnPanels[1]!;
     var creator = (CreatorRemainingPanel)panel.ColumnPanels[2]!;
 
-    guessing.WatcherForTests.ShouldNotBeNull("信息面板应为两表栏注入共享观察者");
-    creator.WatcherForTests.ShouldBeSameAs(
-      guessing.WatcherForTests,
-      "两张表栏必须订阅同一个观察者，不能各建一个"
-    );
+    guessing.Watcher.ShouldNotBeNull("信息面板应为两表栏注入共享观察者");
+    creator.Watcher.ShouldBeSameAs(guessing.Watcher, "两张表栏必须订阅同一个观察者，不能各建一个");
   }
 
   /// <summary>
@@ -635,8 +663,8 @@ public class TestInfoPanel : TestClass
 
     var guessing = (GuessingTablePanel)panel.ColumnPanels[1]!;
     var creator = (CreatorRemainingPanel)panel.ColumnPanels[2]!;
-    var watcher = guessing.WatcherForTests.ShouldNotBeNull("两表栏应共用信息面板创建的观察者");
-    creator.WatcherForTests.ShouldBeSameAs(watcher);
+    var watcher = guessing.Watcher.ShouldNotBeNull("两表栏应共用信息面板创建的观察者");
+    creator.Watcher.ShouldBeSameAs(watcher);
 
     // 初始 Boss：3 张符卡 × 3 个属性全部挂上
     watcher.CardBindingCountForTests.ShouldBe(9);

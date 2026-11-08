@@ -2,6 +2,7 @@ namespace AutoCMEX.UI.Info;
 
 using System;
 using AutoCMEX.Core.Info;
+using AutoCMEX.Core.Storage;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
@@ -16,13 +17,18 @@ using Godot;
 /// "界面看到的和发出去的不一致"。
 /// </para>
 /// <para>
-/// 数据变化由信息面板注入的共享 <see cref="BossDataWatcher"/> 通知（两栏共用一个观察者），
-/// 本栏只订阅 <see cref="BossDataWatcher.Changed"/> 并把自己的重建合并到每帧一次，
+/// 本栏是 <c>InfoPanel.tscn</c> 里的场景内实例：依赖（数据管理器 / 信息数据服务 / 共享观察者）
+/// 全部由信息面板经 AutoInject 提供，发布与表变化改为抛事件由信息面板统一编排，
+/// 不再有 <c>Setup(...)</c> 手动注入。
+/// </para>
+/// <para>
+/// 数据变化由共享 <see cref="BossDataWatcher"/> 通知（两栏共用一个观察者），本栏只订阅
+/// <see cref="BossDataWatcher.Changed"/> 并把自己的重建合并到每帧一次，
 /// 因此一次猜测连改 K 张符卡也只重建、重绘一次。
 /// </para>
 /// </remarks>
 [Meta(typeof(IAutoNode))]
-public partial class GuessingTablePanel : VBoxContainer
+public partial class GuessingTablePanel : VBoxContainer, IGuessingTablePanel
 {
   [Node("%TitleLabel")]
   public ILabel TitleLabel { get; set; } = default!;
@@ -33,10 +39,30 @@ public partial class GuessingTablePanel : VBoxContainer
   [Node("%PublishButton")]
   public IButton PublishButton { get; set; } = default!;
 
+  #region Dependencies
+
+  /// <summary>数据管理器（由信息面板经 AutoInject 提供，与发布编排同源）。</summary>
+  [Dependency]
+  public DataManager DataManager => this.DependOn<DataManager>();
+
+  /// <summary>信息数据服务（由信息面板经 AutoInject 提供；快照由它按当前数据构建）。</summary>
+  [Dependency]
+  public InfoDataService DataService => this.DependOn<InfoDataService>();
+
+  /// <summary>两表栏共享的数据观察者（由信息面板经 AutoInject 提供；两栏同一实例）。</summary>
+  [Dependency]
+  public BossDataWatcher Watcher => this.DependOn<BossDataWatcher>();
+
+  #endregion
+
+  /// <summary>本栏发布请求：由信息面板订阅后统一编排串行发布（本栏不再持有发布回调）。</summary>
+  public event Action? PublishRequested;
+
+  /// <summary>表内容真正变化时触发（首次刷新只记基线），供信息面板做自动推送防抖。</summary>
+  public event Action? TableChanged;
+
   private InfoDataService? _dataService;
-  private ColumnPublishHandler? _publish;
   private BossDataWatcher? _watcher;
-  private Action? _onTableChanged;
   private bool _isPublishing;
   private TablePreviewExport? _previewExport;
 
@@ -55,9 +81,6 @@ public partial class GuessingTablePanel : VBoxContainer
 
   /// <summary>表格预览的拖拽/复制交互（供面板级测试断言接线）。</summary>
   internal TablePreviewExport? PreviewExport => _previewExport;
-
-  /// <summary>当前订阅的数据观察者（供面板级测试断言两栏共享同一个实例）。</summary>
-  internal BossDataWatcher? WatcherForTests => _watcher;
 
   /// <summary>已执行的重建次数（供面板级测试断言一次猜测只重建一次）。</summary>
   internal int RefreshCountForTests { get; private set; }
@@ -79,44 +102,31 @@ public partial class GuessingTablePanel : VBoxContainer
     _previewExport = null;
   }
 
-  /// <summary>AutoInject 节点注入完成（依赖注入前，无需额外动作）。</summary>
-  public void OnReady() { }
-
-  /// <summary>AutoInject 依赖解析完成（本栏无依赖，无需额外动作）。</summary>
-  public void OnResolved() { }
-
-  /// <summary>
-  /// 装配本栏；由信息面板在本节点加入场景树后调用。
-  /// </summary>
-  /// <param name="watcher">两栏共享的数据观察者（由信息面板创建并负责释放）。</param>
-  /// <param name="dataService">信息数据服务。</param>
-  /// <param name="publish">本栏发布回调。</param>
-  /// <param name="onTableChanged">
-  /// 表内容变化回调（可选）；仅在真正重建出不同的表内容时触发，供信息面板做自动推送。
-  /// </param>
-  public void Setup(
-    BossDataWatcher watcher,
-    InfoDataService dataService,
-    ColumnPublishHandler publish,
-    Action? onTableChanged = null
-  )
+  /// <summary>AutoInject 节点注入完成：只挂信号与预览交互，依赖待解析后再绑定数据。</summary>
+  /// <remarks>
+  /// 信号连接放这里而不是 <see cref="OnResolved"/>：<c>OnReady</c> 每个节点实例只执行一次，
+  /// 而依赖重新解析（节点重新入树）会再次触发 <see cref="OnResolved"/>，重复连接信号会报
+  /// "already connected"。
+  /// </remarks>
+  public void OnReady()
   {
-    _dataService = dataService;
-    _publish = publish;
-    _onTableChanged = onTableChanged;
-
     PublishButton.Pressed += OnPublishPressed;
+  }
 
-    _watcher = watcher ?? throw new ArgumentNullException(nameof(watcher));
+  /// <summary>AutoInject 依赖解析完成：绑定共享观察者并首次重建表。</summary>
+  /// <remarks>
+  /// 可重复进入（节点重新入树）：订阅前先退订，避免同一路通知排队多次；
+  /// 预览交互对象按需补建，上一轮已在退出时释放。
+  /// </remarks>
+  public void OnResolved()
+  {
+    _dataService = DataService;
+    _watcher = Watcher;
+
+    _watcher.Changed -= OnWatcherChanged;
     _watcher.Changed += OnWatcherChanged;
 
-    _previewExport = new TablePreviewExport(
-      this,
-      TableGrid,
-      model => TableImageRenderer.RenderToImageAsync(this, model),
-      new WindowsTableImageExportBackend()
-    );
-
+    EnsurePreviewExport();
     Refresh();
   }
 
@@ -124,7 +134,7 @@ public partial class GuessingTablePanel : VBoxContainer
   /// <remarks>
   /// 刷新由共享 <see cref="BossDataWatcher"/> 驱动（经 <see cref="FlushRefresh"/> 每帧合并一次），
   /// 触发源里混着与这张表无关的变化（例如创作者改名），因此这里比对内容指纹，只在表真的变了、
-  /// 且表不为空时回调 <c>onTableChanged</c>；首次刷新只记基线，保证刚启动不会把当前表推一遍。
+  /// 且表不为空时触发 <see cref="TableChanged"/>；首次刷新只记基线，保证刚启动不会把当前表推一遍。
   /// 预览图不在这里出：<see cref="TablePreviewExport.Update"/> 只记内容，真正出图等到交互时。
   /// </remarks>
   public void Refresh()
@@ -146,7 +156,7 @@ public partial class GuessingTablePanel : VBoxContainer
     _lastSignature = signature;
 
     if (changed && model.HasContent)
-      _onTableChanged?.Invoke();
+      TableChanged?.Invoke();
   }
 
   /// <summary>
@@ -179,16 +189,35 @@ public partial class GuessingTablePanel : VBoxContainer
     PublishButton.Disabled = _isPublishing || !_hasContent;
   }
 
-  private async void OnPublishPressed()
+  /// <summary>按需补建预览交互对象（拖拽/右键复制）；依赖节点注入，故在依赖解析后调用。</summary>
+  private void EnsurePreviewExport()
   {
-    if (_publish is null || _isPublishing)
+    if (_previewExport is not null)
+      return;
+
+    _previewExport = new TablePreviewExport(
+      this,
+      TableGrid,
+      model => TableImageRenderer.RenderToImageAsync(this, model),
+      new WindowsTableImageExportBackend()
+    );
+  }
+
+  /// <summary>发布按钮：触发 <see cref="PublishRequested"/>，由信息面板统一编排发布。</summary>
+  /// <remarks>
+  /// 事件同步派发，因此这里的忙碌态只覆盖派发段；真正的串行发送、失败即停与重试由信息面板的
+  /// 发布服务编排负责（单栏与「一键转发」共用同一条链路）。
+  /// </remarks>
+  private void OnPublishPressed()
+  {
+    if (_isPublishing)
       return;
 
     _isPublishing = true;
-    PublishButton.Disabled = true;
+    UpdatePublishButtonState();
     try
     {
-      await _publish();
+      PublishRequested?.Invoke();
     }
     finally
     {
