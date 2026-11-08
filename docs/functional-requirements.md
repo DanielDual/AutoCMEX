@@ -247,7 +247,7 @@
 
 - **用途**：配置群聊机器人服务连接。
 - **说明**：大部分配置在群聊机器人框架中完成，与本项目无关。
-- **连接参数**：WebSocket 端口、模式（Server / Client）、Koishi 地址（Client 模式连接的对端，自动补全 `ws://` 前缀并附 Token）。端口改动即时写回；Koishi 地址在**回车提交或输入框失焦**时写回。
+- **连接参数**：WebSocket 端口、模式（Server / Client）、Koishi 地址（Client 模式连接的对端，自动补全 `ws://` 前缀并附 Token）。端口在**停止改动约 300ms 后**写回设置并触发自动保存（去抖，避免连续修改反复重连）；Koishi 地址在**回车提交或输入框失焦**时写回。
 - **模式与实际一致**：Client 模式但 Koishi 地址为空时**不回落成 Server**，启动失败并在 WebSocket 状态面板显式显示「未配置 Koishi 地址」。
 - **功能**：支持一键将插件安装到 Koishi 工作区（复制到 Koishi 应用根目录（含 `koishi.yml` 的目录）下 `external/adapter-autocmex/`）；已安装的落点路径在设置页回显，重启后仍可见。安装完成后弹窗给出控制台启用路径与检索关键词；缺少工作区链接时提示先跑一次包管理器安装；检测到旧版落点目录 `auto-cmex` 残留时提示移走。
 - **可检测性**：控制台的插件检索按**包短名**做子串匹配（短名 = 包名去掉 `koishi-plugin-` 前缀），分类标签取 `koishi.category`。因此插件包名（`koishi-plugin-adapter-autocmex`）、安装目录名、插件自报名三者同为短名 `adapter-autocmex`，并声明 `koishi.category = "adapter"`，保证「添加插件」里搜 `adapter-autocmex` 或直接看「适配器」分类都能找到。

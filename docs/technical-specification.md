@@ -293,7 +293,9 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 ### 配置与插件部署（P4）
 
-设置板块「信息」类别页在目标群列表下方挂一组常显的「符卡 GIF 录制设置」（`RecordingConfigPanel`，已取消折叠复选框）：引擎目录、并行度、沙箱根、插件状态、高级参数五段。该类别页没有独立场景（节点直接写在 `SettingsPanel.tscn` 里），故分组按本页既有的「C# 构建行」范式在依赖解析后创建（`InfoConfigPanel.EnsureRecordingSection`，挂到页面内容的 `%PageBody` 末尾），并在该页每次被切显时刷新一次状态（`VisibilityChanged`）。
+设置板块「信息」类别页在目标群列表下方挂一组常显的「符卡 GIF 录制设置」（`RecordingConfigPanel`，已取消折叠复选框）：引擎目录、并行度、沙箱根、插件状态、高级参数五段。该类别页没有独立场景（节点直接写在 `SettingsPanel.tscn` 里），故分组由 `InfoConfigPanel.EnsureRecordingSection` 在依赖解析后用 `new` 建出、挂到页面内容的 `%PageBody` 末尾，并在该页每次被切显时刷新一次状态（`VisibilityChanged`）。
+
+`RecordingConfigPanel` 已按规则 1/5 接入 AutoInject：`[Meta(typeof(IAutoNode))]` + `_Notification` 转发给 `this.Notify`，DataManager 走 `[Dependency]`（由设置面板树内的 provider 就近提供）；控件在 `OnReady` 一次建好，配置回填与 Sync 绑定在 `OnResolved` 装配（依赖重新解析时先释放旧绑定，规则 20）。控件仍由 C# 构建（规则 7/8/13 的**文档化例外**）：本分组没有独立 `.tscn`，二十余个控件写进共享的 `SettingsPanel.tscn` 既挤又容易与其它类别页互相牵连；结构收敛只补 DI 与生命周期，场景化留待单独评估。
 
 **双滚动结构是有意设计**：目标群列表行数随活动规模浮动，固定高度（600px）单独滚动可避免把页面撑长；录制设置整组较长，放在列表下方由页面滚动承接。
 
@@ -323,7 +325,7 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 ### 录制入口、`manifest.json` 与自动导入（P5，已完成）
 
-入口复用信息板块 GIF 集栏里既有的「录制」按钮（`GifSetPanel.%RecordButton`，此前为占位禁用），不新增类别页、不改 `GifSetPanel.tscn`。点击后按序执行：**前置检查**（引擎目录、插件状态、沙箱根，复用 `PluginDeployer` 与 `RecordingSandbox.TryValidateRoot`；不通过则不起任何进程并在原处说明原因）→ **手选工程包 zip** → **手选输出目录** → `RecordingOrchestrator.RunAsync`；进度以 C# 构建的模态对话框呈现（阶段 + 已完成/总数 + 各 worker 正在录的卡 + 取消），取消沿用既有语义。
+入口复用信息板块 GIF 集栏里既有的「录制」按钮（`GifSetPanel.%RecordButton`，此前为占位禁用），不新增类别页、不改 `GifSetPanel.tscn`。点击后按序执行：**前置检查**（引擎目录、插件状态、沙箱根，复用 `PluginDeployer` 与 `RecordingSandbox.TryValidateRoot`；不通过则不起任何进程并在原处说明原因）→ **手选工程包 zip** → **手选输出目录** → `RecordingOrchestrator.RunAsync`；进度以 C# 构建的模态对话框呈现（`RecordingRunPanel`：阶段 + 已完成/总数 + 各 worker 正在录的卡 + 取消），取消沿用既有语义。该对话框已按规则 5 接入 AutoInject 生命周期（`[Meta(typeof(IAutoNode))]` + `_Notification`），但 `RecordingRunner` 仍是构造参数——它是「跑一轮」的命令而非从祖先注入的服务，单测靠替换它驱动对话框；本类没有 `[Node]`/`[Dependency]` 成员，控件同样用 C# 构建（规则 7/8/13 的**文档化例外**，无独立场景）。
 
 `manifest.json` 由编排层在**归集之后**写出（只有归集后才拿得到尺寸），字段来源：
 
@@ -374,6 +376,40 @@ P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完�
 - **替代方案**：等上游引擎合入（时间不可控）；引入第三方 GDExtension（Windows 无可用实现）；改用外部命令写剪贴板（慢且无法模拟拖拽）；只做「另存为」（不满足拖拽导出诉求）。
 - **代价与已知行为**：仅 Windows；`DoDragDrop` 同步阻塞主线程（拖拽期间界面暂停刷新，松手恢复）；拖拽/复制使用系统临时目录里的唯一命名 PNG，不主动删除；非 Windows 不提供这两个入口。
 - **测试**：出图/指纹/组件（Fake 后端）单测、Windows 剪贴板往返单测、面板接线测试；真实拖拽需真机验收（拖到资源管理器/聊天软件、目标拒绝显示 🚫、粘贴复制图）。
+
+---
+
+## 工程纪律与已知旧账
+
+本节收口三类跨模块、容易复犯的纪律与仍未清的旧债；判定依据是 `.codebuddy/memory/GUIDELINES.md` 的规则 18/19/20/21/22/25/30（未入仓库，见下方「已知旧账」）。
+
+### 列表级绑定不覆盖元素级
+
+- **现象**：`AutoList<T>.Bind().OnModify(...)` 只在集合自身增删时触发；元素内部的 `AutoValue<T>` 变化（改启用、改名、改地址、标记删除）不会让列表对象发生任何变化。
+- **纪律**：凡是「元素字段也会变」的列表，必须为每个元素逐项订阅 `AutoValue<T>.Bind().OnValue(...)`，并在列表增删时随 `OnModify` 重建这批元素级订阅：先 `Dispose` 旧订阅再挂新订阅（规则 20）；重挂期间抑制订阅回放（否则每次增删都会按「元素数 × 字段数」炸出一串刷新）；绑定回调只调度 `CallDeferred`，不直接碰控件（规则 19）。
+- **先例**：目标群 `TargetGroup`（信息页「一键转发」可用态与设置页行回填各自订阅「启用 / 群 ID / 群名」）、AI 模型 `AiModelConfig`（下拉项可用态与标签）、符卡 `SpellCard`（`BossDataWatcher` 把一次猜测通知到两张表）、创作者包 `CreatorPackage.IsDeleted`（删包后驱动包列表重建，不再手动刷新）。
+- **仍挂账**：GIF 集 `GifSetRecord` 的集摘要只看列表级 `OnModify`；同一文件夹重复导入是原地更新记录（`ImportedAt` 等字段变化不冒泡），摘要会停在旧值，要等下一次列表增删或重建才更新（见下方「已知旧账」）。
+
+### UI 刷新与事件
+
+- **数据 → UI**：一律由 Sync 绑定驱动（规则 18），绑定回调里只调度 `CallDeferred`（规则 19）；绑定在 `_ExitTree` 全部释放（规则 20）。
+- **栏位 → 面板**：子栏不持有发布回调，而是抛事件——`IGifSetPanel` / `IGuessingTablePanel` / `ICreatorRemainingPanel` / `IActivityRulePanel` 的 `PublishRequested`，猜测表另有 `TableChanged`；由信息面板订阅后统一编排串行发布与防抖推送。四栏都是 `InfoPanel.tscn` 的场景内实例，依赖（`DataManager` / `InfoDataService` / `BossDataWatcher` 等）由信息面板经 `IProvide` 统一提供；接口同时暴露 `SetPublishBusy`，让面板把「发布中」忙碌态回灌给栏位（事件同步派发，栏位自己判断不出在飞区间）。
+- **在飞护栏**：信息面板按 `PublishItemKind` 记录在飞的单栏发布（`_publishingKinds`），重复触发直接丢弃；在飞期间经对应栏的 `SetPublishBusy` 把该栏发布按钮置灰，收尾与异常路径都在 `finally` 复位。「一键转发」与自动推送仍走 `_isPublishing`，两条链互不影响。
+
+### 测试纪律
+
+- UI 测试用 `FakeNodeTree` + `FakeDependency` 搭假场景，不实例化完整场景；只有需要真实 AutoInject 链路（动态实例化子面板、面板级接线、`.tscn` 里的节点引用与依赖提供）的用例才加载真实场景。
+- **优先「写模型 → 等帧 → 断言」**：从 `DataManager` 的模型写入触发流程，`await` 到 `process_frame` 后再断言控件；不在测试里手动调 `Refresh()` 抄近道——绑定回放与 `CallDeferred` 都排在消息队列里，等帧是链路的一部分。
+- 不为跑绿改断言、不绕过绑定路径：断言表达的是用户可见行为，链路坏了修链路。
+
+### 已知旧账（未清）
+
+- **静态服务定位器**：`AppLogs.GetOrCreate()` 等静态入口绕过 AutoInject（约二十余处），单测只能全局替换。
+- **录制两面板未场景化**：`RecordingConfigPanel` / `RecordingRunPanel` 的控件仍由 C# 构建、无独立 `.tscn`（规则 7/8/13 的文档化例外，见「配置与插件部署」「录制入口」两节）。
+- **部分测试仍手动刷新**：仍有测试直接调用 `Refresh` / `RefreshStatuses` 或用固定帧数等待，属历史写法；新增用例应走「写模型 → 等帧 → 断言」。
+- **规则未落自动守护**：铁律目前只在 gitignored 的 `.codebuddy/memory/GUIDELINES.md`，没有 analyzer 或 CI 守护，新代码只能靠评审拦。
+- **GIF 集摘要不随元素字段刷新**：`GifSetRecord` 只有列表级绑定，同一文件夹重复导入后「导入于 …」保持旧值。
+- **设置板块仍有空类别页**：左侧 7 个类别里「猜测」「整合」「帮助」「通用」4 页仍为空占位（「AI 模型」「群聊」「信息」3 页已实现）。
 
 ---
 
