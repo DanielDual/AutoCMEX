@@ -32,9 +32,15 @@ using Godot;
 /// </para>
 /// </remarks>
 [Meta(typeof(IAutoNode))]
-public partial class InfoPanel : Control, IInfoPanel
+public partial class InfoPanel
+  : Control,
+    IInfoPanel,
+    IProvide<DataManager>,
+    IProvide<InfoDataService>,
+    IProvide<GifSetService>,
+    IProvide<PublishService>,
+    IProvide<BossDataWatcher>
 {
-  private const string GifSetPanelScenePath = "res://src/ui/info/GifSetPanel.tscn";
   private const string GuessingTablePanelScenePath = "res://src/ui/info/GuessingTablePanel.tscn";
   private const string CreatorRemainingPanelScenePath =
     "res://src/ui/info/CreatorRemainingPanel.tscn";
@@ -60,6 +66,10 @@ public partial class InfoPanel : Control, IInfoPanel
   [Node("%AutoPublishGuessingTable")]
   public ICheckBox AutoPublishGuessingTable { get; set; } = default!;
 
+  /// <summary>GIF 集栏（场景内实例，经 AutoInject 注入）；其余三栏仍是运行时装配。</summary>
+  [Node("%GifSetPanel")]
+  public IGifSetPanel GifSetPanelNode { get; set; } = default!;
+
   #endregion
 
   #region Dependencies
@@ -75,12 +85,30 @@ public partial class InfoPanel : Control, IInfoPanel
 
   #endregion
 
+  #region Provided Services
+
+  /// <summary>提供给子栏（[Dependency] 注入）的数据管理器（与祖先提供者是同一实例）。</summary>
+  DataManager IProvide<DataManager>.Value() => _dm!;
+
+  /// <summary>提供给子栏（[Dependency] 注入）的信息数据服务。</summary>
+  InfoDataService IProvide<InfoDataService>.Value() => _dataService!;
+
+  /// <summary>提供给子栏的 GIF 集服务（与发布编排共用同一实例）。</summary>
+  GifSetService IProvide<GifSetService>.Value() => _gifSets!;
+
+  /// <summary>提供给子栏的发布编排服务（各栏只发起发布请求，串行/失败即停/重试在本服务内）。</summary>
+  PublishService IProvide<PublishService>.Value() => _publisher!;
+
+  /// <summary>提供给子栏共享的数据观察者（两表栏共用一个实例）。</summary>
+  BossDataWatcher IProvide<BossDataWatcher>.Value() => _watcher!;
+
+  #endregion
+
   private DataManager? _dm;
   private InfoDataService? _dataService;
   private GifSetService? _gifSets;
   private PublishService? _publisher;
 
-  private GifSetPanel? _gifSetPanel;
   private GuessingTablePanel? _guessingTablePanel;
   private CreatorRemainingPanel? _creatorRemainingPanel;
   private ActivityRulePanel? _activityRulePanel;
@@ -135,6 +163,10 @@ public partial class InfoPanel : Control, IInfoPanel
 
     _autoPublishTimer?.Stop();
 
+    // GIF 集栏是场景内子节点：先退订它的事件，避免本面板释放后仍有回调指过来
+    if (GifSetPanelNode is not null)
+      GifSetPanelNode.PublishRequested -= OnGifSetPublishRequested;
+
     // 两栏在 _ExitTree 里先退订（子节点先于父节点退出），这里才是共享观察者的唯一释放点
     _watcher?.Dispose();
     _watcher = null;
@@ -149,7 +181,11 @@ public partial class InfoPanel : Control, IInfoPanel
     AutoPublishGuessingTable.Toggled += OnAutoPublishToggled;
   }
 
-  /// <summary>AutoInject 依赖解析完成：创建服务并装配四栏与顶部操作行。</summary>
+  /// <summary>AutoInject 依赖解析完成：创建并提供子栏所需服务，再装配其余三栏与顶部操作行。</summary>
+  /// <remarks>
+  /// <see cref="IProvide{T}"/> 的服务必须先创建、再 <c>Provide()</c>：场景内实例的 GIF 集栏在
+  /// 依赖解析时会等待本面板 provider 初始化，Provide 之后它才会执行自己的 <c>OnResolved</c>。
+  /// </remarks>
   public void OnResolved()
   {
     _dm = DataManager;
@@ -162,6 +198,13 @@ public partial class InfoPanel : Control, IInfoPanel
     // 两表栏共用一个观察者；结构变更（重挂符卡属性绑定）经 dispatcher 回到主线程执行，
     // 因为写入可能来自 WebSocket 线程池（猜测模块在 Task.Run 里改数据）。
     _watcher = new BossDataWatcher(_dm, static action => Callable.From(action).CallDeferred());
+
+    // 先提供服务：GIF 集栏是场景内实例，它正在等本面板的 provider 初始化
+    this.Provide();
+
+    // 重复解析（节点重新入树）会再次走到这里，先退订避免重复挂接
+    GifSetPanelNode.PublishRequested -= OnGifSetPublishRequested;
+    GifSetPanelNode.PublishRequested += OnGifSetPublishRequested;
 
     BuildColumns();
 
@@ -228,11 +271,14 @@ public partial class InfoPanel : Control, IInfoPanel
   /// <summary>
   /// 四栏引用，顺序为 GIF 集 → 猜测表 → 创作者表 → 活动规则。
   /// </summary>
-  /// <remarks>供面板级测试断言装配结果；装载失败的栏位为 null 且已记录错误。</remarks>
+  /// <remarks>
+  /// GIF 集栏来自 <c>InfoPanel.tscn</c> 的场景内实例（顺序已由场景保证），其余三栏仍是运行时装配；
+  /// 供面板级测试断言装配结果，装载失败的栏位为 null 且已记录错误。
+  /// </remarks>
   public IReadOnlyList<Control?> ColumnPanels =>
     new Control?[]
     {
-      _gifSetPanel,
+      GifSetPanelNode as Control,
       _guessingTablePanel,
       _creatorRemainingPanel,
       _activityRulePanel,
@@ -240,9 +286,6 @@ public partial class InfoPanel : Control, IInfoPanel
 
   private void BuildColumns()
   {
-    _gifSetPanel = InstantiateColumn<GifSetPanel>(GifSetPanelScenePath);
-    _gifSetPanel?.Setup(_dm!, _gifSets!, CreateColumnHandler(PublishItemKind.GifSet));
-
     _guessingTablePanel = InstantiateColumn<GuessingTablePanel>(GuessingTablePanelScenePath);
     _guessingTablePanel?.Setup(
       _watcher!,
@@ -287,6 +330,23 @@ public partial class InfoPanel : Control, IInfoPanel
 
   private ColumnPublishHandler CreateColumnHandler(PublishItemKind kind) =>
     () => PublishColumnAsync(kind);
+
+  /// <summary>GIF 集栏的发布请求：复用本面板的单栏发布编排（串行、失败即停、结果对话框）。</summary>
+  /// <remarks>
+  /// 栏位只抛 <see cref="IGifSetPanel.PublishRequested"/>，不持有发布回调；<c>async void</c> 是
+  /// 事件处理器的既定形态，异常必须在此收口，否则会被 Godot 的同步上下文吞掉。
+  /// </remarks>
+  private async void OnGifSetPublishRequested()
+  {
+    try
+    {
+      await PublishColumnAsync(PublishItemKind.GifSet);
+    }
+    catch (Exception ex)
+    {
+      GD.PushWarning($"InfoPanel: GIF 集发布失败：{ex.Message}");
+    }
+  }
 
   private async Task PublishColumnAsync(PublishItemKind kind)
   {

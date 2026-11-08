@@ -34,7 +34,7 @@ using Godot;
 /// </para>
 /// </remarks>
 [Meta(typeof(IAutoNode))]
-public partial class GifSetPanel : VBoxContainer
+public partial class GifSetPanel : VBoxContainer, IGifSetPanel
 {
   /// <summary>卡片播放区的占位高度（像素）；实际画面按比例缩放到该区域内。</summary>
   private const int CardPlayerMinHeight = 220;
@@ -66,12 +66,26 @@ public partial class GifSetPanel : VBoxContainer
   [Node("%PublishButton")]
   public IButton PublishButton { get; set; } = default!;
 
+  #region Dependencies
+
+  /// <summary>数据管理器（由信息面板经 AutoInject 提供）。</summary>
+  [Dependency]
+  public DataManager DataManager => this.DependOn<DataManager>();
+
+  /// <summary>GIF 集服务（由信息面板经 AutoInject 提供，与发布编排共用同一个实例）。</summary>
+  [Dependency]
+  public GifSetService GifSets => this.DependOn<GifSetService>();
+
+  #endregion
+
+  /// <summary>本栏发布请求：由信息面板订阅后统一编排串行发布（本栏不再持有发布回调）。</summary>
+  public event Action? PublishRequested;
+
   private AutoList<GifSetRecord>.Binding? _setsBinding;
   private AutoValue<string>.Binding? _activeSetIdBinding;
   private GifSetService? _gifSets;
   private DataManager? _dataManager;
   private InfoConfig? _config;
-  private ColumnPublishHandler? _publish;
 
   private readonly GifPlaybackCoordinator _coordinator = new();
   private readonly List<CardRef> _cards = new();
@@ -119,25 +133,14 @@ public partial class GifSetPanel : VBoxContainer
     ReleaseCards();
   }
 
-  /// <summary>AutoInject 节点注入完成（依赖注入前，无需额外动作）。</summary>
-  public void OnReady() { }
-
-  /// <summary>AutoInject 依赖解析完成（本栏无依赖，无需额外动作）。</summary>
-  public void OnResolved() { }
-
-  /// <summary>
-  /// 装配本栏；由信息面板在本节点加入场景树后调用。
-  /// </summary>
-  /// <param name="dataManager">数据管理器（自动保存入口）。</param>
-  /// <param name="gifSets">GIF 集服务。</param>
-  /// <param name="publish">本栏发布回调。</param>
-  public void Setup(DataManager dataManager, GifSetService gifSets, ColumnPublishHandler publish)
+  /// <summary>AutoInject 节点注入完成：只挂信号与点亮录制入口，依赖待解析后再装配。</summary>
+  /// <remarks>
+  /// 信号连接放这里而不是 <see cref="OnResolved"/>：<c>OnReady</c> 每个节点实例只执行一次，
+  /// 而依赖重新解析（节点重新入树）会再次触发 <see cref="OnResolved"/>，重复连接信号会报
+  /// "already connected"。
+  /// </remarks>
+  public void OnReady()
   {
-    _dataManager = dataManager;
-    _config = dataManager.InfoConfig;
-    _gifSets = gifSets;
-    _publish = publish;
-
     // 录制入口已接通：场景里该按钮仍是占位态（disabled + 过时 tooltip），故在这里点亮并换成可执行提示
     EnsureRecordDialogs();
     RecordButton.Disabled = false;
@@ -156,6 +159,18 @@ public partial class GifSetPanel : VBoxContainer
     CardScroll.Resized += ScheduleLayoutRefresh;
     CardList.Resized += ScheduleLayoutRefresh;
     VisibilityChanged += ScheduleLayoutRefresh;
+  }
+
+  /// <summary>AutoInject 依赖解析完成：绑定数据源并首次重建卡片（装配全部来自依赖注入）。</summary>
+  public void OnResolved()
+  {
+    _dataManager = DataManager;
+    _gifSets = GifSets;
+    _config = _dataManager.InfoConfig;
+
+    // 重新解析会再次进入：先释放上一轮绑定，避免同一条数据被订阅多次
+    _setsBinding?.Dispose();
+    _activeSetIdBinding?.Dispose();
 
     _setsBinding = _config.GifSets.Bind().OnModify(OnSetsChanged);
     _activeSetIdBinding = _config.ActiveGifSetId.Bind().OnValue(OnActiveSetIdChanged);
@@ -701,16 +716,21 @@ public partial class GifSetPanel : VBoxContainer
     _messageDialog.PopupCentered(new Vector2I(640, 420));
   }
 
-  private async void OnPublishPressed()
+  /// <summary>发布按钮：触发 <see cref="PublishRequested"/>，由信息面板统一编排发布。</summary>
+  /// <remarks>
+  /// 事件同步派发，因此这里的忙碌态只覆盖派发段；真正的串行发送、失败即停与重试由信息面板的
+  /// <c>PublishService</c> 编排负责（单栏与「一键转发」共用同一条链路）。
+  /// </remarks>
+  private void OnPublishPressed()
   {
-    if (_publish is null || _isPublishing)
+    if (_isPublishing)
       return;
 
     _isPublishing = true;
     UpdatePublishButtonState();
     try
     {
-      await _publish();
+      PublishRequested?.Invoke();
     }
     finally
     {

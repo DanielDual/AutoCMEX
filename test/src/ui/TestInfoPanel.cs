@@ -406,6 +406,32 @@ public class TestInfoPanel : TestClass
   }
 
   /// <summary>
+  /// 批3-A 装配契约：GIF 集栏是 <c>InfoPanel.tscn</c> 里的场景内实例 + AutoInject 依赖注入，
+  /// 而不是信息面板在运行时 <c>AddChild</c> 并用 <c>Setup(...)</c> 手动传依赖。
+  /// </summary>
+  /// <remarks>
+  /// 顺序由场景保证（GIF 集栏必须是 Columns 的第一个子节点），依赖来自信息面板的 provider；
+  /// 这两条任一被改回手动装配都会让本用例失败，同时也是「其余三栏仍运行时装配」的对照。
+  /// </remarks>
+  [Test]
+  public async Task GifSetColumn_IsSceneInstanceWithInjectedDependencies()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var column = panel.GetNode<GifSetPanel>("%GifSetPanel");
+    var columns = panel.GetNode<HBoxContainer>("%Columns");
+
+    column.GetParent().ShouldBe(columns, "GIF 集栏应是场景内实例，父节点为场景里的 Columns");
+    column.GetIndex().ShouldBe(0, "四栏顺序：GIF 集栏排第一");
+
+    // 依赖由信息面板 provider 注入（与发布编排共用同一份 DataManager / GifSetService）
+    column.DataManager.ShouldBeSameAs(_dm);
+    column.GifSets.ShouldNotBeNull("GIF 集服务应由信息面板注入");
+  }
+
+  /// <summary>
   /// 四栏的排版契约：标题在最上、正文在中、发布按钮在最下，且四栏铺满上栏宽度。
   /// </summary>
   /// <remarks>
