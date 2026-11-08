@@ -31,6 +31,12 @@
     <RunTests>false</RunTests>
   </PropertyGroup>
 
+  <PropertyGroup>
+    <!-- Six Labors 许可证：assembly-scoped Community key（仅对 AutoCMEX 程序集有效），公开仓库可提交。
+         ImageSharp 3.2.0 起在构建期校验该文件，缺失或无效时 Release / ExportRelease 构建直接失败。 -->
+    <SixLaborsLicenseFile>$(MSBuildThisFileDirectory)sixlabors.lic</SixLaborsLicenseFile>
+  </PropertyGroup>
+
   <PropertyGroup Condition="('$(Configuration)' == 'Debug' or '$(Configuration)' == 'ExportDebug') and '$(SkipTests)' != 'true' ">
     <RunTests>true</RunTests>
     <DefineConstants>$(DefineConstants);RUN_TESTS</DefineConstants>
@@ -55,7 +61,7 @@
     <PackageReference Include="ClosedXML" Version="0.104.2" />
     <PackageReference Include="CsvHelper" Version="33.0.1" />
     <!-- GIF 帧解码（信息板块：符卡 GIF 集展示）；纯托管实现，不引入原生资产 -->
-    <PackageReference Include="SixLabors.ImageSharp" Version="3.1.12" />
+    <PackageReference Include="SixLabors.ImageSharp" Version="3.2.0" />
   </ItemGroup>
 
   <ItemGroup Condition="'$(RunTests)' == 'true'">
