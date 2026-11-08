@@ -388,7 +388,7 @@ P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完�
 - **现象**：`AutoList<T>.Bind().OnModify(...)` 只在集合自身增删时触发；元素内部的 `AutoValue<T>` 变化（改启用、改名、改地址、标记删除）不会让列表对象发生任何变化。
 - **纪律**：凡是「元素字段也会变」的列表，必须为每个元素逐项订阅 `AutoValue<T>.Bind().OnValue(...)`，并在列表增删时随 `OnModify` 重建这批元素级订阅：先 `Dispose` 旧订阅再挂新订阅（规则 20）；重挂期间抑制订阅回放（否则每次增删都会按「元素数 × 字段数」炸出一串刷新）；绑定回调只调度 `CallDeferred`，不直接碰控件（规则 19）。
 - **先例**：目标群 `TargetGroup`（信息页「一键转发」可用态与设置页行回填各自订阅「启用 / 群 ID / 群名」）、AI 模型 `AiModelConfig`（下拉项可用态与标签）、符卡 `SpellCard`（`BossDataWatcher` 把一次猜测通知到两张表）、创作者包 `CreatorPackage.IsDeleted`（删包后驱动包列表重建，不再手动刷新）。
-- **仍挂账**：GIF 集 `GifSetRecord` 的集摘要只看列表级 `OnModify`；同一文件夹重复导入是原地更新记录（`ImportedAt` 等字段变化不冒泡），摘要会停在旧值，要等下一次列表增删或重建才更新（见下方「已知旧账」）。
+- **GIF 集摘要**：`GifSetRecord` 的活动集字段（`SetName` / `ImportedAt` / `EntryCount` / `RootPath`）已逐项绑定；同一文件夹重复导入是原地更新记录，字段变化会触发摘要与卡片重建（同帧多次变化经排队合并为一次）。
 
 ### UI 刷新与事件
 
@@ -404,11 +404,10 @@ P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完�
 
 ### 已知旧账（未清）
 
-- **静态服务定位器**：`AppLogs.GetOrCreate()` 等静态入口绕过 AutoInject（约二十余处），单测只能全局替换。
 - **录制两面板未场景化**：`RecordingConfigPanel` / `RecordingRunPanel` 的控件仍由 C# 构建、无独立 `.tscn`（规则 7/8/13 的文档化例外，见「配置与插件部署」「录制入口」两节）。
-- **部分测试仍手动刷新**：仍有测试直接调用 `Refresh` / `RefreshStatuses` 或用固定帧数等待，属历史写法；新增用例应走「写模型 → 等帧 → 断言」。
-- **规则未落自动守护**：规则已迁入 `docs/engineering-guidelines.md`，但仍没有 analyzer 或 CI 守护，新代码只能靠评审拦。
-- **GIF 集摘要不随元素字段刷新**：`GifSetRecord` 只有列表级绑定，同一文件夹重复导入后「导入于 …」保持旧值。
+- **少量测试仍手动刷新**：多数「改完模型手动 `Refresh`」的用例已改为「写模型 → 等帧 → 断言」；剩余几处是面板确无绑定路径（替换列表实例、嵌套别名列表、进页清空提示、依赖 `MergeConfig.SharpEditorPath` 的按钮态）或固定帧等待，已就地注释。
+- **规则未落自动守护**：规则已迁入 `docs/engineering-guidelines.md`，按约定暂不引入 analyzer/CI 守护，新代码靠评审拦。
+- **日志注入已完成**：服务与面板改为显式注入 `ILog`（`DataManager.GetLogger(module)` 保留模块名），`AppLogs` 静态入口只保留在 `Main.cs` 启动层与 `MainWindow` 的一次 bootstrap。
 - **设置板块仍有空类别页**：左侧 7 个类别里「猜测」「整合」「帮助」「通用」4 页仍为空占位（「AI 模型」「群聊」「信息」3 页已实现）。
 
 ---
