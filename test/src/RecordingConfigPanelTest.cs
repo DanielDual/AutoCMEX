@@ -9,6 +9,7 @@ using AutoCMEX.Core.Recording;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Settings;
+using Chickensoft.AutoInject;
 using Chickensoft.GoDotTest;
 using Chickensoft.Log;
 using Godot;
@@ -23,7 +24,9 @@ using Shouldly;
 /// 控件、把控件输入写回配置」，只有真实节点与真实目录才能同时验证这两条；控件事件不模拟，直接调
 /// 面板留出的公开入口（<c>CommitEngineDir</c>/<c>ApplyParallelism</c>/…）。
 /// 面板统一挂到真实宿主节点下：300ms 去抖探针的 <see cref="Timer"/> 与 <c>_ExitTree</c> 解绑
-/// 只有在场景树里才会真的走。
+/// 只有在场景树里才会真的走；进树同时真实触发 EnterTree/Ready，由 AutoInject 驱动
+/// <c>OnReady</c>（建控件）与 <c>OnResolved</c>（绑配置）。DataManager 按要求用
+/// <c>IsTesting + FakeDependency</c> 注入，面板本身没有 <c>[Node]</c> 属性，不需要 FakeNodeTree。
 /// </remarks>
 public class RecordingConfigPanelTest : TestClass
 {
@@ -538,11 +541,15 @@ public class RecordingConfigPanelTest : TestClass
     panel.ActionLabel.Text.ShouldContain("没有弹幕录制器条目");
   }
 
-  /// <summary>新建一个已进场景树的面板（同一 DataManager，便于验证「从配置回填」与去抖探针）。</summary>
-  /// <returns>已建好的面板。</returns>
+  /// <summary>新建一个接好依赖并进场景树的面板（同一 DataManager，便于验证回填与去抖探针）。</summary>
+  /// <returns>已建好的面板（<c>OnReady</c>/<c>OnResolved</c> 已随进树执行完毕）。</returns>
   private RecordingConfigPanel NewPanel()
   {
-    var panel = new RecordingConfigPanel(_dm);
+    var panel = new RecordingConfigPanel();
+    (panel as IAutoInit).IsTesting = true;
+    panel.FakeDependency<DataManager>(_dm);
+    // 进树即真实触发 EnterTree/Ready：AutoInject 依次调 OnReady（建控件）与 OnResolved（绑配置），
+    // 与手动补发这两条通知等价，同时让去抖 Timer 与 _ExitTree 走真机路径。
     _host.AddChild(panel);
     _panels.Add(panel);
     return panel;

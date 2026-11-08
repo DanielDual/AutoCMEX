@@ -50,7 +50,7 @@ using Godot;
 /// </para>
 /// </remarks>
 [Meta(typeof(IAutoNode))]
-public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
+public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel, IProvide<DataManager>
 {
   #region AutoConnect Nodes
 
@@ -85,6 +85,14 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
 
   [Dependency]
   public InfoEventBus InfoEvents => this.DependOn<InfoEventBus>();
+
+  /// <summary>提供给运行时创建的录制设置分组的 DataManager（就近解析，与页面同一实例）。</summary>
+  /// <remarks>
+  /// 录制分组是 <see cref="EnsureRecordingSection"/> 在依赖解析后用 <c>new</c> 建出来的子节点，
+  /// 它的 <c>[Dependency] DataManager</c> 需要最近的祖先 provider；本页是它的直接宿主，
+  /// 故把同一个实例往下提供，不另造服务（与 <c>AiModelConfigPanel</c> 提供给模型行的做法一致）。
+  /// </remarks>
+  DataManager IProvide<DataManager>.Value() => _dm!;
 
   #endregion
 
@@ -154,6 +162,10 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
 
     _settings = _dm.Settings;
 
+    // 录制设置分组是运行时创建的子节点，其 [Dependency] DataManager 从本页就近解析；
+    // 必须先 Provide 再挂子节点，否则子节点的依赖解析会一直等 provider 初始化。
+    this.Provide();
+
     // 传访问器而不是实例：WebSocket 重启会重建实例并释放旧实例，查群列表时必须取「当前」那一个
     _groupDirectory = new GroupDirectoryService(_dm, () => Server);
     _binding = _settings.TargetGroups.Bind().OnModify(OnTargetGroupsChanged);
@@ -166,12 +178,16 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel
 
   /// <summary>创建并挂载录制设置分组（幂等；依赖未解析时不创建）。</summary>
   /// <returns>已挂载的分组；依赖未解析时为 null。</returns>
+  /// <remarks>
+  /// 不再手工传 DataManager：分组自己用 AutoInject 从本页（<see cref="IProvide{T}"/>）就近解析，
+  /// 与页内其它动态节点同一范式。
+  /// </remarks>
   public RecordingConfigPanel? EnsureRecordingSection()
   {
     if (_recordingSection is not null || _dm is null)
       return _recordingSection;
 
-    _recordingSection = new RecordingConfigPanel(_dm) { Name = "RecordingSection" };
+    _recordingSection = new RecordingConfigPanel { Name = "RecordingSection" };
     PageBody.AddChild(_recordingSection);
     return _recordingSection;
   }

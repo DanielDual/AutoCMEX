@@ -8,6 +8,8 @@ using AutoCMEX.Core.Recording;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI;
+using Chickensoft.AutoInject;
+using Chickensoft.Introspection;
 using Chickensoft.Sync.Primitives;
 using Godot;
 
@@ -34,10 +36,21 @@ using Godot;
 /// 300ms 去抖的后台探针，结果按「引擎目录 + game/ 修改时间」缓存后回主线程渲染。
 /// </para>
 /// <para>
+/// 按规则 1/5 接入 AutoInject：<c>[Meta(typeof(IAutoNode))]</c>、<c>_Notification</c> 转发给
+/// <c>this.Notify</c>、DataManager 走 <c>[Dependency]</c>，控件在 <see cref="OnReady"/> 一次性建好，
+/// 配置回填与绑定在 <see cref="OnResolved"/> 装配（依赖重新解析时先释放旧绑定）。
+/// </para>
+/// <para>
+/// 但控件仍由 C# 构建（规则 7/8/13 的**文档化例外**）：本分组没有独立场景，二十余个控件写进共享的
+/// <c>SettingsPanel.tscn</c> 既挤又容易与其它类别页互相牵连；批 4 结构收敛只补 DI 与生命周期，
+/// 场景化留待单独评估。
+/// </para>
+/// <para>
 /// 交互入口都留了公开方法（<see cref="CommitEngineDir"/>、<see cref="ApplyParallelism"/> 等），
 /// 便于单测直接驱动，不必模拟控件事件。
 /// </para>
 /// </remarks>
+[Meta(typeof(IAutoNode))]
 public sealed partial class RecordingConfigPanel : VBoxContainer
 {
   private static readonly Color _okColor = new(0.62f, 0.86f, 0.52f);
@@ -46,8 +59,12 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   /// <summary>磁盘探针的去抖时延（秒）：连续 tick 只落一次递归枚举。</summary>
   private const double ProbeDebounceSeconds = 0.3;
 
-  private readonly DataManager _dm;
-  private readonly RecordingConfig _config;
+  /// <summary>数据管理器（在 <see cref="OnResolved"/> 里取；之后的公开入口都依赖它已就绪）。</summary>
+  private DataManager _dm = default!;
+
+  /// <summary>录制配置（与 <see cref="DataManager"/> 同一实例，在 <see cref="OnResolved"/> 里取）。</summary>
+  private RecordingConfig _config = default!;
+
   private bool _syncing;
 
   /// <summary>8 个配置项的 Sync 绑定（规则 20：在 <see cref="_ExitTree"/> 释放）。</summary>
@@ -56,10 +73,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   /// <summary>磁盘探针的去抖定时器（单次触发，重复请求只重启它）。</summary>
   private Timer? _probeTimer;
 
-  /// <summary>还没进树时排下的探针请求，由 <see cref="_Ready"/> 补排一次。</summary>
-  private bool _probeRequested;
-
-  /// <summary>正在建立配置绑定：订阅回放不排回填（构造时紧接着会整体回填一次）。</summary>
+  /// <summary>正在建立配置绑定：订阅回放不排回填（随后会整体回填一次）。</summary>
   private bool _isBindingConfigValues;
 
   /// <summary>上次估算结果对应的引擎目录（缓存键的一半）。</summary>
@@ -77,17 +91,47 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   /// <summary>本面板实际执行过几次磁盘占用估算（测试用探针计数；生产代码不读取）。</summary>
   private int _footprintProbeRuns;
 
-  /// <summary>构建分组：控件一次建好，回填配置值并渲染常数级状态（磁盘占用由进树后的去抖探针补）。</summary>
-  /// <param name="dataManager">数据管理器（提供录制配置、合并配置与自动保存）。</param>
-  /// <exception cref="ArgumentNullException"><paramref name="dataManager"/> 为空。</exception>
-  public RecordingConfigPanel(DataManager dataManager)
+  #region Dependencies
+
+  /// <summary>数据管理器（由设置面板树内的 provider 就近提供，与页面共用同一实例）。</summary>
+  [Dependency]
+  public DataManager DataManager => this.DependOn<DataManager>();
+
+  #endregion
+
+  /// <summary>构建分组：控件在 <see cref="OnReady"/> 里一次建好。</summary>
+  /// <remarks>
+  /// 本面板没有独立场景，控件沿用「C# 构建」范式（规则 7/8/13 的文档化例外）；
+  /// 无参构造只为让调用方 <c>new</c> 出来后再挂进树，配置依赖走 AutoInject。
+  /// </remarks>
+  public RecordingConfigPanel()
   {
-    _dm = dataManager ?? throw new ArgumentNullException(nameof(dataManager));
-    _config = _dm.RecordingConfig;
     Name = "RecordingConfigPanel";
+  }
+
+  /// <inheritdoc/>
+  public override void _Notification(int what) => this.Notify(what);
+
+  /// <summary>AutoInject 节点注入完成：把控件一次建好（每个实例只执行一次）。</summary>
+  public void OnReady()
+  {
     BuildHeader();
     BuildBody();
     BuildDialogs();
+  }
+
+  /// <summary>AutoInject 依赖解析完成：取配置、挂绑定并首次渲染；重复解析时先释放上一轮绑定。</summary>
+  /// <remarks>
+  /// 依赖解析可能因节点重新入树而再次触发，故这里必须先 <see cref="DisposeBindings"/> 再重挂，
+  /// 否则同一条 <c>AutoValue</c> 会被订阅多次（回填回调重复、探针重复排）。
+  /// </remarks>
+  public void OnResolved()
+  {
+    _dm = DataManager;
+    _config = _dm.RecordingConfig;
+
+    DisposeBindings();
+
     BindConfigValues();
     SyncControlsFromConfig();
     RefreshProbes();
@@ -704,14 +748,14 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
 
   /// <summary>为 8 个录制配置项挂值绑定：别处改配置时把值回填进控件（规则 18/19）。</summary>
   /// <remarks>
-  /// 订阅会立刻用当前值回放一次，构造期先抑制这次回放（紧接着就整体回填）；之后的真实变化
+  /// 订阅会立刻用当前值回放一次，首次解析时先抑制这次回放（紧接着就整体回填）；之后的真实变化
   /// 只排 <c>CallDeferred</c>，不在绑定回调栈里碰控件。回填期间由 <c>_syncing</c> 护栏阻断
   /// SpinBox 的写回，避免「回填 → 写回 → 再回填」自激。只有引擎目录/沙箱根/并行度会改变
   /// 磁盘提示，故这三项连带重排探针，其余只回填控件。
   /// </remarks>
   private void BindConfigValues()
   {
-    // 订阅即回放一次：构造时紧接着会整体回填，这里的回放不必再排 8 次延迟任务
+    // 订阅即回放一次：首次解析时紧接着会整体回填，这里的回放不必再排 8 次延迟任务
     _isBindingConfigValues = true;
     try
     {
@@ -769,28 +813,22 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     }
   }
 
-  /// <inheritdoc/>
-  public override void _Ready()
+  /// <summary>释放全部配置绑定（重新解析依赖前与节点退出时复用）。</summary>
+  private void DisposeBindings()
   {
-    // 构造期还没进树：那时排下的探针请求在这里补排一次（Timer 只有在树里才会走）
-    if (_probeRequested)
-    {
-      _probeRequested = false;
-      QueueFootprintProbe();
-    }
-  }
-
-  /// <inheritdoc/>
-  public override void _ExitTree()
-  {
-    // 规则 20：绑定必须在节点退出时释放；探针定时器也停掉，避免对已离场面板回填
     foreach (var binding in _bindings)
     {
       binding.Dispose();
     }
 
     _bindings.Clear();
-    _probeRequested = false;
+  }
+
+  /// <inheritdoc/>
+  public override void _ExitTree()
+  {
+    // 规则 20：绑定必须在节点退出时释放；探针定时器也停掉，避免对已离场面板回填
+    DisposeBindings();
 
     var probeTimer = _probeTimer;
     if (probeTimer is not null && GodotObject.IsInstanceValid(probeTimer))
@@ -803,13 +841,12 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
 
   /// <summary>排一次去抖的磁盘探针：300ms 内的多次请求合并成一次。</summary>
   /// <remarks>
-  /// 还没进树时只记下请求，由 <see cref="_Ready"/> 补排；不在场景树里起 Timer 不会走。
+  /// 只在场景树里排（Timer 不进树不会走）：依赖解析发生在 Ready 之后，届时节点已在树内。
   /// </remarks>
   private void QueueFootprintProbe()
   {
     if (!IsInsideTree())
     {
-      _probeRequested = true;
       return;
     }
 

@@ -6,6 +6,8 @@ using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using AutoCMEX.Models;
+using Chickensoft.AutoInject;
+using Chickensoft.Introspection;
 using Godot;
 
 /// <summary>
@@ -34,7 +36,14 @@ public delegate Task<RecordingRunResult> RecordingRunner(
 /// 关闭窗口在运行中意为「取消录制」（产物与报告照常保留，报告标 <c>cancelled</c>），
 /// 因为窗口一关就再没有别的地方能中止本轮。
 /// </para>
+/// <para>
+/// 按规则 5 接入 AutoInject 的生命周期（<c>[Meta(typeof(IAutoNode))]</c> + <c>_Notification</c>），
+/// 但 <see cref="RecordingRunner"/> 仍是构造参数：它是「跑一轮」的命令，不是从祖先注入的服务，
+/// 单测也靠替换它来驱动对话框；本类没有 <c>[Node]</c>/<c>[Dependency]</c> 成员。
+/// 控件同样用 C# 构建（规则 7/8/13 的文档化例外，无独立场景）。
+/// </para>
 /// </remarks>
+[Meta(typeof(IAutoNode))]
 public sealed partial class RecordingRunPanel : AcceptDialog
 {
   /// <summary>取消按钮的动作名（<see cref="AcceptDialog.CustomAction"/> 的参数）。</summary>
@@ -47,10 +56,20 @@ public sealed partial class RecordingRunPanel : AcceptDialog
   private RecordingRunResult? _pendingResult;
   private bool _renderQueued;
 
+  /// <inheritdoc/>
+  public override void _Notification(int what) => this.Notify(what);
+
+  /// <summary>供 Introspection 生成器创建类型元数据实例；正常使用请用带 runner 的构造。</summary>
+  public RecordingRunPanel()
+  {
+    _runner = default!;
+  }
+
   /// <summary>构建对话框（内容全用 C# 搭建，不改任何场景文件）。</summary>
   /// <param name="runner">跑一轮录制的委托（默认实现见调用方，单测可替换）。</param>
   /// <exception cref="ArgumentNullException"><paramref name="runner"/> 为 <c>null</c>。</exception>
   public RecordingRunPanel(RecordingRunner runner)
+    : this()
   {
     _runner = runner ?? throw new ArgumentNullException(nameof(runner));
     BuildUi();
