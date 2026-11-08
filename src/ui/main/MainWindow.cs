@@ -159,10 +159,29 @@ public partial class MainWindow
   /// </summary>
   private bool _finalSaveFlushed;
 
+  /// <summary>
+  /// 已进入退出流程（关窗通知或 <c>_ExitTree</c>）：此期间的配置写入只该落盘，不得再触发 WebSocket 重启。
+  /// </summary>
+  private bool _exiting;
+
   public override void _Notification(int what) => this.Notify(what);
+
+  /// <summary>
+  /// 关窗通知：节点树拆解前唯一可靠的早期时机，先立起退出护栏。
+  /// </summary>
+  /// <remarks>
+  /// Godot 拆解节点树时子节点先退出，设置面板会在自己的退出回调里把去抖窗口内尚未提交的
+  /// 端口编辑写回模型；若不提前置位，这笔写入会经配置绑定触发一次 WebSocket 重启，
+  /// 而此刻 <see cref="AutoCMEX.Main"/> 已关闭日志服务 → 异步重启会在拆解期失败并重建日志。
+  /// </remarks>
+  public void OnWMCloseRequest() => _exiting = true;
 
   public override void _ExitTree()
   {
+    // 必须最先置位：拆解期间子面板的退出回调仍会写配置（恢复去抖中的端口编辑），
+    // 那些写入不许再触发 WebSocket 重启
+    _exiting = true;
+
     // 先摘掉退出入口：主窗口正在离开节点树，Main 的退出通知不应再走末次保存
     if (ReferenceEquals(_activeInstance, this))
       _activeInstance = null;
@@ -339,6 +358,11 @@ public partial class MainWindow
   /// </remarks>
   public async void RestartWebSocket()
   {
+    // 退出/已离树：此时的配置写入（典型：设置面板退出时恢复未提交的端口编辑）只该落盘，
+    // 不得再重建 WebSocket——否则关窗路径上会与已关闭的日志服务抢生命周期
+    if (_exiting || !IsInsideTree())
+      return;
+
     try
     {
       _webSocketServer = await _webSocketLifecycle.RestartAsync(_dataManager.Settings);

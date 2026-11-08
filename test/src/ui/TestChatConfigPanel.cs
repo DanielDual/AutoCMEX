@@ -374,4 +374,105 @@ public class TestChatConfigPanel : TestClass
       DisposeAll(bindings);
     }
   }
+
+  /// <summary>
+  /// 去抖窗口内退出（关窗）：待提交的端口必须在退出前写回模型，交给批0 的退出落盘；
+  /// 写回只发生一次，且退出路径不排自动保存（落盘统一由 DataManager.Dispose 负责）。
+  /// </summary>
+  [Test]
+  public void ExitTree_CommitsPendingPortToModel()
+  {
+    var writes = 0;
+    var binding = _dm.Settings.WebSocketPort.Bind().OnValue(_ => writes++);
+    writes = 0;
+
+    try
+    {
+      _portInput.Raise(m => m.ValueChanged += null, 5210d);
+
+      // 去抖窗口还没到：此刻模型仍是旧端口，直接关窗会丢这一笔（本条用例要防的就是它）
+      _dm.Settings.WebSocketPort.Value.ShouldBe(5140);
+
+      // 替身面板不入树，引擎不会替我们发退出通知，这里手工触发
+      _panel._Notification((int)Node.NotificationExitTree);
+
+      _dm.Settings.WebSocketPort.Value.ShouldBe(5210);
+      writes.ShouldBe(1);
+    }
+    finally
+    {
+      binding.Dispose();
+    }
+  }
+
+  [Test]
+  public void ExitTree_IsIdempotent()
+  {
+    var writes = 0;
+    var binding = _dm.Settings.WebSocketPort.Bind().OnValue(_ => writes++);
+    writes = 0;
+
+    try
+    {
+      _portInput.Raise(m => m.ValueChanged += null, 5220d);
+
+      _panel._Notification((int)Node.NotificationExitTree);
+      _panel._Notification((int)Node.NotificationExitTree); // 重复退出通知
+
+      _dm.Settings.WebSocketPort.Value.ShouldBe(5220);
+      writes.ShouldBe(1);
+    }
+    finally
+    {
+      binding.Dispose();
+    }
+  }
+
+  /// <summary>没有待提交端口时退出：不能凭空写一笔配置。</summary>
+  [Test]
+  public void ExitTree_WithoutPendingPort_DoesNotWrite()
+  {
+    var writes = 0;
+    var binding = _dm.Settings.WebSocketPort.Bind().OnValue(_ => writes++);
+    writes = 0;
+
+    try
+    {
+      _panel._Notification((int)Node.NotificationExitTree);
+
+      writes.ShouldBe(0);
+      _dm.Settings.WebSocketPort.Value.ShouldBe(5140);
+    }
+    finally
+    {
+      binding.Dispose();
+    }
+  }
+
+  /// <summary>
+  /// 退出后绑定已释放、排队中的回填不再执行：外部再改配置既不该回填控件，也不该把状态写回去。
+  /// </summary>
+  [Test]
+  public async Task ExitTree_StopsRefillingControls()
+  {
+    // 退出前先排一次回填（模型变更 → CallDeferred），它会在退出之后才执行
+    _dm.Settings.WebSocketMode.Value = "Client";
+
+    _panel._Notification((int)Node.NotificationExitTree);
+
+    await WaitRefillAsync();
+
+    // 排队中的回填被退出护栏挡掉：控件保持退出前的对齐结果
+    _modeSelect.Verify(m => m.Select(1), Times.Never);
+    _koishiUrlRow.VerifySet(m => m.Visible = true, Times.Never);
+
+    // 退出后外部再改配置：绑定已释放，不排回填、不写回
+    _dm.Settings.WebSocketPort.Value = 5300;
+    _dm.Settings.WebSocketMode.Value = "Server";
+
+    await WaitRefillAsync();
+
+    _portInput.VerifySet(m => m.Value = 5300, Times.Never);
+    _dm.Settings.WebSocketPort.Value.ShouldBe(5300);
+  }
 }

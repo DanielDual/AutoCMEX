@@ -266,4 +266,64 @@ public class TestChatConfigPanelRuntime : TestClass
       DisposeAll(bindings);
     }
   }
+
+  /// <summary>
+  /// 改端口后立即退出（不等 300ms 去抖）：面板离开场景树时必须把这笔编辑写回模型，
+  /// 交给退出路径的落盘（DataManager.Dispose）；写回只发生一次，也不排自动保存。
+  /// </summary>
+  [Test]
+  public async Task PanelLeavingTree_CommitsPendingPort()
+  {
+    await WaitRefillAsync(_panel); // 先让首次回填把手动改的值对齐到控件
+
+    var writes = 0;
+    var binding = _dm.Settings.WebSocketPort.Bind().OnValue(_ => writes++);
+    writes = 0;
+
+    try
+    {
+      _panel.PortInput.Value = 5230; // 真机 SpinBox 同步发 value_changed，进入去抖窗口
+
+      _dm.Settings.WebSocketPort.Value.ShouldBe(5140);
+
+      // 不等去抖：立刻把面板移出场景树（关窗时也是子节点先离树，顺序与此一致）
+      _host.RemoveChild(_panel);
+      _panel.QueueFree();
+
+      await WaitRefillAsync(_host);
+
+      _dm.Settings.WebSocketPort.Value.ShouldBe(5230);
+      writes.ShouldBe(1);
+    }
+    finally
+    {
+      binding.Dispose();
+    }
+  }
+
+  /// <summary>没有待提交端口时退出：不能因为退出凭空写一笔配置。</summary>
+  [Test]
+  public async Task PanelLeavingTree_WithoutPendingPort_DoesNotWrite()
+  {
+    await WaitRefillAsync(_panel);
+
+    var writes = 0;
+    var bindings = CountSettingWrites(() => writes++);
+    writes = 0;
+
+    try
+    {
+      _host.RemoveChild(_panel);
+      _panel.QueueFree();
+
+      await WaitRefillAsync(_host);
+
+      writes.ShouldBe(0);
+      _dm.Settings.WebSocketPort.Value.ShouldBe(5140);
+    }
+    finally
+    {
+      DisposeAll(bindings);
+    }
+  }
 }

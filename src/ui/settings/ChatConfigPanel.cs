@@ -90,16 +90,18 @@ public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
   /// <summary>端口去抖已累计的时间（秒）。</summary>
   private double _pendingPortElapsed;
 
+  /// <summary>已进入退出流程：退出提交只做一次，且不再排队回填控件。</summary>
+  private bool _exiting;
+
   /// <inheritdoc/>
   public override void _Notification(int what)
   {
     this.Notify(what);
     if (what == (int)NotificationExitTree)
     {
-      // 只释放绑定，不在退出时提交去抖中的端口改动：写模型会让 MainWindow 的端口绑定触发一次
-      // WebSocket 重启（async void），而关窗路径上 Main 已关闭日志服务。代价是去抖窗口内直接关窗
-      // 最多丢一笔未提交的端口编辑（重开后重设），换退出路径零副作用。
+      // 先摘绑定再提交：提交写模型会同步通知本面板的绑定，摘掉后不会再排一次回填
       DisposeBindings();
+      CommitPendingPortOnExit();
     }
   }
 
@@ -190,6 +192,11 @@ public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
   public void FlushRefresh()
   {
     _refreshQueued = false;
+
+    // 已进入退出流程：排队中的回填可能在退出之后才执行，此时不再动正在离树的控件
+    if (_exiting)
+      return;
+
     Refresh();
   }
 
@@ -276,7 +283,14 @@ public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
   }
 
   /// <summary>把去抖窗口结束后的端口写入设置；值没变则既不写模型也不触发保存。</summary>
-  private void CommitPendingPort()
+  private void CommitPendingPort() => CommitPendingPort(triggerAutoSave: true);
+
+  /// <summary>把待提交的端口写回模型。</summary>
+  /// <param name="triggerAutoSave">
+  /// 是否同时排一次自动保存。退出路径传 <c>false</c>：落盘由退出时的
+  /// <see cref="DataManager.Dispose"/> 负责，拆解期不该再排防抖保存（也不会多写一次日志）。
+  /// </param>
+  private void CommitPendingPort(bool triggerAutoSave)
   {
     if (!_hasPendingPort)
       return;
@@ -289,9 +303,35 @@ public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
     if (_settings.WebSocketPort.Value == port)
       return;
 
-    // 写模型即通知 MainWindow 重启 WebSocket（它绑定了 WebSocketPort）；一次提交只写一次
+    // 写模型即通知 MainWindow 重启 WebSocket（它绑定了 WebSocketPort）；一次提交只写一次。
+    // 退出路径上 MainWindow 的退出护栏会把这笔通知挡在重启之外。
     _settings.WebSocketPort.Value = port;
-    _dm?.TriggerAutoSave();
+
+    if (triggerAutoSave)
+      _dm?.TriggerAutoSave();
+  }
+
+  /// <summary>
+  /// 退出前把去抖窗口内还没提交的端口编辑写回模型（只写模型，不排自动保存）。
+  /// </summary>
+  /// <remarks>
+  /// 退出路径由批0 的 <see cref="DataManager.Dispose"/> 同步落盘，因此这里写模型即可保住这一笔；
+  /// 写模型会同步通知 MainWindow 的端口绑定，但 MainWindow 已由退出护栏挡住
+  /// （关窗通知 / 离树后不再重启 WebSocket），不会在拆解期重建实例或日志服务。
+  /// 判空 + 防重入：面板可能在依赖解析前就被释放，节点树拆解也不保证只来一次通知。
+  /// </remarks>
+  private void CommitPendingPortOnExit()
+  {
+    if (_exiting)
+      return;
+
+    _exiting = true;
+
+    // 依赖未解析（面板被提前释放）时既没有绑定也没有待提交内容
+    if (_dm is null || _settings.WebSocketPort is null)
+      return;
+
+    CommitPendingPort(triggerAutoSave: false);
   }
 
   private void OnModeChanged(long index)
