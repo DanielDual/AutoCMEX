@@ -148,16 +148,78 @@ public partial class MainWindow
   private Control? _currentPanel;
   private const string DefaultPanel = "guessing";
 
+  /// <summary>
+  /// 当前运行时主窗口实例。Main 的退出路径不持有 DataManager，
+  /// 经 <see cref="FlushPendingSave"/> 这个静态入口让主窗口先落盘（测试模式不注册）。
+  /// </summary>
+  private static MainWindow? _activeInstance;
+
+  /// <summary>
+  /// 退出前的末次保存是否已执行。用于幂等：重复关窗/退出通知只写一次盘。
+  /// </summary>
+  private bool _finalSaveFlushed;
+
   public override void _Notification(int what) => this.Notify(what);
 
   public override void _ExitTree()
   {
+    // 先摘掉退出入口：主窗口正在离开节点树，Main 的退出通知不应再走末次保存
+    if (ReferenceEquals(_activeInstance, this))
+      _activeInstance = null;
+
     // 先摘掉配置绑定，保证退出过程中不会再有新的重启请求进来
     _webSocketModeBinding?.Dispose();
     _webSocketPortBinding?.Dispose();
     _koishiWebSocketUrlBinding?.Dispose();
     _webSocketLifecycle?.Dispose();
+    // DataManager.Dispose 内部会再同步落盘一次，覆盖「关窗通知没走到」的退出路径
     _dataManager?.Dispose();
+    _finalSaveFlushed = true;
+  }
+
+  /// <summary>
+  /// 请求当前主窗口把尚未落盘的改动立即写入磁盘（应用退出路径专用）。
+  /// </summary>
+  /// <remarks>
+  /// 数据改动经 <see cref="DataManager.TriggerAutoSave"/> 走 1500ms 防抖，关窗/退出时
+  /// 最后一笔改动可能还在防抖窗口里；<see cref="AutoCMEX.Main"/> 没有 DataManager 引用，
+  /// 因此经此静态入口让主窗口先落盘，再由 Main 关闭日志服务（落盘过程要写日志）。
+  /// 幂等：同一实例只写一次；无实例（测试模式或服务未初始化）时为空操作。
+  /// </remarks>
+  public static void FlushPendingSave()
+  {
+    var window = _activeInstance;
+    if (window == null || !GodotObject.IsInstanceValid(window))
+      return;
+
+    window.SavePendingChanges();
+  }
+
+  /// <summary>
+  /// 执行退出前的末次保存；写盘失败只记错误日志，不打断退出流程。
+  /// </summary>
+  private void SavePendingChanges()
+  {
+    if (_finalSaveFlushed)
+      return;
+
+    _finalSaveFlushed = true;
+
+    // 测试模式不构造 DataManager，这里保持与旧退出行为一致（什么都不做）
+    if (_dataManager == null)
+      return;
+
+    try
+    {
+      _dataManager.SaveAll();
+    }
+    catch (Exception ex)
+    {
+      AppLogs
+        .GetOrCreate()
+        .GetLogger(nameof(MainWindow))
+        .Err($"MainWindow: flush pending save failed: {ex.GetType().Name}: {ex.Message}");
+    }
   }
 
   public void OnReady()
@@ -168,7 +230,15 @@ public partial class MainWindow
       // 初始化核心服务
       var dataDir = ProjectSettings.GlobalizePath("user://data/");
       var encryptor = new AesEncryptor(AesEncryptor.GetDefaultKeyPath(dataDir));
-      _dataManager = new DataManager(dataDir, encryptor);
+      // 自动保存的「捕获 + 序列化」必须回主线程执行：防抖到期在池线程，只把原子写盘留在池线程，
+      // 避免池线程枚举活的 AutoList（含 Boss.SpellCards 等嵌套集合）。
+      var dataLog = AppLogs.GetOrCreate().GetLogger(nameof(DataManager));
+      _dataManager = new DataManager(
+        dataDir,
+        encryptor,
+        dataLog,
+        action => Callable.From(action).CallDeferred()
+      );
       _dataManager.LoadAll();
 
       _aiServiceFactory = new AiServiceFactory(_dataManager);
@@ -210,6 +280,10 @@ public partial class MainWindow
       _koishiWebSocketUrlBinding = _dataManager
         .Settings.KoishiWebSocketUrl.Bind()
         .OnValue(_ => RestartWebSocket());
+
+      // 注册退出入口：Main 关窗/退出时经静态方法触发末次保存。
+      // 测试模式不注册，避免静态实例跨用例残留。
+      _activeInstance = this;
     }
 
     // 通知 AutoInject 依赖已就绪

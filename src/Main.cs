@@ -3,6 +3,7 @@ namespace AutoCMEX;
 using System;
 using AutoCMEX.Core.Logging;
 using AutoCMEX.UI;
+using AutoCMEX.UI.Main;
 using Chickensoft.GameTools.Displays;
 using Godot;
 #if RUN_TESTS
@@ -116,12 +117,33 @@ public partial class Main : Node2D
 
   public override void _Notification(int what)
   {
-    // Godot 退出通知：WM_CLOSE_REQUEST 与 EXIT_TREE 时关闭日志
+    // Godot 退出通知：WM_CLOSE_REQUEST 与 EXIT_TREE 时先刷盘再关闭日志
     if (what == NotificationWMCloseRequest || what == NotificationExitTree)
     {
+      // 顺序不可颠倒：DataManager 落盘过程要写日志，日志服务必须还活着
+      FlushPendingSave();
       ShutdownLogs();
     }
     base._Notification(what);
+  }
+
+  /// <summary>
+  /// 触发主窗口的末次保存，避免防抖窗口（1500ms）内的改动随关窗丢失。
+  /// </summary>
+  /// <remarks>
+  /// Main 不持有 DataManager，经 <see cref="AutoCMEX.UI.Main.MainWindow.FlushPendingSave"/> 的静态入口转发；
+  /// 无主窗口实例（如测试模式）时为空操作，重复调用不会重复写盘。
+  /// </remarks>
+  private static void FlushPendingSave()
+  {
+    try
+    {
+      MainWindow.FlushPendingSave();
+    }
+    catch (Exception ex)
+    {
+      GD.PrintErr($"[Main] Failed to flush pending saves: {ex.Message}");
+    }
   }
 
   /// <summary>
