@@ -205,6 +205,73 @@ public class TestMergePanelRuntime : TestClass
     panel.ResourceList.ItemCount.ShouldBe(0);
     panel.ObjectList.ShouldNotBeNull();
     panel.ObjectList.ItemCount.ShouldBe(0);
+
+    // 包列表经 IsDeleted 元素级绑定重建：被删包被过滤掉（不再可选中/导出）。
+    panel.PackageList.ItemCount.ShouldBe(1);
+    panel.PackageList.GetItemText(0).ShouldBe("Bob（SamplePkg_B）");
+  }
+
+  /// <summary>
+  /// 回归：删包只改包内 <see cref="CreatorPackage.IsDeleted"/>（元素级 AutoValue），列表本身没有增删；
+  /// 包列表必须由每包的 IsDeleted 绑定驱动重建，不能依赖删包处理器里的手工刷新。
+  /// </summary>
+  [Test]
+  public async Task PackageList_Updates_FromIsDeletedElementBinding()
+  {
+    _dm = CreateDataManager();
+    _dm.CreatorPackages.Add(
+      new CreatorPackage
+      {
+        PackageName = "SamplePkg_A",
+        CreatorName = new AutoValue<string>("Alice"),
+        SpellCards = new() { "结界「样本境界」" },
+      }
+    );
+    _dm.CreatorPackages.Add(
+      new CreatorPackage
+      {
+        PackageName = "SamplePkg_B",
+        CreatorName = new AutoValue<string>("Bob"),
+        SpellCards = new() { "B 符卡" },
+      }
+    );
+
+    var panel = InstantiatePanel();
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    panel.PackageList.ItemCount.ShouldBe(2);
+
+    // 只写模型（不按按钮、不调用面板方法）：元素级绑定排队重建包列表。
+    _dm.CreatorPackages[0].IsDeleted.Value = true;
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    panel.PackageList.ItemCount.ShouldBe(1);
+    panel.PackageList.GetItemText(0).ShouldBe("Bob（SamplePkg_B）");
+
+    // 被删包不在列表中 → 显示序号 0 落到 SamplePkg_B（已删包不可选中，也不会被用于导出）。
+    _dm.MergeConfig.SelectedPackageIndex.Value = 0;
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    panel.SpellCardList.ItemCount.ShouldBe(1);
+    panel.SpellCardList.GetItemText(0).ShouldBe("B 符卡");
+
+    // 绑定随列表增删重挂：新导入的包也要受 IsDeleted 绑定驱动。
+    var imported = new CreatorPackage
+    {
+      PackageName = "SamplePkg_C",
+      CreatorName = new AutoValue<string>("Carol"),
+    };
+    _dm.CreatorPackages.Add(imported);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    panel.PackageList.ItemCount.ShouldBe(2);
+
+    imported.IsDeleted.Value = true;
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    panel.PackageList.ItemCount.ShouldBe(1);
   }
 
   [Test]

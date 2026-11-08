@@ -138,6 +138,16 @@ public partial class MergePanel : Control, IMergePanel
   private int _selectedMapping = -1;
   private FileDialog? _importPackageDialog;
 
+  /// <summary>每个创作者包 <see cref="CreatorPackage.IsDeleted"/> 的元素级绑定（包增删时重挂）。</summary>
+  /// <remarks>
+  /// 列表级 <c>OnModify</c> 只在包增删时触发；删包改的是包内 <c>IsDeleted</c> AutoValue，
+  /// 列表对象本身没有任何变化，只绑列表会让已删包继续留在列表中、并可被选中或误用于导出。
+  /// </remarks>
+  private readonly List<IDisposable> _packageDeletedBindings = new();
+
+  /// <summary>是否正在重挂包级绑定（订阅时会立刻回放一次，抑制这类伪变更）。</summary>
+  private bool _isRebindingPackageDeletedBindings;
+
   public override void _Notification(int what) => this.Notify(what);
 
   public override void _ExitTree()
@@ -145,6 +155,7 @@ public partial class MergePanel : Control, IMergePanel
     _creatorPackagesBinding?.Dispose();
     _mappingBinding?.Dispose();
     _selectedPackageIndexBinding?.Dispose();
+    DisposePackageDeletedBindings();
   }
 
   public void OnReady()
@@ -179,12 +190,13 @@ public partial class MergePanel : Control, IMergePanel
     if (_dm == null)
       return;
 
-    _creatorPackagesBinding = _dm
-      .CreatorPackages.Bind()
-      .OnModify(() => CallDeferred(nameof(RefreshPackageList)));
+    _creatorPackagesBinding = _dm.CreatorPackages.Bind().OnModify(OnCreatorPackagesChanged);
     _mappingBinding = _dm
       .MergeConfig.Mapping.Bind()
       .OnModify(() => CallDeferred(nameof(RefreshMappingList)));
+
+    // 包级 IsDeleted 元素绑定：已有包先挂上，之后由 OnCreatorPackagesChanged 随列表增删重挂。
+    RebindPackageDeletedBindings();
 
     // 选包变化（含初始值）驱动三栏清单刷新（事件只写模型，UI 由绑定传播）。
     _selectedPackageIndexBinding = _dm
@@ -287,6 +299,61 @@ public partial class MergePanel : Control, IMergePanel
   #endregion
 
   #region 左上 · 创作者包
+
+  /// <summary>
+  /// 创作者包列表增删：先重挂每包的 <see cref="CreatorPackage.IsDeleted"/> 元素级绑定，再排队重建包列表。
+  /// </summary>
+  private void OnCreatorPackagesChanged()
+  {
+    RebindPackageDeletedBindings();
+    CallDeferred(nameof(RefreshPackageList));
+  }
+
+  /// <summary>
+  /// 为每个创作者包挂 <see cref="CreatorPackage.IsDeleted"/> 绑定：删包时驱动包列表重建。
+  /// </summary>
+  /// <remarks>
+  /// 重挂期间抑制回调：<see cref="AutoValue{T}"/> 订阅会立刻用当前值回放一次，不抑制的话每次
+  /// 包增删都要按「包数」排一串重建（与 <c>BossDataWatcher</c> 同理）。抑制窗口内的真实变化不会丢：
+  /// 紧随其后的 <see cref="RefreshPackageList"/> 会整体重建一次。
+  /// </remarks>
+  private void RebindPackageDeletedBindings()
+  {
+    DisposePackageDeletedBindings();
+
+    if (_dm is null)
+      return;
+
+    _isRebindingPackageDeletedBindings = true;
+    try
+    {
+      // 先取快照再遍历（规则 22）：绑定期间即使列表被并发增删也不会在枚举中改集合。
+      foreach (var pkg in _dm.CreatorPackages.ToList())
+        _packageDeletedBindings.Add(pkg.IsDeleted.Bind().OnValue(_ => OnPackageDeletedChanged()));
+    }
+    finally
+    {
+      _isRebindingPackageDeletedBindings = false;
+    }
+  }
+
+  /// <summary>释放全部包级 <see cref="CreatorPackage.IsDeleted"/> 绑定（列表重建或本面板退出时）。</summary>
+  private void DisposePackageDeletedBindings()
+  {
+    foreach (var binding in _packageDeletedBindings)
+      binding.Dispose();
+
+    _packageDeletedBindings.Clear();
+  }
+
+  /// <summary>删包（软删除）：包列表需要过滤掉它，排队重建（事件只写模型，UI 由绑定驱动）。</summary>
+  private void OnPackageDeletedChanged()
+  {
+    if (_isRebindingPackageDeletedBindings)
+      return;
+
+    CallDeferred(nameof(RefreshPackageList));
+  }
 
   private void RefreshPackageList()
   {
@@ -401,9 +468,8 @@ public partial class MergePanel : Control, IMergePanel
       _dm.MergeConfig.Mapping.Remove(m);
     // 置回未选中：绑定驱动三栏清空（事件只写模型）。
     _dm.MergeConfig.SelectedPackageIndex.Value = -1;
-    // IsDeleted 是包内 AutoValue，AutoList 绑定不触发外层刷新，故此处手动刷新包列表（保留）。
+    // IsDeleted 是包内 AutoValue，由元素级绑定驱动包列表重建（见 OnPackageDeletedChanged），不再手动刷新。
     _dm.TriggerAutoSave();
-    RefreshPackageList();
   }
 
   #endregion
