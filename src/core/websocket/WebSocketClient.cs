@@ -56,6 +56,9 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   /// <inheritdoc/>
   public event Action<string>? OnClientDisconnected;
 
+  /// <inheritdoc/>
+  public event Action? OnStateChanged;
+
   /// <summary>
   /// 创建 WebSocket 客户端
   /// </summary>
@@ -108,6 +111,7 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   /// </remarks>
   public async Task StartAsync()
   {
+    var stateChanged = false;
     await _lifecycleGate.WaitAsync();
     try
     {
@@ -122,19 +126,26 @@ public class WebSocketClient : IWebSocketServer, IDisposable
           "WebSocketClient: 未配置 Koishi 地址，Client 模式未启动"
             + "（请在 设置 → 群聊 填写 Koishi 地址）。"
         );
-        return;
+      }
+      else
+      {
+        _lastError = string.Empty;
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
+        IsActive = true;
+        _loopTask = Task.Run(() => ConnectLoop(token), token);
       }
 
-      _lastError = string.Empty;
-      _cts = new CancellationTokenSource();
-      var token = _cts.Token;
-      IsActive = true;
-      _loopTask = Task.Run(() => ConnectLoop(token), token);
+      stateChanged = true;
     }
     finally
     {
       _lifecycleGate.Release();
     }
+
+    // 生命周期锁外再通知：未配置地址这种「启动失败但实例没起来」也要让面板立刻看到原因
+    if (stateChanged)
+      RaiseStateChanged();
   }
 
   /// <inheritdoc/>
@@ -146,6 +157,7 @@ public class WebSocketClient : IWebSocketServer, IDisposable
   /// </remarks>
   public async Task StopAsync()
   {
+    var stateChanged = false;
     await _lifecycleGate.WaitAsync();
     try
     {
@@ -198,11 +210,15 @@ public class WebSocketClient : IWebSocketServer, IDisposable
       _ws?.Dispose();
       _ws = null;
       _log.Print("WebSocketClient stopped.");
+      stateChanged = true;
     }
     finally
     {
       _lifecycleGate.Release();
     }
+
+    if (stateChanged)
+      RaiseStateChanged();
   }
 
   /// <inheritdoc/>
@@ -304,6 +320,7 @@ public class WebSocketClient : IWebSocketServer, IDisposable
         var connectionId = "koishi-client";
         _log.Print($"WebSocketClient: connected to {_url}.");
         OnClientConnected?.Invoke(connectionId);
+        RaiseStateChanged();
 
         // 心跳绑定本次连接的 socket 与令牌：socket 一失效它自己就退出，不读共享字段
         var ws = _ws;
@@ -328,6 +345,9 @@ public class WebSocketClient : IWebSocketServer, IDisposable
 
       IsRunning = false;
       OnClientDisconnected?.Invoke("koishi-client");
+
+      // 断开/连接失败/进入重连等待：一次通知覆盖「IsRunning 变 false + LastError 可能变化 + 重连态」
+      RaiseStateChanged();
 
       // 心跳随本次连接一起收尾：先取消连接作用域（不影响整个客户端），再等它真正退出。
       // 连接循环返回前不留后台任务，StopAsync 等待循环结束即代表实例上再无活动任务。
@@ -465,6 +485,11 @@ public class WebSocketClient : IWebSocketServer, IDisposable
       }
     }
   }
+
+  /// <summary>
+  /// 同步派发状态变化（可能来自连接循环线程）；订阅方自行调度到主线程。
+  /// </summary>
+  private void RaiseStateChanged() => OnStateChanged?.Invoke();
 
   /// <summary>
   /// 等待心跳循环退出（调用前须已取消它的令牌），保证连接循环返回时没有残留任务。

@@ -23,6 +23,10 @@ public interface IWebSocketPanel
   /// 新的服务器/客户端实例。模式、端口、地址、错误一律从它自身读取，不再由调用方按设置传入，
   /// 否则设置改动后实例尚未重建时面板会显示与真实行为不符的模式。
   /// </param>
+  /// <remarks>
+  /// 传入的就是当前实例时只刷新显示、不清空连接列表：重启流程可能把未重建的实例再交一次，
+  /// 把它当「换实例」处理会丢掉仍在有效的连接记录。
+  /// </remarks>
   void UpdateServer(IWebSocketServer server);
 }
 
@@ -100,6 +104,7 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
 
     _server.OnClientConnected += OnConnected;
     _server.OnClientDisconnected += OnDisconnected;
+    _server.OnStateChanged += OnServerStateChanged;
     StartStopBtn.Pressed += OnStartStopPressed;
 
     RefreshUI();
@@ -111,10 +116,19 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
   /// <param name="server">新的服务器/客户端实例。</param>
   public void UpdateServer(IWebSocketServer server)
   {
+    // 同一实例再交一次（例如重启流程发现无需重建）：连接记录与在途事件仍然有效，
+    // 按「换实例」清空会让列表停在旧内容、后续连接也不再累积（潜伏缺陷），这里只刷新显示。
+    if (ReferenceEquals(_server, server))
+    {
+      RefreshUI();
+      return;
+    }
+
     if (_server != null)
     {
       _server.OnClientConnected -= OnConnected;
       _server.OnClientDisconnected -= OnDisconnected;
+      _server.OnStateChanged -= OnServerStateChanged;
     }
 
     _server = server;
@@ -124,10 +138,15 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
     _clients.Clear();
     _renderedClients.Clear();
 
+    // 列表控件也要显式清空：两个内部列表同时清空时 SyncClientList 会因「空 == 空」跳过重建，
+    // 旧实例的连接会继续留在界面上
+    ClientList.Clear();
+
     if (_server != null)
     {
       _server.OnClientConnected += OnConnected;
       _server.OnClientDisconnected += OnDisconnected;
+      _server.OnStateChanged += OnServerStateChanged;
     }
 
     RefreshUI();
@@ -144,12 +163,25 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
     {
       _server.OnClientConnected -= OnConnected;
       _server.OnClientDisconnected -= OnDisconnected;
+      _server.OnStateChanged -= OnServerStateChanged;
     }
   }
 
   private void OnRefreshTimerTimeout()
   {
     RefreshUI();
+  }
+
+  /// <summary>
+  /// 服务器状态变化：调度到主线程刷新显示（事件可能来自接受循环/连接循环线程）。
+  /// </summary>
+  /// <remarks>
+  /// 这是显示更新的主驱动；1Hz 的 <see cref="RefreshTimer"/> 仍作为兜底，防止事件漏发
+  /// 或状态由不经过事件的路径改变（例如旧实例在面板换引用后才变化）。
+  /// </remarks>
+  private void OnServerStateChanged()
+  {
+    Callable.From(RefreshUI).CallDeferred();
   }
 
   private void OnConnected(string id)

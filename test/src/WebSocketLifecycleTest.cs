@@ -356,6 +356,13 @@ public class WebSocketLifecycleTest : TestClass
       remove { }
     }
 
+    /// <summary>替身不模拟状态变化事件（接口要求存在，用例只关心启停与释放）。</summary>
+    public event Action? OnStateChanged
+    {
+      add { }
+      remove { }
+    }
+
     public Task StartAsync()
     {
       StartCount++;

@@ -57,6 +57,9 @@ public class WebSocketServer : IWebSocketServer, IDisposable
   /// <inheritdoc/>
   public event Action<string>? OnClientDisconnected;
 
+  /// <inheritdoc/>
+  public event Action? OnStateChanged;
+
   /// <summary>
   /// 创建 WebSocket 服务器
   /// </summary>
@@ -113,6 +116,7 @@ public class WebSocketServer : IWebSocketServer, IDisposable
   /// </remarks>
   public async Task StartAsync()
   {
+    var stateChanged = false;
     await _lifecycleGate.WaitAsync();
     try
     {
@@ -135,12 +139,14 @@ public class WebSocketServer : IWebSocketServer, IDisposable
 
         // 循环只认这个 listener 实例：端口变更后重建时不会被字段换新影响
         _acceptLoopTask = Task.Run(() => AcceptConnectionsLoop(listener, token), token);
+        stateChanged = true;
       }
       catch (HttpListenerException ex)
       {
         _lastError = $"端口 {_port} 监听失败：{ex.Message}";
         _log.Err($"WebSocketServer failed to start on port {_port}: {ex.Message}");
         CleanupFailedStart(listener);
+        stateChanged = true;
       }
       catch (Exception ex)
       {
@@ -151,12 +157,17 @@ public class WebSocketServer : IWebSocketServer, IDisposable
           $"WebSocketServer failed to start on port {_port}: {ex.GetType().Name}: {ex.Message}"
         );
         CleanupFailedStart(listener);
+        stateChanged = true;
       }
     }
     finally
     {
       _lifecycleGate.Release();
     }
+
+    // 生命周期锁外再通知：订阅方可能要读状态属性或再排刷新，不能在锁内回调
+    if (stateChanged)
+      RaiseStateChanged();
   }
 
   /// <inheritdoc/>
@@ -166,6 +177,7 @@ public class WebSocketServer : IWebSocketServer, IDisposable
   /// </remarks>
   public async Task StopAsync()
   {
+    var stateChanged = false;
     await _lifecycleGate.WaitAsync();
     try
     {
@@ -230,11 +242,15 @@ public class WebSocketServer : IWebSocketServer, IDisposable
       _cts?.Dispose();
       _cts = null;
       _log.Print($"WebSocketServer stopped on port {_port}.");
+      stateChanged = true;
     }
     finally
     {
       _lifecycleGate.Release();
     }
+
+    if (stateChanged)
+      RaiseStateChanged();
   }
 
   /// <summary>
@@ -412,6 +428,7 @@ public class WebSocketServer : IWebSocketServer, IDisposable
 
       _log.Print($"WebSocket client connected: {connectionId} from {remoteEndPoint}.");
       OnClientConnected?.Invoke(connectionId);
+      RaiseStateChanged();
 
       await ReceiveLoop(connectionId, ws, token);
     }
@@ -475,6 +492,7 @@ public class WebSocketServer : IWebSocketServer, IDisposable
     _connectionManager.UnregisterConnection(connectionId);
     _log.Print($"WebSocket client disconnected: {connectionId}.");
     OnClientDisconnected?.Invoke(connectionId);
+    RaiseStateChanged();
   }
 
   private async Task ProcessMessage(string connectionId, string rawMessage)
@@ -515,5 +533,11 @@ public class WebSocketServer : IWebSocketServer, IDisposable
     _heartbeatService.StopHeartbeat(connectionId);
     _connectionManager.UnregisterConnection(connectionId);
     OnClientDisconnected?.Invoke(connectionId);
+    RaiseStateChanged();
   }
+
+  /// <summary>
+  /// 同步派发状态变化（可能来自接受循环或连接处理线程）；订阅方自行调度到主线程。
+  /// </summary>
+  private void RaiseStateChanged() => OnStateChanged?.Invoke();
 }

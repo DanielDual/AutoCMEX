@@ -22,8 +22,12 @@ public sealed class WebSocketPanelDriver : IDisposable
   public Mock<IItemList> ClientList { get; }
   public Mock<ITimer> RefreshTimer { get; }
 
+  /// <summary>注入给面板的服务器替身（构造时传入；为空表示未注入依赖）。</summary>
+  public IWebSocketServer? Server { get; }
+
   public WebSocketPanelDriver(IWebSocketServer? server = null)
   {
+    Server = server;
     Panel = new WebSocketPanel();
     (Panel as IAutoInit).IsTesting = true;
 
@@ -59,6 +63,19 @@ public sealed class WebSocketPanelDriver : IDisposable
 
     Panel._Notification((int)Node.NotificationEnterTree);
     Panel._Notification((int)Node.NotificationReady);
+  }
+
+  /// <summary>
+  /// 触发服务器状态变化事件，驱动面板按事件刷新（用于验证「事件驱动」而非定时轮询）。
+  /// </summary>
+  /// <remarks>
+  /// 目前只支持 <see cref="MockWebSocketServer"/>；Moq 打的替身请直接在其 Mock 上
+  /// <c>Raise(m =&gt; m.OnStateChanged += null)</c>，本方法不去猜测具体实现。
+  /// </remarks>
+  public void RaiseStateChanged()
+  {
+    if (Server is MockWebSocketServer fake)
+      fake.RaiseStateChanged();
   }
 
   public void Dispose()

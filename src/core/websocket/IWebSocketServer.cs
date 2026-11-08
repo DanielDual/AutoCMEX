@@ -58,6 +58,24 @@ public interface IWebSocketServer
   event Action<string>? OnClientDisconnected;
 
   /// <summary>
+  /// 状态变化事件：启动/停止/启动失败、连接/断开、<see cref="LastError"/> 变化、重连态切换时触发。
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// 用于驱动状态显示，让面板不必只靠定时轮询：事件本身不带上下文，订阅方需自行读
+  /// <see cref="IsRunning"/> / <see cref="IsActive"/> / <see cref="LastError"/> 等属性刷新显示。
+  /// 连接/断开同时仍会触发 <see cref="OnClientConnected"/> / <see cref="OnClientDisconnected"/>，
+  /// 本事件额外覆盖「启动、停止、失败原因、重连等待」这些没有连接上下文的状态变化。
+  /// </para>
+  /// <para>
+  /// <b>线程纪律：</b>可能来自接受循环、连接循环或心跳线程等后台线程，订阅方必须自行调度到主线程
+  /// 再操作 UI。启停引发的通知在生命周期锁之外发出，处理器可以安全读取状态属性，
+  /// 但**不要**在处理器里同步再次启停同一实例。
+  /// </para>
+  /// </remarks>
+  event Action? OnStateChanged;
+
+  /// <summary>
   /// 向已连接的对端主动推送消息（非应答），返回实际送达的连接数。
   /// </summary>
   /// <param name="message">出站消息。</param>

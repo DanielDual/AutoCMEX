@@ -184,6 +184,29 @@ public class TestWebSocketPanel : TestClass
     _errorLabel.VerifySet(m => m.Visible = false);
   }
 
+  /// <summary>
+  /// 状态事件驱动刷新：只改实例状态并触发 <see cref="IWebSocketServer.OnStateChanged"/>，
+  /// 不依赖 1Hz 的 <see cref="WebSocketPanel.RefreshTimer"/> 兜底，标签也要更新。
+  /// </summary>
+  [Test]
+  public async Task StateEvent_DrivesRefreshUI()
+  {
+    _server.Mode = "Server";
+    _server.IsRunning = false;
+    _server.LastError = "端口 5140 监听失败：拒绝访问";
+
+    _server.RaiseStateChanged();
+
+    // 事件处理器只排队，等 deferred 刷新在主线程落地
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    _statusLabel.VerifySet(m => m.Text = "已停止");
+    _startStopBtn.VerifySet(m => m.Text = "启动");
+    _errorLabel.VerifySet(m => m.Text = "端口 5140 监听失败：拒绝访问");
+    _errorLabel.VerifySet(m => m.Visible = true);
+  }
+
   [Test]
   public void ClientConnected_AddsToClientList()
   {
@@ -351,11 +374,32 @@ public class MockWebSocketServer : IWebSocketServer
   public event Action<string>? OnClientConnected;
   public event Action<string>? OnClientDisconnected;
 
+  private Action? _onStateChanged;
+
+  /// <summary>状态变化事件；订阅/退订计数用于断言「同实例不重复挂、换实例重挂」。</summary>
+  public event Action? OnStateChanged
+  {
+    add
+    {
+      _onStateChanged += value;
+      StateChangedSubscriberCount++;
+    }
+    remove
+    {
+      _onStateChanged -= value;
+      StateChangedSubscriberCount--;
+    }
+  }
+
+  /// <summary>当前订阅状态变化事件的回调数（供断言用）。</summary>
+  public int StateChangedSubscriberCount { get; private set; }
+
   public Task StartAsync()
   {
     StartCount++;
     IsRunning = true;
     IsActive = true;
+    RaiseStateChanged();
     return Task.CompletedTask;
   }
 
@@ -364,6 +408,7 @@ public class MockWebSocketServer : IWebSocketServer
     StopCount++;
     IsRunning = false;
     IsActive = false;
+    RaiseStateChanged();
     return Task.CompletedTask;
   }
 
@@ -384,4 +429,9 @@ public class MockWebSocketServer : IWebSocketServer
   /// <summary>触发「客户端已断开」。</summary>
   /// <param name="id">连接 ID。</param>
   public void RaiseClientDisconnected(string id) => OnClientDisconnected?.Invoke(id);
+
+  /// <summary>
+  /// 触发「服务器状态变化」（生产里由实例在启动/停止/连接/断开/失败时自己触发）。
+  /// </summary>
+  public void RaiseStateChanged() => _onStateChanged?.Invoke();
 }
