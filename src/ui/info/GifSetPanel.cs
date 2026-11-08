@@ -83,6 +83,17 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
 
   private AutoList<GifSetRecord>.Binding? _setsBinding;
   private AutoValue<string>.Binding? _activeSetIdBinding;
+
+  /// <summary>当前活动集的元素级绑定（集名 / 导入时间 / 条目数 / 根目录）。</summary>
+  /// <remarks>
+  /// 集列表的 <c>OnModify</c> 只在集增删时触发；同一文件夹重复导入时 <c>GifSetService.Register</c>
+  /// 会原地更新已有记录的字段（列表对象没有任何变化），只绑列表会让集摘要停在旧值。
+  /// </remarks>
+  private readonly List<IDisposable> _activeSetBindings = new();
+
+  /// <summary>是否正在重挂活动集字段绑定（订阅时会立刻回放一次，抑制这类伪变更）。</summary>
+  private bool _isRebindingActiveSetFields;
+
   private GifSetService? _gifSets;
   private DataManager? _dataManager;
   private InfoConfig? _config;
@@ -113,6 +124,9 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
   /// <summary>是否已排队一次「布局落定后的驻留刷新」（信号与 deferred 回调都在主线程，普通 bool 即可）。</summary>
   private bool _layoutRefreshQueued;
 
+  /// <summary>是否已排队一次卡片重建（同一帧内多次数据变化只重建一次；回调都在主线程，普通 bool 即可）。</summary>
+  private bool _rebuildQueued;
+
   private readonly record struct CardRef(Control Card, GifFramePlayer Player, string GifPath);
 
   /// <inheritdoc/>
@@ -126,6 +140,8 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
 
     _activeSetIdBinding?.Dispose();
     _activeSetIdBinding = null;
+
+    DisposeActiveSetBindings();
 
     // 本栏退出后不该还有引擎在后台跑；取消语义会保留已归集的产物与报告
     _runPanel?.Cancel();
@@ -174,6 +190,10 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
 
     _setsBinding = _config.GifSets.Bind().OnModify(OnSetsChanged);
     _activeSetIdBinding = _config.ActiveGifSetId.Bind().OnValue(OnActiveSetIdChanged);
+
+    // 活动集字段绑定：重复导入同一文件夹时 Register 原地更新字段（集列表不增删），
+    // 只绑列表会让摘要与卡片停在旧值；之后由 OnSetsChanged / OnActiveSetIdChanged 重挂。
+    RebindActiveSetBindings();
 
     RebuildCards();
   }
@@ -373,9 +393,100 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
   private string ComposeStatusText(string summary) =>
     string.IsNullOrEmpty(_pendingStatus) ? summary : $"{_pendingStatus}\n{summary}";
 
-  private void OnSetsChanged() => CallDeferred(nameof(RebuildCards));
+  /// <summary>集列表增删：活动集可能换人，先重挂活动集字段绑定再排队重建。</summary>
+  private void OnSetsChanged()
+  {
+    RebindActiveSetBindings();
+    ScheduleRebuild();
+  }
 
-  private void OnActiveSetIdChanged(string? setId) => CallDeferred(nameof(RebuildCards));
+  /// <summary>当前选中集变化：按新活动集重挂字段绑定再排队重建。</summary>
+  /// <param name="setId">新的活动集 Id（未消费，重建时统一从模型解析）。</param>
+  private void OnActiveSetIdChanged(string? setId)
+  {
+    RebindActiveSetBindings();
+    ScheduleRebuild();
+  }
+
+  /// <summary>
+  /// 按当前活动集重挂元素字段绑定（集切换 / 列表变化 / 依赖重新解析时调用）。
+  /// </summary>
+  /// <remarks>
+  /// 取活动集时不写回 Id（与 <see cref="GifSetService.GetActiveSet"/> 同口径但无副作用），
+  /// 避免在重挂过程中触发选中项绑定造成重入；Id 的修正仍由重建时的 GetActiveSet 负责。
+  /// </remarks>
+  private void RebindActiveSetBindings()
+  {
+    DisposeActiveSetBindings();
+
+    var set = ResolveActiveSet();
+    if (set is null)
+      return;
+
+    // 重挂期间抑制回调：AutoValue 订阅会立刻用当前值回放一次，不抑制会排一批伪重建
+    _isRebindingActiveSetFields = true;
+    try
+    {
+      _activeSetBindings.Add(set.SetName.Bind().OnValue(_ => OnActiveSetFieldChanged()));
+      _activeSetBindings.Add(set.ImportedAt.Bind().OnValue(_ => OnActiveSetFieldChanged()));
+      _activeSetBindings.Add(set.EntryCount.Bind().OnValue(_ => OnActiveSetFieldChanged()));
+      _activeSetBindings.Add(set.RootPath.Bind().OnValue(_ => OnActiveSetFieldChanged()));
+    }
+    finally
+    {
+      _isRebindingActiveSetFields = false;
+    }
+  }
+
+  /// <summary>释放全部活动集字段绑定（集切换、本栏退出时）。</summary>
+  private void DisposeActiveSetBindings()
+  {
+    foreach (var binding in _activeSetBindings)
+      binding.Dispose();
+
+    _activeSetBindings.Clear();
+  }
+
+  /// <summary>取当前活动集（不写回 Id）：与 <see cref="GifSetService.GetActiveSet"/> 同口径但无副作用。</summary>
+  /// <returns>当前活动集；没有任何集时为 null。</returns>
+  private GifSetRecord? ResolveActiveSet()
+  {
+    var sets = _gifSets?.Sets;
+    if (sets is null || sets.Count == 0)
+      return null;
+
+    var activeId = _config?.ActiveGifSetId.Value ?? string.Empty;
+    var active = sets.FirstOrDefault(set =>
+      string.Equals(set.Id.Value, activeId, StringComparison.Ordinal)
+    );
+    return active ?? sets[0];
+  }
+
+  /// <summary>活动集字段变化（重复导入原地更新 / 集改名）：摘要与卡片都要重建。</summary>
+  private void OnActiveSetFieldChanged()
+  {
+    if (_isRebindingActiveSetFields)
+      return;
+
+    ScheduleRebuild();
+  }
+
+  /// <summary>排队一次卡片重建：同一帧内多次数据变化（集增删 + 选中变化 + 字段变化）只重建一次。</summary>
+  private void ScheduleRebuild()
+  {
+    if (_rebuildQueued)
+      return;
+
+    _rebuildQueued = true;
+    CallDeferred(nameof(FlushRebuild));
+  }
+
+  /// <summary>释放重建排队标记并真正重建（供 <see cref="ScheduleRebuild"/> 的 deferred 回调使用）。</summary>
+  private void FlushRebuild()
+  {
+    _rebuildQueued = false;
+    RebuildCards();
+  }
 
   private void OnSetSelected(long index)
   {

@@ -148,6 +148,13 @@ public partial class MergePanel : Control, IMergePanel
   /// <summary>是否正在重挂包级绑定（订阅时会立刻回放一次，抑制这类伪变更）。</summary>
   private bool _isRebindingPackageDeletedBindings;
 
+  /// <summary>当前选中包的引用（用于过滤列表变化后按身份重定位选中下标）。</summary>
+  /// <remarks>
+  /// <see cref="Models.MergeConfig.SelectedPackageIndex"/> 是「过滤后可见列表」的显示序号：
+  /// 删除靠前的包会让后面的包整体前移，沿用旧序号会静默选中别的包，因此另存包引用作为身份。
+  /// </remarks>
+  private CreatorPackage? _selectedPackage;
+
   public override void _Notification(int what) => this.Notify(what);
 
   public override void _ExitTree()
@@ -301,10 +308,12 @@ public partial class MergePanel : Control, IMergePanel
   #region 左上 · 创作者包
 
   /// <summary>
-  /// 创作者包列表增删：先重挂每包的 <see cref="CreatorPackage.IsDeleted"/> 元素级绑定，再排队重建包列表。
+  /// 创作者包列表增删：先按包身份重定位选中下标、重挂每包的
+  /// <see cref="CreatorPackage.IsDeleted"/> 元素级绑定，再排队重建包列表。
   /// </summary>
   private void OnCreatorPackagesChanged()
   {
+    RelocateSelectedPackageIndex();
     RebindPackageDeletedBindings();
     CallDeferred(nameof(RefreshPackageList));
   }
@@ -346,13 +355,39 @@ public partial class MergePanel : Control, IMergePanel
     _packageDeletedBindings.Clear();
   }
 
-  /// <summary>删包（软删除）：包列表需要过滤掉它，排队重建（事件只写模型，UI 由绑定驱动）。</summary>
+  /// <summary>
+  /// 删包（软删除）：先按包身份重定位选中下标（删除靠前的包会让显示序号整体前移），再排队重建包列表。
+  /// </summary>
+  /// <remarks>
+  /// 被删的正是当前选中包时重定位结果为 -1（选中清空）；被删的是非选中包时选中项保持原包，
+  /// 不会因过滤掉靠前的包而静默选中别的包。
+  /// </remarks>
   private void OnPackageDeletedChanged()
   {
     if (_isRebindingPackageDeletedBindings)
       return;
 
+    RelocateSelectedPackageIndex();
     CallDeferred(nameof(RefreshPackageList));
+  }
+
+  /// <summary>
+  /// 按包身份重定位 <see cref="Models.MergeConfig.SelectedPackageIndex"/>：把「当前选中包」在过滤后
+  /// 可见列表里的新序号写回；当前选中包已被删除/移除时写 -1。
+  /// </summary>
+  /// <remarks>
+  /// 只在已有选中包身份（<see cref="_selectedPackage"/>）时重定位：没有身份时无从判断「原本选的是谁」，
+  /// 保持现状（未选中为 -1）比猜一个下标更安全。
+  /// </remarks>
+  private void RelocateSelectedPackageIndex()
+  {
+    var selected = _selectedPackage;
+    if (_dm is null || selected is null)
+      return;
+
+    var packages = _dm.CreatorPackages.Where(pkg => !pkg.IsDeleted.Value).ToList();
+    // List.IndexOf 对 CreatorPackage 走引用相等（模型未重写 Equals）：正是「按包定位」所需的语义
+    _dm.MergeConfig.SelectedPackageIndex.Value = packages.IndexOf(selected);
   }
 
   private void RefreshPackageList()
@@ -382,9 +417,14 @@ public partial class MergePanel : Control, IMergePanel
     var index = _dm.MergeConfig.SelectedPackageIndex.Value;
     var packages = _dm.CreatorPackages.Where(p => !p.IsDeleted.Value).ToList();
     if (index < 0 || index >= packages.Count)
+    {
+      // 未选中/选中项失效：清掉身份，后续集合变化不按旧包重定位
+      _selectedPackage = null;
       return;
+    }
 
     var pkg = packages[index];
+    _selectedPackage = pkg;
     foreach (var card in pkg.SpellCards)
       SpellCardList.AddItem(card);
     foreach (var r in pkg.Resources)

@@ -46,6 +46,14 @@ public class TestMergePanelRuntime : TestClass
     return dm;
   }
 
+  private static CreatorPackage Package(string packageName, string creatorName, string card) =>
+    new()
+    {
+      PackageName = packageName,
+      CreatorName = new AutoValue<string>(creatorName),
+      SpellCards = new() { card },
+    };
+
   private MergePanel InstantiatePanel()
   {
     _host = new Node();
@@ -272,6 +280,46 @@ public class TestMergePanelRuntime : TestClass
     await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
     await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
     panel.PackageList.ItemCount.ShouldBe(1);
+  }
+
+  /// <summary>
+  /// 回归：SelectedPackageIndex 是「过滤后可见列表」的显示序号；删掉显示序号比当前选中项靠前的
+  /// 非选中包后，沿用旧序号会静默选到别的包。必须按包身份重定位（找不到则 -1）。
+  /// </summary>
+  [Test]
+  public async Task RemoveEarlierNonSelectedPackage_KeepsSelectionOnSamePackage()
+  {
+    _dm = CreateDataManager();
+    _dm.CreatorPackages.Add(Package("SamplePkg_A", "Alice", "A 符卡"));
+    _dm.CreatorPackages.Add(Package("SamplePkg_B", "Bob", "B 符卡"));
+    _dm.CreatorPackages.Add(Package("SamplePkg_C", "Carol", "C 符卡"));
+    _dm.MergeConfig.SelectedPackageIndex.Value = 2;
+
+    var panel = InstantiatePanel();
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    panel.PackageList.ItemCount.ShouldBe(3);
+    panel.SpellCardList.ItemCount.ShouldBe(1);
+    panel.SpellCardList.GetItemText(0).ShouldBe("C 符卡");
+
+    // 删除显示序号 0 的非选中包 A：过滤后列表变 [B, C]，选中项必须仍是 C（新序号 1）
+    _dm.CreatorPackages[0].IsDeleted.Value = true;
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    _dm.MergeConfig.SelectedPackageIndex.Value.ShouldBe(1);
+    panel.PackageList.ItemCount.ShouldBe(2);
+    panel.SpellCardList.GetItemText(0).ShouldBe("C 符卡", "选中项必须仍是原包 C，不能落到 B");
+
+    // 再删除当前选中的包 C：选中项清空为 -1（不落到剩余的 B）
+    _dm.CreatorPackages[2].IsDeleted.Value = true;
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    _dm.MergeConfig.SelectedPackageIndex.Value.ShouldBe(-1);
+    panel.PackageList.ItemCount.ShouldBe(1);
+    panel.SpellCardList.ItemCount.ShouldBe(0);
   }
 
   [Test]

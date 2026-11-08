@@ -209,6 +209,44 @@ public class TestGifSetPanel : TestClass
     return root;
   }
 
+  /// <summary>
+  /// 就地重写集清单（集名 / 条目数），并只为新增的序号补写 GIF。
+  /// 用于「同一文件夹重复导入」用例：不改动已在播放的旧 GIF 文件。
+  /// </summary>
+  private void RewriteSetManifest(string root, string setName, int entryCount)
+  {
+    var manifest = new GifSetManifest
+    {
+      SetName = setName,
+      BossLabel = "SampleBoss",
+      GeneratedAt = "2026-09-26 00:00:00",
+    };
+
+    for (var i = 1; i <= entryCount; i++)
+    {
+      var fileName = $"sample_{i}.gif";
+      var path = Path.Combine(root, fileName);
+      if (!File.Exists(path))
+        WriteGif(path);
+
+      manifest.Entries.Add(
+        new GifSetEntry
+        {
+          Index = i,
+          SpellCardName = $"符卡 {i}",
+          FileName = fileName,
+          Width = 4,
+          Height = 4,
+        }
+      );
+    }
+
+    File.WriteAllText(
+      Path.Combine(root, GifSetManifest.FileName),
+      JsonSerializer.Serialize(manifest, ManifestWriteOptions)
+    );
+  }
+
   private string CreateSetZip(string zipName, int entryCount)
   {
     var setRoot = CreateSetFolder(
@@ -631,6 +669,56 @@ public class TestGifSetPanel : TestClass
     // 多等几帧：集列表与当前集各会触发一次重建，成功提示不能被后一次冲掉
     await SettleAsync(panel, 4);
     GetSetInfoLabel(column).Text.ShouldContain("导入成功");
+  }
+
+  /// <summary>
+  /// 回归（B6）：同一文件夹重复导入时服务端原地更新已有集记录（列表不增删），
+  /// 只绑集列表会让集摘要与卡片停在旧值；必须靠活动集元素级绑定驱动重建。
+  /// </summary>
+  [Test]
+  public async Task RepeatImportSameFolder_RefreshesSetSummary()
+  {
+    var root = CreateSetFolder("sample_repeat", "SamplePkg", 2);
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+    var column = GetGifColumn(panel);
+    var label = GetSetInfoLabel(column);
+    var folderButton = (Button)
+      column.FindChild("ImportFolderButton", owned: false, recursive: true)!;
+
+    // 第一次导入（走真实选择框信号）
+    folderButton.EmitSignal(BaseButton.SignalName.Pressed);
+    await SettleAsync(panel);
+    GetFileDialog(column, FileDialog.FileModeEnum.OpenDir)
+      .EmitSignal(FileDialog.SignalName.DirSelected, root);
+    await SettleAsync(panel);
+
+    _dm.InfoConfig.GifSets.Count.ShouldBe(1);
+    label.Text.ShouldContain("集：SamplePkg");
+    label.Text.ShouldContain("　|　2 张　|");
+    GetCardList(column).GetChildCount().ShouldBe(2);
+
+    // 把「导入于」改成哨兵值：重复导入后摘要必须刷新，不能停在上一次的导入时间
+    _dm.InfoConfig.GifSets[0].ImportedAt.Value = "2000-01-01 00:00:00";
+    await SettleAsync(panel);
+    label.Text.ShouldContain("2000-01-01 00:00:00");
+
+    // 同一文件夹（清单改成 3 张且改名）再次导入：Register 原地更新，不新增集。
+    // 只重写清单并补一张新 GIF，不改动已在播放的旧文件（避免与后台解码抢同一个文件句柄）
+    RewriteSetManifest(root, "SamplePkg 第二版", 3);
+    folderButton.EmitSignal(BaseButton.SignalName.Pressed);
+    await SettleAsync(panel);
+    GetFileDialog(column, FileDialog.FileModeEnum.OpenDir)
+      .EmitSignal(FileDialog.SignalName.DirSelected, root);
+    await SettleAsync(panel, 3);
+
+    _dm.InfoConfig.GifSets.Count.ShouldBe(1, "同一文件夹重复导入必须原地更新，不产生重复集");
+    // 摘要行格式：集：{名字}　|　{张数} 张　|　导入于 {时间}
+    label.Text.ShouldContain("集：SamplePkg 第二版");
+    label.Text.ShouldContain("　|　3 张　|");
+    // 重复导入后「导入于」必须刷新，不能停在哨兵值
+    label.Text.ShouldNotContain("2000-01-01 00:00:00");
+    GetCardList(column).GetChildCount().ShouldBe(3, "清单条目变化后卡片列表也要跟着重建");
   }
 
   [Test]
