@@ -194,6 +194,49 @@ public class FileDialogSizingTest : TestClass
   }
 
   [Test]
+  public void Popup_SameDialogTwice_HooksVisibilityOnlyOnce()
+  {
+    // 同一实例重复弹出不能重复订阅：否则隐藏一次会回写多次、测试之间还会累积处理函数
+    var dialog = new Mock<IFileDialog>();
+
+    FileDialogSizing.Popup(dialog.Object);
+    FileDialogSizing.Popup(dialog.Object);
+
+    FileDialogSizing.HookedCountForTests.ShouldBe(1);
+  }
+
+  [Test]
+  public void ResetMemoryForTests_DetachesVisibilityHandler()
+  {
+    var dialog = new Mock<IFileDialog>();
+    dialog.SetupProperty(d => d.Size, new Vector2I(1200, 700));
+    dialog.SetupGet(d => d.Visible).Returns(false);
+    FileDialogSizing.Popup(dialog.Object);
+    FileDialogSizing.HookedCountForTests.ShouldBe(1);
+
+    FileDialogSizing.ResetMemoryForTests();
+
+    FileDialogSizing.HookedCountForTests.ShouldBe(0);
+    // 解绑后旧对话框再触发隐藏事件，不能写进新一轮的全局记忆
+    dialog.Object.Size = new Vector2I(1200, 700);
+    dialog.Raise(d => d.VisibilityChanged += null);
+    FileDialogSizing.RememberedForTests.ShouldBeNull("复位后旧的隐藏回调必须已解绑");
+  }
+
+  [Test]
+  public void Popup_AfterReset_HooksAgain()
+  {
+    // 解绑只发生在复位时；复位后再次弹出要重新挂上，不能因为「曾经挂过」就永久失效
+    var dialog = new Mock<IFileDialog>();
+    FileDialogSizing.Popup(dialog.Object);
+    FileDialogSizing.ResetMemoryForTests();
+
+    FileDialogSizing.Popup(dialog.Object);
+
+    FileDialogSizing.HookedCountForTests.ShouldBe(1);
+  }
+
+  [Test]
   public void Popup_WithoutTree_UsesFallbackParentSizeAndDoesNotThrow()
   {
     // 未入树的 Mock：GetTree() 为 null，弹窗必须回落到兜底尺寸而不是抛异常

@@ -1,5 +1,6 @@
 namespace AutoCMEX.UI;
 
+using System;
 using System.Runtime.CompilerServices;
 using Chickensoft.GodotNodeInterfaces;
 using Godot;
@@ -47,7 +48,7 @@ public static class FileDialogSizing
   private static Vector2I? _remembered;
 
   /// <summary>已挂过「隐藏时记住尺寸」的对话框实例（弱引用，避免重复订阅）。</summary>
-  private static readonly ConditionalWeakTable<object, object> _hooked = new();
+  private static readonly ConditionalWeakTable<object, HookedDialog> _hooked = new();
 
   /// <summary>每个对话框实例本次弹出时采用的尺寸，用于判断隐藏时用户是否真的改过尺寸。</summary>
   private static readonly ConditionalWeakTable<object, object> _applied = new();
@@ -113,8 +114,11 @@ public static class FileDialogSizing
     if (_hooked.TryGetValue(instanceKey, out _))
       return;
 
-    _hooked.AddOrUpdate(instanceKey, dialog);
-    dialog.VisibilityChanged += () => RememberSizeOnHide(dialog, instanceKey);
+    // 记下委托本体，才能在 ResetMemoryForTests 里成对解绑：只清表不解绑会让同一实例
+    // 在重新弹出后再挂一个处理函数，测试之间累积、且隐藏一次会回写多次。
+    var handler = new Action(() => RememberSizeOnHide(dialog, instanceKey));
+    _hooked.AddOrUpdate(instanceKey, new HookedDialog(dialog, handler));
+    dialog.VisibilityChanged += handler;
   }
 
   /// <summary>
@@ -177,13 +181,44 @@ public static class FileDialogSizing
   /// 清空全局尺寸记忆与实例记录（仅测试使用，保证用例之间互不影响）。
   /// </summary>
   /// <remarks>
-  /// 只清表、不解绑已经挂上的 <c>VisibilityChanged</c>；测试都是在弹出前清空、且每个用例用新实例，
-  /// 所以不会出现重复订阅。生产运行中不调用本方法。
+  /// 先逐实例解绑 <c>VisibilityChanged</c> 再清表：只清表会让重新弹出的同一实例再挂一个处理函数，
+  /// 处理函数在测试之间累积。生产运行中不调用本方法（正常退出时随场景树销毁自动回收）。
   /// </remarks>
   internal static void ResetMemoryForTests()
   {
     _remembered = null;
+
+    foreach (var hooked in _hooked)
+    {
+      // 已被释放的节点再 -= 会抛 ObjectDisposedException（用例之间可能残留上一条的实例）；
+      // Moq 的替身没有底层 Godot 对象，GetTargetObj 返回 null，照常解绑。
+      var target = hooked.Value.Dialog.GetTargetObj<GodotObject>();
+      if (target is not null && !GodotObject.IsInstanceValid(target))
+        continue;
+
+      hooked.Value.Dialog.VisibilityChanged -= hooked.Value.Handler;
+    }
+
     _hooked.Clear();
     _applied.Clear();
+  }
+
+  /// <summary>当前挂着的「隐藏时记住尺寸」处理函数数量（仅测试使用）。</summary>
+  internal static int HookedCountForTests => System.Linq.Enumerable.Count(_hooked);
+
+  /// <summary>一个已挂上的隐藏回调：解绑时需要同时拿到对话框与当初订阅的委托本体。</summary>
+  private sealed class HookedDialog
+  {
+    public HookedDialog(IFileDialog dialog, Action handler)
+    {
+      Dialog = dialog;
+      Handler = handler;
+    }
+
+    /// <summary>被挂的对话框。</summary>
+    public IFileDialog Dialog { get; }
+
+    /// <summary>当初订阅的委托本体（解绑必须用同一实例）。</summary>
+    public Action Handler { get; }
   }
 }
