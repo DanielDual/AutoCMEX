@@ -23,14 +23,17 @@ using Shouldly;
 /// 用真实的 <see cref="RecordingConfigPanel"/> + 真实临时引擎目录：本分组的职责是「把盘上状态渲染成
 /// 控件、把控件输入写回配置」，只有真实节点与真实目录才能同时验证这两条；控件事件不模拟，直接调
 /// 面板留出的公开入口（<c>CommitEngineDir</c>/<c>ApplyParallelism</c>/…）。
-/// 面板统一挂到真实宿主节点下：300ms 去抖探针的 <see cref="Timer"/> 与 <c>_ExitTree</c> 解绑
-/// 只有在场景树里才会真的走；进树同时真实触发 EnterTree/Ready，由 AutoInject 驱动
-/// <c>OnReady</c>（建控件）与 <c>OnResolved</c>（绑配置）。DataManager 按要求用
-/// <c>IsTesting + FakeDependency</c> 注入，面板本身没有 <c>[Node]</c> 属性，不需要 FakeNodeTree。
+/// 面板从真实场景 <c>RecordingConfigPanel.tscn</c> 实例化后挂到宿主节点下：<c>[Node("%…")]</c> 注入、
+/// 300ms 去抖探针的 <c>ITimer</c> 与 <c>_ExitTree</c> 解绑都只有在场景树里才会真的走；
+/// 进树同时真实触发 EnterTree/Ready，由 AutoInject 驱动 <c>OnReady</c>（信号/运行期文本）与
+/// <c>OnResolved</c>（绑配置）。DataManager 按要求用 <c>IsTesting + FakeDependency</c> 注入。
 /// </remarks>
 public class RecordingConfigPanelTest : TestClass
 {
   private const string RecorderDirName = "[pluginpackage]danmaku_recorder_1.0.1";
+
+  /// <summary>被测试面板的场景路径（控件结构/文案/数值范围都在这里声明）。</summary>
+  private const string ScenePath = "res://src/ui/settings/RecordingConfigPanel.tscn";
 
   private string _root = string.Empty;
   private string _dataDir = string.Empty;
@@ -553,15 +556,133 @@ public class RecordingConfigPanelTest : TestClass
     panel.ActionLabel.Text.ShouldContain("没有弹幕录制器条目");
   }
 
+  [Test]
+  public void Scene_InjectsEveryDeclaredNode()
+  {
+    // 24 个 [Node] 属性必须全部由场景装配（缺一个 AutoConnect 会直接抛错，这里再逐项确认）
+    _panel.SectionTitle.ShouldNotBeNull();
+    _panel.EngineDirEdit.ShouldNotBeNull();
+    _panel.ChooseEngineDirButton.ShouldNotBeNull();
+    _panel.InferEngineDirButton.ShouldNotBeNull();
+    _panel.EngineStatusLabel.ShouldNotBeNull();
+    _panel.ParallelismBox.ShouldNotBeNull();
+    _panel.SandboxRootEdit.ShouldNotBeNull();
+    _panel.ChooseSandboxRootButton.ShouldNotBeNull();
+    _panel.ResetSandboxRootButton.ShouldNotBeNull();
+    _panel.DiskHintLabel.ShouldNotBeNull();
+    _panel.PluginStatusLabel.ShouldNotBeNull();
+    _panel.InstallPluginButton.ShouldNotBeNull();
+    _panel.EnableRecorderButton.ShouldNotBeNull();
+    _panel.RefreshPluginButton.ShouldNotBeNull();
+    _panel.MaxFrameBox.ShouldNotBeNull();
+    _panel.FirstIntervalBox.ShouldNotBeNull();
+    _panel.SecondIntervalBox.ShouldNotBeNull();
+    _panel.ScalePercentBox.ShouldNotBeNull();
+    _panel.AdvancedHintLabel.ShouldNotBeNull();
+    _panel.LastOutputLabel.ShouldNotBeNull();
+    _panel.ActionLabel.ShouldNotBeNull();
+    _panel.EngineDirDialog.ShouldNotBeNull();
+    _panel.SandboxRootDialog.ShouldNotBeNull();
+    _panel.ProbeTimer.ShouldNotBeNull();
+  }
+
+  [Test]
+  public void Scene_SpinBoxRangesMatchRecordingConfigConstants()
+  {
+    _panel.ParallelismBox.MinValue.ShouldBe(RecordingConfig.MinParallelism);
+    _panel.ParallelismBox.MaxValue.ShouldBe(RecordingConfig.MaxParallelism);
+    _panel.ParallelismBox.Step.ShouldBe(1.0);
+
+    _panel.MaxFrameBox.MinValue.ShouldBe(RecordingConfig.MinMaxFrame);
+    _panel.MaxFrameBox.MaxValue.ShouldBe(RecordingConfig.MaxMaxFrame);
+    _panel.MaxFrameBox.Step.ShouldBe(1.0);
+
+    _panel.FirstIntervalBox.MinValue.ShouldBe(RecordingConfig.MinInterval);
+    _panel.FirstIntervalBox.MaxValue.ShouldBe(RecordingConfig.MaxInterval);
+    _panel.FirstIntervalBox.Step.ShouldBe(1.0);
+
+    _panel.SecondIntervalBox.MinValue.ShouldBe(RecordingConfig.MinInterval);
+    _panel.SecondIntervalBox.MaxValue.ShouldBe(RecordingConfig.MaxInterval);
+    _panel.SecondIntervalBox.Step.ShouldBe(1.0);
+
+    _panel.ScalePercentBox.MinValue.ShouldBe(RecordingConfig.MinScalePercent);
+    _panel.ScalePercentBox.MaxValue.ShouldBe(RecordingConfig.MaxScalePercent);
+    _panel.ScalePercentBox.Step.ShouldBe(5.0);
+  }
+
+  [Test]
+  public void Scene_SpinBoxInitialValuesMatchRecorderDefaults()
+  {
+    // 运行期 OnResolved 会用模型值回填；这里检查「入树前」的场景初始值，防止 .tscn 与常量两处漂移。
+    // 未入树时 unique name 不可用，按节点名在场景实例里查找（不依赖层级）。
+    var scene = GD.Load<PackedScene>(ScenePath).Instantiate<RecordingConfigPanel>();
+    try
+    {
+      SpinBoxBox(scene, "ParallelismBox").Value.ShouldBe(RecordingConfig.DefaultParallelism);
+      SpinBoxBox(scene, "MaxFrameBox").Value.ShouldBe(RecordingConfig.MinMaxFrame);
+      SpinBoxBox(scene, "FirstIntervalBox").Value.ShouldBe(RecordingConfig.MinInterval);
+      SpinBoxBox(scene, "SecondIntervalBox").Value.ShouldBe(RecordingConfig.MinInterval);
+      SpinBoxBox(scene, "ScalePercentBox").Value.ShouldBe(RecordingConfig.MinScalePercent);
+    }
+    finally
+    {
+      scene.Free();
+    }
+  }
+
+  [Test]
+  public void Scene_ProbeTimerMatchesDebounceConstant()
+  {
+    var timer = _panel.GetNode<Timer>("%ProbeTimer");
+    timer.OneShot.ShouldBeTrue();
+    timer.WaitTime.ShouldBe(RecordingConfigPanel.ProbeDebounceSeconds);
+  }
+
+  [Test]
+  public void Scene_FileDialogsAreDirectoryPickersWithDeclaredTitles()
+  {
+    foreach (
+      var dialog in new[]
+      {
+        _panel.GetNode<FileDialog>("%EngineDirDialog"),
+        _panel.GetNode<FileDialog>("%SandboxRootDialog"),
+      }
+    )
+    {
+      dialog.FileMode.ShouldBe(FileDialog.FileModeEnum.OpenDir);
+      dialog.Access.ShouldBe(FileDialog.AccessEnum.Filesystem);
+      dialog.UseNativeDialog.ShouldBeFalse();
+      // 默认 true 时引擎会用 file_mode 覆盖 title；必须关掉，中文标题才能留在场景里
+      dialog.ModeOverridesTitle.ShouldBeFalse();
+    }
+
+    _panel.GetNode<FileDialog>("%EngineDirDialog").Title.ShouldBe("选择 LuaSTG 引擎根目录");
+    _panel.GetNode<FileDialog>("%SandboxRootDialog").Title.ShouldBe("选择沙箱根目录");
+  }
+
+  [Test]
+  public void Scene_DoesNotBuildNodesAtRuntime()
+  {
+    // 场景固定 23 个直接子节点（含 2 个 FileDialog 与 ProbeTimer）；运行期再建节点说明又回到手搭
+    _panel.GetChildCount().ShouldBe(23);
+  }
+
+  /// <summary>在未入树的场景实例里按节点名取 SpinBox（契约测试用）。</summary>
+  /// <param name="scene">场景根节点。</param>
+  /// <param name="name">节点名。</param>
+  /// <returns>找到的数值框。</returns>
+  private static SpinBox SpinBoxBox(Node scene, string name) =>
+    scene.FindChild(name, recursive: true, owned: false).ShouldBeOfType<SpinBox>();
+
   /// <summary>新建一个接好依赖并进场景树的面板（同一 DataManager，便于验证回填与去抖探针）。</summary>
   /// <returns>已建好的面板（<c>OnReady</c>/<c>OnResolved</c> 已随进树执行完毕）。</returns>
   private RecordingConfigPanel NewPanel()
   {
-    var panel = new RecordingConfigPanel();
+    var panel = GD.Load<PackedScene>(ScenePath).Instantiate<RecordingConfigPanel>();
     (panel as IAutoInit).IsTesting = true;
     panel.FakeDependency<DataManager>(_dm);
-    // 进树即真实触发 EnterTree/Ready：AutoInject 依次调 OnReady（建控件）与 OnResolved（绑配置），
-    // 与手动补发这两条通知等价，同时让去抖 Timer 与 _ExitTree 走真机路径。
+    // 进树即真实触发 EnterTree/Ready：AutoInject 先注入 [Node] 再调 OnReady/OnResolved，
+    // 同时让去抖 Timer 与 _ExitTree 走真机路径。
     _host.AddChild(panel);
     _panels.Add(panel);
     return panel;

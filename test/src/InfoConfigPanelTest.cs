@@ -40,6 +40,9 @@ public class InfoConfigPanelTest : TestClass
   private InfoEventBus _bus = default!;
   private VBoxContainer _pageBody = default!;
 
+  /// <summary>场景注入的群列表结果对话框（<c>%InfoMessageDialog</c>，真实节点在 SettingsPanel.tscn）。</summary>
+  private Mock<IAcceptDialog> _infoDialog = default!;
+
   /// <summary>本页发出的 WebSocket 消息（按顺序），用于断言群列表查询。</summary>
   private readonly System.Collections.Generic.List<WebSocketMessage> _sent = new();
 
@@ -76,6 +79,9 @@ public class InfoConfigPanelTest : TestClass
       .Callback<WebSocketMessage>(_sent.Add)
       .ReturnsAsync(1);
     _bus = new InfoEventBus();
+    _infoDialog = new Mock<IAcceptDialog>();
+    _infoDialog.SetupProperty(d => d.Title);
+    _infoDialog.SetupProperty(d => d.DialogText);
 
     _panel = new InfoConfigPanel();
     (_panel as IAutoInit).IsTesting = true;
@@ -89,6 +95,7 @@ public class InfoConfigPanelTest : TestClass
         ["%RefreshGroupsButton"] = new ButtonAdapter(_refreshButton),
         ["%HintLabel"] = new LabelAdapter(_hintLabel),
         ["%StatusLabel"] = new LabelAdapter(_statusLabel),
+        ["%InfoMessageDialog"] = _infoDialog.Object,
       }
     );
 
@@ -232,7 +239,7 @@ public class InfoConfigPanelTest : TestClass
     await SettleAsync();
 
     _dataManager.Settings.TargetGroups[0].ChannelId.Value.ShouldBe("10001");
-    // 重建与提示都在下一帧执行：不能在信号回调里同步销毁正在发信号的输入框所在行（C6）
+    // 重建与提示都在下一帧执行：不能在信号回调里同步销毁正在发信号的输入框所在行
     _statusLabel.Text.ShouldContain("群 ID 不能为空");
     _groupRows.GetChild(0).GetChild<LineEdit>(1).Text.ShouldBe("10001");
   }
@@ -344,7 +351,7 @@ public class InfoConfigPanelTest : TestClass
     _groupRows.GetChild(0).GetChild<LineEdit>(2).Text.ShouldBe("新群名");
     // 群列表刷新不得改动用户勾选
     group.Enabled.Value.ShouldBeTrue();
-    FindDialog(_panel).DialogText.ShouldContain("更新 1 个群名");
+    _infoDialog.Object.DialogText.ShouldContain("更新 1 个群名");
   }
 
   [Test]
@@ -403,7 +410,7 @@ public class InfoConfigPanelTest : TestClass
 
     _sent.Count.ShouldBe(1);
     _sent[0].Payload.GetProperty("event").GetString().ShouldBe(InfoProtocol.QueryGroupListEvent);
-    FindDialog(_panel).DialogText.ShouldContain("已向 Koishi 发起群列表查询");
+    _infoDialog.Object.DialogText.ShouldContain("已向 Koishi 发起群列表查询");
   }
 
   [Test]
@@ -414,7 +421,7 @@ public class InfoConfigPanelTest : TestClass
     _refreshButton.EmitSignal(BaseButton.SignalName.Pressed);
 
     _sent.ShouldBeEmpty("无连接时不应发出查询");
-    FindDialog(_panel).Title.ShouldBe("群列表刷新失败");
+    _infoDialog.Object.Title.ShouldBe("群列表刷新失败");
   }
 
   [Test]
@@ -447,8 +454,8 @@ public class InfoConfigPanelTest : TestClass
     _dataManager.Settings.TargetGroups.Count.ShouldBe(2);
     _dataManager.Settings.TargetGroups[0].DisplayName.Value.ShouldBe("示例群");
     _dataManager.Settings.TargetGroups[0].Enabled.Value.ShouldBeFalse("新并入的群默认不启用");
-    FindDialog(_panel).Title.ShouldBe("群列表已更新");
-    FindDialog(_panel).DialogText.ShouldContain("新增 2");
+    _infoDialog.Object.Title.ShouldBe("群列表已更新");
+    _infoDialog.Object.DialogText.ShouldContain("新增 2");
   }
 
   [Test]
@@ -465,13 +472,5 @@ public class InfoConfigPanelTest : TestClass
   {
     await _panel.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
     await _panel.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
-  }
-
-  /// <summary>取本页懒创建的结果对话框。</summary>
-  private static AcceptDialog FindDialog(Node panel)
-  {
-    var dialog = panel.GetChildren().OfType<AcceptDialog>().LastOrDefault();
-    dialog.ShouldNotBeNull("本页应弹出结果对话框");
-    return dialog!;
   }
 }

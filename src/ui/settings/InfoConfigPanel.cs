@@ -73,6 +73,10 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel, IProvide
   [Node("%PageBody")]
   public IVBoxContainer PageBody { get; set; } = default!;
 
+  /// <summary>群列表刷新/合并的结果对话框（节点在共享的 <c>SettingsPanel.tscn</c> 里，unique name 加 Info 前缀防跨页重名）。</summary>
+  [Node("%InfoMessageDialog")]
+  public IAcceptDialog InfoMessageDialog { get; set; } = default!;
+
   #endregion
 
   #region Dependencies
@@ -88,7 +92,7 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel, IProvide
 
   /// <summary>提供给运行时创建的录制设置分组的 DataManager（就近解析，与页面同一实例）。</summary>
   /// <remarks>
-  /// 录制分组是 <see cref="EnsureRecordingSection"/> 在依赖解析后用 <c>new</c> 建出来的子节点，
+  /// 录制分组是 <see cref="EnsureRecordingSection"/> 在依赖解析后从场景实例化出来的子节点，
   /// 它的 <c>[Dependency] DataManager</c> 需要最近的祖先 provider；本页是它的直接宿主，
   /// 故把同一个实例往下提供，不另造服务（与 <c>AiModelConfigPanel</c> 提供给模型行的做法一致）。
   /// </remarks>
@@ -101,9 +105,6 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel, IProvide
   private AutoList<TargetGroup>.Binding? _binding;
   private RecordingConfigPanel? _recordingSection;
   private GroupDirectoryService? _groupDirectory;
-
-  /// <summary>刷新群列表的结果对话框（懒创建，复用同一个实例）。</summary>
-  private AcceptDialog? _dialog;
 
   /// <summary>目标群列表下方挂载的录制设置分组（依赖解析后创建，未解析时为 null）。</summary>
   public RecordingConfigPanel? RecordingSection => _recordingSection;
@@ -184,15 +185,17 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel, IProvide
   /// <summary>创建并挂载录制设置分组（幂等；依赖未解析时不创建）。</summary>
   /// <returns>已挂载的分组；依赖未解析时为 null。</returns>
   /// <remarks>
-  /// 不再手工传 DataManager：分组自己用 AutoInject 从本页（<see cref="IProvide{T}"/>）就近解析，
-  /// 与页内其它动态节点同一范式。
+  /// 分组自己用 AutoInject 从本页（<see cref="IProvide{T}"/>）就近解析 DataManager；
+  /// 控件与文案都在 <c>RecordingConfigPanel.tscn</c> 里，这里只负责实例化/命名/挂载。
   /// </remarks>
   public RecordingConfigPanel? EnsureRecordingSection()
   {
     if (_recordingSection is not null || _dm is null)
       return _recordingSection;
 
-    _recordingSection = new RecordingConfigPanel { Name = "RecordingSection" };
+    _recordingSection = GD.Load<PackedScene>("res://src/ui/settings/RecordingConfigPanel.tscn")
+      .Instantiate<RecordingConfigPanel>();
+    _recordingSection.Name = "RecordingSection";
     PageBody.AddChild(_recordingSection);
     return _recordingSection;
   }
@@ -376,7 +379,7 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel, IProvide
       return;
     }
 
-    // C6：不在这里同步 Refresh()——它会销毁正在发信号的输入框所在行
+    // 不在这里同步 Refresh()——它会销毁正在发信号的输入框所在行
     if (value.Length == 0)
     {
       CallDeferred(nameof(RefreshWithNotice), "群 ID 不能为空，已保留原值。");
@@ -544,24 +547,14 @@ public partial class InfoConfigPanel : VBoxContainer, IInfoConfigPanel, IProvide
     return "群列表没有变化。";
   }
 
-  /// <summary>显示一条结果消息（对话框懒创建；未入树时不弹窗，仅保留文本供测试断言）。</summary>
+  /// <summary>显示一条结果消息（对话框由场景注入；未入树时不弹窗，仅保留文本供测试断言）。</summary>
   private void PresentMessage(string title, string text)
   {
-    EnsureDialog();
-    _dialog!.Title = title;
-    _dialog.DialogText = text;
+    InfoMessageDialog.Title = title;
+    InfoMessageDialog.DialogText = text;
 
     if (IsInsideTree())
-      _dialog.PopupCentered(new Vector2I(720, 460));
-  }
-
-  private void EnsureDialog()
-  {
-    if (_dialog is not null && GodotObject.IsInstanceValid(_dialog))
-      return;
-
-    _dialog = new AcceptDialog { Title = "群列表刷新" };
-    AddChild(_dialog);
+      InfoMessageDialog.PopupCentered(new Vector2I(720, 460));
   }
 
   private void OnAddGroupPressed()

@@ -9,6 +9,7 @@ using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Chickensoft.Sync.Primitives;
 using Godot;
@@ -37,13 +38,14 @@ using Godot;
 /// </para>
 /// <para>
 /// 按规则 1/5 接入 AutoInject：<c>[Meta(typeof(IAutoNode))]</c>、<c>_Notification</c> 转发给
-/// <c>this.Notify</c>、DataManager 走 <c>[Dependency]</c>，控件在 <see cref="OnReady"/> 一次性建好，
-/// 配置回填与绑定在 <see cref="OnResolved"/> 装配（依赖重新解析时先释放旧绑定）。
+/// <c>this.Notify</c>、DataManager 走 <c>[Dependency]</c>；控件来自场景，<see cref="OnReady"/> 只连信号
+/// 与赋值运行期文本，配置回填与绑定在 <see cref="OnResolved"/> 装配（依赖重新解析时先释放旧绑定）。
 /// </para>
 /// <para>
-/// 但控件仍由 C# 构建（规则 7/8/13 的**文档化例外**）：本分组没有独立场景，二十余个控件写进共享的
-/// <c>SettingsPanel.tscn</c> 既挤又容易与其它类别页互相牵连；批 4 结构收敛只补 DI 与生命周期，
-/// 场景化留待单独评估。
+/// 控件全部由 <c>RecordingConfigPanel.tscn</c> 声明并经 <c>[Node("%…")]</c> 注入（规则 7/8/13）：
+/// <see cref="OnReady"/> 只连接信号与赋值运行期才能算出的文本，结构/文案/数值范围都在场景里。
+/// 两个 <see cref="FileDialog"/> 的标题也写在场景里，靠 <c>mode_overrides_title = false</c> 保住
+/// （默认 true 时引擎会在应用 <c>file_mode</c> 后把 title 覆盖成英文默认值）。
 /// </para>
 /// <para>
 /// 交互入口都留了公开方法（<see cref="CommitEngineDir"/>、<see cref="ApplyParallelism"/> 等），
@@ -56,8 +58,8 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   private static readonly Color _okColor = new(0.62f, 0.86f, 0.52f);
   private static readonly Color _warnColor = new(0.96f, 0.68f, 0.36f);
 
-  /// <summary>磁盘探针的去抖时延（秒）：连续 tick 只落一次递归枚举。</summary>
-  private const double ProbeDebounceSeconds = 0.3;
+  /// <summary>磁盘探针的去抖时延（秒）：连续 tick 只落一次递归枚举；与场景里 ProbeTimer 的 wait_time 对照。</summary>
+  internal const double ProbeDebounceSeconds = 0.3;
 
   /// <summary>数据管理器（在 <see cref="OnResolved"/> 里取；之后的公开入口都依赖它已就绪）。</summary>
   private DataManager _dm = default!;
@@ -69,9 +71,6 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
 
   /// <summary>8 个配置项的 Sync 绑定（规则 20：在 <see cref="_ExitTree"/> 释放）。</summary>
   private readonly List<IDisposable> _bindings = new();
-
-  /// <summary>磁盘探针的去抖定时器（单次触发，重复请求只重启它）。</summary>
-  private Timer? _probeTimer;
 
   /// <summary>正在建立配置绑定：订阅回放不排回填（随后会整体回填一次）。</summary>
   private bool _isBindingConfigValues;
@@ -99,25 +98,63 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
 
   #endregion
 
-  /// <summary>构建分组：控件在 <see cref="OnReady"/> 里一次建好。</summary>
-  /// <remarks>
-  /// 本面板没有独立场景，控件沿用「C# 构建」范式（规则 7/8/13 的文档化例外）；
-  /// 无参构造只为让调用方 <c>new</c> 出来后再挂进树，配置依赖走 AutoInject。
-  /// </remarks>
-  public RecordingConfigPanel()
-  {
-    Name = "RecordingConfigPanel";
-  }
-
   /// <inheritdoc/>
   public override void _Notification(int what) => this.Notify(what);
 
-  /// <summary>AutoInject 节点注入完成：把控件一次建好（每个实例只执行一次）。</summary>
+  /// <summary>AutoInject 节点注入完成：只做运行期文本与信号连接（控件、标题与静态文案都在场景里）。</summary>
+  /// <remarks>
+  /// 占位符、默认沙箱路径与常量上限提示依赖运行期才能算出的值，故留在这里赋值。
+  /// </remarks>
   public void OnReady()
   {
-    BuildHeader();
-    BuildBody();
-    BuildDialogs();
+    EngineDirEdit.PlaceholderText = @"例如 LuaSTG 引擎目录";
+    SandboxRootEdit.PlaceholderText = RecordingSandbox.GetDefaultRootDir();
+    ResetSandboxRootButton.TooltipText = RecordingSandbox.GetDefaultRootDir();
+    ParallelismBox.TooltipText =
+      $"默认 {RecordingConfig.DefaultParallelism}，上限 {RecordingConfig.MaxParallelism}";
+
+    EngineDirEdit.TextSubmitted += text => CommitEngineDir(text);
+    EngineDirEdit.FocusExited += () => CommitEngineDir(EngineDirEdit.Text);
+    ChooseEngineDirButton.Pressed += OnChooseEngineDirPressed;
+    InferEngineDirButton.Pressed += InferEngineDir;
+    ParallelismBox.ValueChanged += value =>
+      OnSpinBoxChanged(() => ApplyParallelism((int)Math.Round(value)));
+
+    SandboxRootEdit.TextSubmitted += text => CommitSandboxRoot(text);
+    SandboxRootEdit.FocusExited += () => CommitSandboxRoot(SandboxRootEdit.Text);
+    ChooseSandboxRootButton.Pressed += OnChooseSandboxRootPressed;
+    ResetSandboxRootButton.Pressed += ResetSandboxRoot;
+
+    InstallPluginButton.Pressed += InstallPlugin;
+    EnableRecorderButton.Pressed += EnableRecorder;
+    RefreshPluginButton.Pressed += RefreshProbes;
+
+    MaxFrameBox.ValueChanged += value =>
+      OnSpinBoxChanged(() => ApplyMaxFrame((int)Math.Round(value)));
+    FirstIntervalBox.ValueChanged += value =>
+      OnSpinBoxChanged(() => ApplyFirstInterval((int)Math.Round(value)));
+    SecondIntervalBox.ValueChanged += value =>
+      OnSpinBoxChanged(() => ApplySecondInterval((int)Math.Round(value)));
+    ScalePercentBox.ValueChanged += value =>
+      OnSpinBoxChanged(() => ApplyScalePercent((int)Math.Round(value)));
+
+    EngineDirDialog.DirSelected += CommitEngineDir;
+    SandboxRootDialog.DirSelected += CommitSandboxRoot;
+    ProbeTimer.Timeout += OnFootprintDebounceElapsed;
+  }
+
+  /// <summary>点「选择目录…」：定位到当前引擎目录后弹出目录选择框。</summary>
+  private void OnChooseEngineDirPressed()
+  {
+    PrepareDialog(EngineDirDialog, _config.EngineDir.Value);
+    FileDialogSizing.Popup(EngineDirDialog);
+  }
+
+  /// <summary>点「选择目录…」：定位到当前沙箱根后弹出目录选择框。</summary>
+  private void OnChooseSandboxRootPressed()
+  {
+    PrepareDialog(SandboxRootDialog, _config.SandboxRoot.Value);
+    FileDialogSizing.Popup(SandboxRootDialog);
   }
 
   /// <summary>AutoInject 依赖解析完成：取配置、挂绑定并首次渲染；重复解析时先释放上一轮绑定。</summary>
@@ -146,73 +183,100 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   #region Controls
 
   /// <summary>分组标题（普通文本，整组常显，不再有折叠开关）。</summary>
-  public Label SectionTitle { get; private set; } = default!;
+  [Node("%SectionTitle")]
+  public ILabel SectionTitle { get; set; } = default!;
 
   /// <summary>引擎目录输入框（提交或失焦时才写回）。</summary>
-  public LineEdit EngineDirEdit { get; private set; } = default!;
+  [Node("%EngineDirEdit")]
+  public ILineEdit EngineDirEdit { get; set; } = default!;
 
   /// <summary>引擎目录选择按钮。</summary>
-  public Button ChooseEngineDirButton { get; private set; } = default!;
+  [Node("%ChooseEngineDirButton")]
+  public IButton ChooseEngineDirButton { get; set; } = default!;
 
   /// <summary>从 Sharp 目录推断引擎目录的按钮。</summary>
-  public Button InferEngineDirButton { get; private set; } = default!;
+  [Node("%InferEngineDirButton")]
+  public IButton InferEngineDirButton { get; set; } = default!;
 
   /// <summary>引擎目录校验状态。</summary>
-  public Label EngineStatusLabel { get; private set; } = default!;
+  [Node("%EngineStatusLabel")]
+  public ILabel EngineStatusLabel { get; set; } = default!;
 
   /// <summary>并行度输入框。</summary>
-  public SpinBox ParallelismBox { get; private set; } = default!;
+  [Node("%ParallelismBox")]
+  public ISpinBox ParallelismBox { get; set; } = default!;
 
   /// <summary>沙箱根目录输入框（留空即默认目录）。</summary>
-  public LineEdit SandboxRootEdit { get; private set; } = default!;
+  [Node("%SandboxRootEdit")]
+  public ILineEdit SandboxRootEdit { get; set; } = default!;
 
   /// <summary>沙箱根目录选择按钮。</summary>
-  public Button ChooseSandboxRootButton { get; private set; } = default!;
+  [Node("%ChooseSandboxRootButton")]
+  public IButton ChooseSandboxRootButton { get; set; } = default!;
 
   /// <summary>沙箱根恢复默认按钮。</summary>
-  public Button ResetSandboxRootButton { get; private set; } = default!;
+  [Node("%ResetSandboxRootButton")]
+  public IButton ResetSandboxRootButton { get; set; } = default!;
 
   /// <summary>沙箱空间与目录提示。</summary>
-  public Label DiskHintLabel { get; private set; } = default!;
+  [Node("%DiskHintLabel")]
+  public ILabel DiskHintLabel { get; set; } = default!;
 
   /// <summary>两个插件的部署状态。</summary>
-  public Label PluginStatusLabel { get; private set; } = default!;
+  [Node("%PluginStatusLabel")]
+  public ILabel PluginStatusLabel { get; set; } = default!;
 
   /// <summary>一键安装并启用本插件的按钮。</summary>
-  public Button InstallPluginButton { get; private set; } = default!;
+  [Node("%InstallPluginButton")]
+  public IButton InstallPluginButton { get; set; } = default!;
 
   /// <summary>一键启用弹幕录制器的按钮。</summary>
-  public Button EnableRecorderButton { get; private set; } = default!;
+  [Node("%EnableRecorderButton")]
+  public IButton EnableRecorderButton { get; set; } = default!;
 
   /// <summary>重新检查插件状态的按钮。</summary>
-  public Button RefreshPluginButton { get; private set; } = default!;
+  [Node("%RefreshPluginButton")]
+  public IButton RefreshPluginButton { get; set; } = default!;
 
   /// <summary>帧数上限输入框。</summary>
-  public SpinBox MaxFrameBox { get; private set; } = default!;
+  [Node("%MaxFrameBox")]
+  public ISpinBox MaxFrameBox { get; set; } = default!;
 
   /// <summary>首次抽帧间隔输入框。</summary>
-  public SpinBox FirstIntervalBox { get; private set; } = default!;
+  [Node("%FirstIntervalBox")]
+  public ISpinBox FirstIntervalBox { get; set; } = default!;
 
   /// <summary>换挡重录用抽帧间隔输入框。</summary>
-  public SpinBox SecondIntervalBox { get; private set; } = default!;
+  [Node("%SecondIntervalBox")]
+  public ISpinBox SecondIntervalBox { get; set; } = default!;
 
   /// <summary>产物放缩比（分辨率）输入框，单位为百分比。</summary>
-  public SpinBox ScalePercentBox { get; private set; } = default!;
+  [Node("%ScalePercentBox")]
+  public ISpinBox ScalePercentBox { get; set; } = default!;
 
   /// <summary>高级参数说明。</summary>
-  public Label AdvancedHintLabel { get; private set; } = default!;
+  [Node("%AdvancedHintLabel")]
+  public ILabel AdvancedHintLabel { get; set; } = default!;
 
   /// <summary>上次输出目录展示。</summary>
-  public Label LastOutputLabel { get; private set; } = default!;
+  [Node("%LastOutputLabel")]
+  public ILabel LastOutputLabel { get; set; } = default!;
 
   /// <summary>最近一次操作的结果提示（安装结果、被拒的原因等）。</summary>
-  public Label ActionLabel { get; private set; } = default!;
+  [Node("%ActionLabel")]
+  public ILabel ActionLabel { get; set; } = default!;
 
   /// <summary>引擎目录选择对话框。</summary>
-  public FileDialog EngineDirDialog { get; private set; } = default!;
+  [Node("%EngineDirDialog")]
+  public IFileDialog EngineDirDialog { get; set; } = default!;
 
   /// <summary>沙箱根目录选择对话框。</summary>
-  public FileDialog SandboxRootDialog { get; private set; } = default!;
+  [Node("%SandboxRootDialog")]
+  public IFileDialog SandboxRootDialog { get; set; } = default!;
+
+  /// <summary>磁盘占用探针的去抖定时器（场景注入；单次触发，重复请求只重启它）。</summary>
+  [Node("%ProbeTimer")]
+  public ITimer ProbeTimer { get; set; } = default!;
 
   #endregion
 
@@ -410,256 +474,13 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     QueueFootprintProbe();
   }
 
-  /// <summary>构建分组标题：一条分隔线 + 普通文本标题，整组常显，不再用折叠开关。</summary>
-  private void BuildHeader()
-  {
-    AddChild(new HSeparator());
-    SectionTitle = new Label
-    {
-      Text = "符卡 GIF 录制设置",
-      TooltipText = "引擎目录、录制插件、并行度与沙箱目录",
-    };
-    AddChild(SectionTitle);
-  }
-
-  /// <summary>按「控件行 - 状态行」的节奏构建设置主体；分组常显，不再有折叠容器。</summary>
-  private void BuildBody()
-  {
-    AddChild(
-      new Label { Text = "引擎目录（LuaSTG 根目录，需含 game/，且 game/ 内有 launch 文件）" }
-    );
-    var engineRow = new HBoxContainer();
-    EngineDirEdit = new LineEdit
-    {
-      PlaceholderText = @"例如 LuaSTG 引擎目录",
-      SizeFlagsHorizontal = SizeFlags.ExpandFill,
-    };
-    EngineDirEdit.TextSubmitted += text => CommitEngineDir(text);
-    EngineDirEdit.FocusExited += () => CommitEngineDir(EngineDirEdit.Text);
-    engineRow.AddChild(EngineDirEdit);
-
-    ChooseEngineDirButton = new Button { Text = "选择目录…" };
-    ChooseEngineDirButton.Pressed += () =>
-    {
-      PrepareDialog(EngineDirDialog, _config.EngineDir.Value);
-      FileDialogSizing.Popup(EngineDirDialog);
-    };
-    engineRow.AddChild(ChooseEngineDirButton);
-
-    InferEngineDirButton = new Button
-    {
-      Text = "从 Sharp 目录推断",
-      TooltipText = "按「整合」板块配置的 Editor Sharp 目录上溯查找引擎目录",
-    };
-    InferEngineDirButton.Pressed += InferEngineDir;
-    engineRow.AddChild(InferEngineDirButton);
-    AddChild(engineRow);
-
-    EngineStatusLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-    AddChild(EngineStatusLabel);
-
-    var parallelRow = new HBoxContainer();
-    parallelRow.AddChild(new Label { Text = "并行录制的引擎实例数" });
-    ParallelismBox = new SpinBox
-    {
-      MinValue = RecordingConfig.MinParallelism,
-      MaxValue = RecordingConfig.MaxParallelism,
-      Step = 1,
-      Value = RecordingConfig.DefaultParallelism,
-      CustomMinimumSize = new Vector2(90, 0),
-      TooltipText =
-        $"默认 {RecordingConfig.DefaultParallelism}，上限 {RecordingConfig.MaxParallelism}",
-    };
-    ParallelismBox.ValueChanged += value =>
-      OnSpinBoxChanged(() => ApplyParallelism((int)Math.Round(value)));
-    parallelRow.AddChild(ParallelismBox);
-    parallelRow.AddChild(
-      new Label
-      {
-        Text = "实际 worker = min(并行度, 战斗卡数)，临时空间不足时会自动下调",
-        AutowrapMode = TextServer.AutowrapMode.WordSmart,
-        SizeFlagsHorizontal = SizeFlags.ExpandFill,
-      }
-    );
-    AddChild(parallelRow);
-
-    AddChild(new HSeparator());
-    AddChild(
-      new Label { Text = "沙箱根目录（每轮为每个 worker 建一份引擎副本，留空用系统临时目录）" }
-    );
-    var sandboxRow = new HBoxContainer();
-    SandboxRootEdit = new LineEdit
-    {
-      PlaceholderText = RecordingSandbox.GetDefaultRootDir(),
-      SizeFlagsHorizontal = SizeFlags.ExpandFill,
-    };
-    SandboxRootEdit.TextSubmitted += text => CommitSandboxRoot(text);
-    SandboxRootEdit.FocusExited += () => CommitSandboxRoot(SandboxRootEdit.Text);
-    sandboxRow.AddChild(SandboxRootEdit);
-
-    ChooseSandboxRootButton = new Button { Text = "选择目录…" };
-    ChooseSandboxRootButton.Pressed += () =>
-    {
-      PrepareDialog(SandboxRootDialog, _config.SandboxRoot.Value);
-      FileDialogSizing.Popup(SandboxRootDialog);
-    };
-    sandboxRow.AddChild(ChooseSandboxRootButton);
-
-    ResetSandboxRootButton = new Button
-    {
-      Text = "恢复默认",
-      TooltipText = RecordingSandbox.GetDefaultRootDir(),
-    };
-    ResetSandboxRootButton.Pressed += ResetSandboxRoot;
-    sandboxRow.AddChild(ResetSandboxRootButton);
-    AddChild(sandboxRow);
-
-    DiskHintLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-    AddChild(DiskHintLabel);
-
-    AddChild(new HSeparator());
-    AddChild(new Label { Text = "录制插件（安装与启用只在你点击按钮后写入引擎目录）" });
-    PluginStatusLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-    AddChild(PluginStatusLabel);
-
-    var pluginRow = new HBoxContainer();
-    InstallPluginButton = new Button
-    {
-      Text = "安装并启用 autocmex",
-      TooltipText = "复制应用自带的录制插件到引擎，并在插件清单里登记为启用",
-    };
-    InstallPluginButton.Pressed += InstallPlugin;
-    pluginRow.AddChild(InstallPluginButton);
-
-    EnableRecorderButton = new Button
-    {
-      Text = "启用弹幕录制器",
-      TooltipText =
-        "只把插件清单里弹幕录制器条目的 enable 置 true（会重写清单并留 .bak 备份），不复制或删除插件目录里的文件",
-    };
-    EnableRecorderButton.Pressed += EnableRecorder;
-    pluginRow.AddChild(EnableRecorderButton);
-
-    RefreshPluginButton = new Button { Text = "重新检查" };
-    RefreshPluginButton.Pressed += RefreshProbes;
-    pluginRow.AddChild(RefreshPluginButton);
-    AddChild(pluginRow);
-
-    AddChild(new HSeparator());
-    AddChild(new Label { Text = "高级参数" });
-    var advancedRow = new HBoxContainer();
-    MaxFrameBox = AddAdvancedSpinBox(
-      advancedRow,
-      "帧数上限",
-      RecordingConfig.MinMaxFrame,
-      RecordingConfig.MaxMaxFrame,
-      ApplyMaxFrame
-    );
-    FirstIntervalBox = AddAdvancedSpinBox(
-      advancedRow,
-      "首次间隔",
-      RecordingConfig.MinInterval,
-      RecordingConfig.MaxInterval,
-      ApplyFirstInterval
-    );
-    SecondIntervalBox = AddAdvancedSpinBox(
-      advancedRow,
-      "换挡后间隔",
-      RecordingConfig.MinInterval,
-      RecordingConfig.MaxInterval,
-      ApplySecondInterval
-    );
-    ScalePercentBox = AddAdvancedSpinBox(
-      advancedRow,
-      "放缩比 (%)",
-      RecordingConfig.MinScalePercent,
-      RecordingConfig.MaxScalePercent,
-      ApplyScalePercent,
-      step: 5
-    );
-    AddChild(advancedRow);
-
-    AdvancedHintLabel = new Label
-    {
-      Text =
-        "间隔 3 ≈ 20 fps、5 ≈ 12 fps；玩家不干预时长卡会在帧数上限处截断，属正常产物（报告里标 complete = false）。"
-        + "产物达到 30MB 时 QQ 发不出去，同样会自动换第二档间隔重录一次。"
-        + "放缩比决定产物分辨率：50% 即捕获区域的宽高各减半（像素总数为 1/4，录制器默认），100% 为原始像素，越大越清晰、体积也越大。",
-      AutowrapMode = TextServer.AutowrapMode.WordSmart,
-    };
-    AddChild(AdvancedHintLabel);
-
-    LastOutputLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-    AddChild(LastOutputLabel);
-
-    ActionLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart, Visible = false };
-    AddChild(ActionLabel);
-  }
-
-  /// <summary>构建两个目录选择对话框（隐藏的子节点，点击按钮才弹出）。</summary>
-  private void BuildDialogs()
-  {
-    EngineDirDialog = BuildDirDialog("选择 LuaSTG 引擎根目录");
-    EngineDirDialog.DirSelected += CommitEngineDir;
-    SandboxRootDialog = BuildDirDialog("选择沙箱根目录");
-    SandboxRootDialog.DirSelected += CommitSandboxRoot;
-  }
-
-  /// <summary>建一个只选目录的系统文件对话框。</summary>
-  /// <param name="title">对话框标题。</param>
-  /// <returns>已挂到本分组的对话框。</returns>
-  private FileDialog BuildDirDialog(string title)
-  {
-    var dialog = new FileDialog
-    {
-      Title = title,
-      FileMode = FileDialog.FileModeEnum.OpenDir,
-      Access = FileDialog.AccessEnum.Filesystem,
-      UseNativeDialog = false,
-      Unresizable = false,
-    };
-    AddChild(dialog);
-    return dialog;
-  }
-
   /// <summary>把对话框定位到当前目录（目录不存在时保持引擎给的默认位置）。</summary>
-  private static void PrepareDialog(FileDialog dialog, string currentDir)
+  private static void PrepareDialog(IFileDialog dialog, string currentDir)
   {
     if (Directory.Exists(currentDir))
     {
       dialog.CurrentDir = currentDir;
     }
-  }
-
-  /// <summary>在高级参数行里追加一个带标签的数值框。</summary>
-  /// <param name="row">所在行。</param>
-  /// <param name="label">标签文案。</param>
-  /// <param name="min">下限。</param>
-  /// <param name="max">上限。</param>
-  /// <param name="apply">值变化时的写入动作（未展开同步时调用）。</param>
-  /// <param name="step">数值框步长。</param>
-  /// <returns>建好的数值框。</returns>
-  private SpinBox AddAdvancedSpinBox(
-    HBoxContainer row,
-    string label,
-    int min,
-    int max,
-    Action<int> apply,
-    int step = 1
-  )
-  {
-    row.AddChild(new Label { Text = label });
-    var box = new SpinBox
-    {
-      MinValue = min,
-      MaxValue = max,
-      Step = step,
-      Value = min,
-      CustomMinimumSize = new Vector2(80, 0),
-    };
-    box.ValueChanged += value => OnSpinBoxChanged(() => apply((int)Math.Round(value)));
-    row.AddChild(box);
-    return box;
   }
 
   /// <summary>数值框变化回调：同步控件回填期间不触发写入，避免自激。</summary>
@@ -677,7 +498,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   /// <param name="clamped">收敛后的值。</param>
   /// <param name="target">配置项。</param>
   /// <param name="box">对应控件。</param>
-  private void ApplyInt(int clamped, AutoValue<int> target, SpinBox box)
+  private void ApplyInt(int clamped, AutoValue<int> target, ISpinBox box)
   {
     if (target.Value != clamped)
     {
@@ -730,7 +551,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   /// <summary>回填数值框（临时置起同步标志，避免触发写入）。</summary>
   /// <param name="box">目标数值框。</param>
   /// <param name="value">要显示的值。</param>
-  private void SyncSpinBox(SpinBox box, int value)
+  private void SyncSpinBox(ISpinBox box, int value)
   {
     var outer = _syncing;
     _syncing = true;
@@ -829,37 +650,19 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   {
     // 规则 20：绑定必须在节点退出时释放；探针定时器也停掉，避免对已离场面板回填
     DisposeBindings();
-
-    var probeTimer = _probeTimer;
-    if (probeTimer is not null && GodotObject.IsInstanceValid(probeTimer))
-    {
-      probeTimer.Stop();
-    }
+    ProbeTimer?.Stop();
 
     base._ExitTree();
   }
 
-  /// <summary>排一次去抖的磁盘探针：300ms 内的多次请求合并成一次。</summary>
-  /// <remarks>
-  /// 只在场景树里排（Timer 不进树不会走）：依赖解析发生在 Ready 之后，届时节点已在树内。
-  /// </remarks>
+  /// <summary>排一次去抖的磁盘探针：300ms 内的多次请求合并成一次（Timer 由场景注入）。</summary>
   private void QueueFootprintProbe()
   {
-    if (!IsInsideTree())
+    // 依赖解析与进页刷新都在树内；未入树时 Timer 不会走，等首次进页刷新即可。
+    if (IsInsideTree())
     {
-      return;
+      ProbeTimer.Start();
     }
-
-    var timer = _probeTimer;
-    if (timer is null || !GodotObject.IsInstanceValid(timer))
-    {
-      timer = new Timer { OneShot = true, WaitTime = ProbeDebounceSeconds };
-      timer.Timeout += OnFootprintDebounceElapsed;
-      AddChild(timer);
-      _probeTimer = timer;
-    }
-
-    timer.Start();
   }
 
   /// <summary>去抖到期：在线程池里递归枚举 game/ 估算沙箱占用，结果回主线程渲染。</summary>
@@ -1041,7 +844,7 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   /// <param name="label">状态行。</param>
   /// <param name="text">文案。</param>
   /// <param name="ok">是否处于可用状态。</param>
-  private static void SetStatus(Label label, string text, bool ok)
+  private static void SetStatus(ILabel label, string text, bool ok)
   {
     label.Text = text;
     label.AddThemeColorOverride("font_color", ok ? _okColor : _warnColor);

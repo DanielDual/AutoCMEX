@@ -1,0 +1,220 @@
+[gd_scene format=3 uid="uid://bi86d7idbloab"]
+
+[ext_resource type="Script" uid="uid://b7puikd5446gr" path="res://src/ui/settings/RecordingConfigPanel.cs" id="1_mt3k2"]
+
+[node name="VBoxContainer" type="VBoxContainer" unique_id=151314160]
+script = ExtResource("1_mt3k2")
+
+[node name="HeaderSeparator" type="HSeparator" parent="." unique_id=1236534327]
+layout_mode = 2
+
+[node name="SectionTitle" type="Label" parent="." unique_id=744701924]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "引擎目录、录制插件、并行度与沙箱目录"
+text = "符卡 GIF 录制设置"
+
+[node name="EngineHint" type="Label" parent="." unique_id=1120927375]
+layout_mode = 2
+text = "引擎目录（LuaSTG 根目录，需含 game/，且 game/ 内有 launch 文件）"
+
+[node name="EngineRow" type="HBoxContainer" parent="." unique_id=559976122]
+layout_mode = 2
+
+[node name="EngineDirEdit" type="LineEdit" parent="EngineRow" unique_id=727101705]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ChooseEngineDirButton" type="Button" parent="EngineRow" unique_id=2050505301]
+unique_name_in_owner = true
+layout_mode = 2
+text = "选择目录…"
+
+[node name="InferEngineDirButton" type="Button" parent="EngineRow" unique_id=522405778]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "按「整合」板块配置的 Editor Sharp 目录上溯查找引擎目录"
+text = "从 Sharp 目录推断"
+
+[node name="EngineStatusLabel" type="Label" parent="." unique_id=140318430]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="ParallelRow" type="HBoxContainer" parent="." unique_id=338745588]
+layout_mode = 2
+
+[node name="ParallelLabel" type="Label" parent="ParallelRow" unique_id=2077615284]
+layout_mode = 2
+text = "并行录制的引擎实例数"
+
+[node name="ParallelismBox" type="SpinBox" parent="ParallelRow" unique_id=1352609060]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(90, 0)
+layout_mode = 2
+min_value = 1.0
+max_value = 32.0
+value = 16.0
+
+[node name="ParallelHintLabel" type="Label" parent="ParallelRow" unique_id=1442621974]
+layout_mode = 2
+size_flags_horizontal = 3
+text = "实际 worker = min(并行度, 战斗卡数)，临时空间不足时会自动下调"
+autowrap_mode = 3
+
+[node name="NotesSeparator" type="HSeparator" parent="." unique_id=728868376]
+layout_mode = 2
+
+[node name="SandboxHint" type="Label" parent="." unique_id=897087759]
+layout_mode = 2
+text = "沙箱根目录（每轮为每个 worker 建一份引擎副本，留空用系统临时目录）"
+
+[node name="SandboxRow" type="HBoxContainer" parent="." unique_id=1272476132]
+layout_mode = 2
+
+[node name="SandboxRootEdit" type="LineEdit" parent="SandboxRow" unique_id=1115760900]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ChooseSandboxRootButton" type="Button" parent="SandboxRow" unique_id=1510977220]
+unique_name_in_owner = true
+layout_mode = 2
+text = "选择目录…"
+
+[node name="ResetSandboxRootButton" type="Button" parent="SandboxRow" unique_id=1223917243]
+unique_name_in_owner = true
+layout_mode = 2
+text = "恢复默认"
+
+[node name="DiskHintLabel" type="Label" parent="." unique_id=1379614456]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="PluginSeparator" type="HSeparator" parent="." unique_id=839326719]
+layout_mode = 2
+
+[node name="PluginHint" type="Label" parent="." unique_id=168861760]
+layout_mode = 2
+text = "录制插件（安装与启用只在你点击按钮后写入引擎目录）"
+
+[node name="PluginStatusLabel" type="Label" parent="." unique_id=933604742]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="PluginRow" type="HBoxContainer" parent="." unique_id=1444969322]
+layout_mode = 2
+
+[node name="InstallPluginButton" type="Button" parent="PluginRow" unique_id=450857889]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "复制应用自带的录制插件到引擎，并在插件清单里登记为启用"
+text = "安装并启用 autocmex"
+
+[node name="EnableRecorderButton" type="Button" parent="PluginRow" unique_id=1600934364]
+unique_name_in_owner = true
+layout_mode = 2
+tooltip_text = "只把插件清单里弹幕录制器条目的 enable 置 true（会重写清单并留 .bak 备份），不复制或删除插件目录里的文件"
+text = "启用弹幕录制器"
+
+[node name="RefreshPluginButton" type="Button" parent="PluginRow" unique_id=145305598]
+unique_name_in_owner = true
+layout_mode = 2
+text = "重新检查"
+
+[node name="AdvancedSeparator" type="HSeparator" parent="." unique_id=254918422]
+layout_mode = 2
+
+[node name="AdvancedTitle" type="Label" parent="." unique_id=438765343]
+layout_mode = 2
+text = "高级参数"
+
+[node name="AdvancedRow" type="HBoxContainer" parent="." unique_id=738646606]
+layout_mode = 2
+
+[node name="MaxFrameLabel" type="Label" parent="AdvancedRow" unique_id=672977179]
+layout_mode = 2
+text = "帧数上限"
+
+[node name="MaxFrameBox" type="SpinBox" parent="AdvancedRow" unique_id=2028908556]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+min_value = 1.0
+max_value = 1000.0
+value = 1.0
+
+[node name="FirstIntervalLabel" type="Label" parent="AdvancedRow" unique_id=858039551]
+layout_mode = 2
+text = "首次间隔"
+
+[node name="FirstIntervalBox" type="SpinBox" parent="AdvancedRow" unique_id=1684895460]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+min_value = 1.0
+max_value = 60.0
+value = 1.0
+
+[node name="SecondIntervalLabel" type="Label" parent="AdvancedRow" unique_id=1272153693]
+layout_mode = 2
+text = "换挡后间隔"
+
+[node name="SecondIntervalBox" type="SpinBox" parent="AdvancedRow" unique_id=1378375014]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+min_value = 1.0
+max_value = 60.0
+value = 1.0
+
+[node name="ScalePercentLabel" type="Label" parent="AdvancedRow" unique_id=2037057555]
+layout_mode = 2
+text = "放缩比 (%)"
+
+[node name="ScalePercentBox" type="SpinBox" parent="AdvancedRow" unique_id=326056173]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(80, 0)
+layout_mode = 2
+min_value = 10.0
+step = 5.0
+value = 10.0
+
+[node name="AdvancedHintLabel" type="Label" parent="." unique_id=1641130550]
+unique_name_in_owner = true
+layout_mode = 2
+text = "间隔 3 ≈ 20 fps、5 ≈ 12 fps；玩家不干预时长卡会在帧数上限处截断，属正常产物（报告里标 complete = false）。产物达到 30MB 时 QQ 发不出去，同样会自动换第二档间隔重录一次。放缩比决定产物分辨率：50% 即捕获区域的宽高各减半（像素总数为 1/4，录制器默认），100% 为原始像素，越大越清晰、体积也越大。"
+autowrap_mode = 3
+
+[node name="LastOutputLabel" type="Label" parent="." unique_id=818682916]
+unique_name_in_owner = true
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="ActionLabel" type="Label" parent="." unique_id=1914177109]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+autowrap_mode = 3
+
+[node name="EngineDirDialog" type="FileDialog" parent="." unique_id=1612147143]
+unique_name_in_owner = true
+title = "选择 LuaSTG 引擎根目录"
+mode_overrides_title = false
+file_mode = 2
+access = 2
+
+[node name="SandboxRootDialog" type="FileDialog" parent="." unique_id=1777156008]
+unique_name_in_owner = true
+title = "选择沙箱根目录"
+mode_overrides_title = false
+file_mode = 2
+access = 2
+
+[node name="ProbeTimer" type="Timer" parent="." unique_id=1300588815]
+unique_name_in_owner = true
+wait_time = 0.3
+one_shot = true
