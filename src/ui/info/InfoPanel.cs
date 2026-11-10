@@ -45,7 +45,11 @@ public partial class InfoPanel
   /// 猜测表自动推送的防抖窗口（秒）：一次猜测会连着触发多次数据变化，
   /// 等它们收敛成一张表再发，避免群里被中间态的表图刷屏。
   /// </summary>
-  private const double AutoPublishDebounceSeconds = 1.5;
+  /// <remarks>
+  /// 计时器本体是 <c>InfoPanel.tscn</c> 里的 <c>%AutoPublishTimer</c>，<c>wait_time</c> 与这里保持一致；
+  /// 装配契约测试断言两者相等，防止改一处忘了另一处。
+  /// </remarks>
+  internal const double AutoPublishDebounceSeconds = 1.5;
 
   #region AutoConnect Nodes
 
@@ -70,6 +74,14 @@ public partial class InfoPanel
   /// <summary>活动规则栏（场景内实例，经 AutoInject 注入）。</summary>
   [Node("%ActivityRulePanel")]
   public IActivityRulePanel ActivityRulePanelNode { get; set; } = default!;
+
+  /// <summary>猜测表自动推送的防抖计时器（场景节点，<c>one_shot</c> + 1.5s）。</summary>
+  [Node("%AutoPublishTimer")]
+  public ITimer AutoPublishTimer { get; set; } = default!;
+
+  /// <summary>发布结果/提示对话框（场景节点；「只重试失败项」按钮仍由 <c>AddButton</c> 追加）。</summary>
+  [Node("%ReportDialog")]
+  public IAcceptDialog ReportDialog { get; set; } = default!;
 
   #endregion
 
@@ -138,8 +150,9 @@ public partial class InfoPanel
   /// <summary>正在重挂目标群元素绑定：抑制订阅回放，避免回放回调自激。</summary>
   private bool _isRebindingGroupFields;
 
-  private AcceptDialog? _reportDialog;
+  /// <summary>报告对话框上的「只重试失败项」按钮（<c>AcceptDialog.AddButton</c> 追加的对话框 chrome）。</summary>
   private Button? _retryButton;
+
   private PublishReport? _lastReport;
 
   /// <summary>「一键转发」/ 自动推送的在飞标记（只用于禁用顶部按钮，单栏发布另见 <see cref="_publishingKinds"/>）。</summary>
@@ -152,9 +165,6 @@ public partial class InfoPanel
   /// 和「一键转发」的 <see cref="_isPublishing"/> 各管一条链，互不改语义。
   /// </remarks>
   private readonly HashSet<PublishItemKind> _publishingKinds = new();
-
-  /// <summary>自动推送防抖计时器；每次表变化都重启它，因此只在最后一次变化后触发一次。</summary>
-  private Timer? _autoPublishTimer;
 
   /// <summary>有「已变化但还没推出去」的表内容；发布期间攒下的变化靠它补发。</summary>
   private bool _autoPublishPending;
@@ -173,7 +183,12 @@ public partial class InfoPanel
     _autoPublishBinding?.Dispose();
     _autoPublishBinding = null;
 
-    _autoPublishTimer?.Stop();
+    // 计时器是场景子节点：先退订再停止，避免面板退出后仍有回调指过来
+    if (AutoPublishTimer is not null)
+    {
+      AutoPublishTimer.Timeout -= OnAutoPublishTimeout;
+      AutoPublishTimer.Stop();
+    }
 
     // 四栏都是场景内子节点：先退订它们的事件，避免本面板释放后仍有回调指过来
     UnsubscribeColumnEvents();
@@ -190,6 +205,13 @@ public partial class InfoPanel
   {
     ForwardAllButton.Pressed += OnForwardAllPressed;
     AutoPublishGuessingTable.Toggled += OnAutoPublishToggled;
+
+    // 防抖计时器与报告框都是场景节点：信号只在这里挂一次
+    AutoPublishTimer.Timeout += OnAutoPublishTimeout;
+
+    // 自定义按钮只在场景装配时追加一次：每次 Popup 都 AddButton 会把按钮越堆越多
+    _retryButton = ReportDialog.AddButton("只重试失败项", true);
+    _retryButton.Pressed += OnRetryFailedPressed;
   }
 
   /// <summary>AutoInject 依赖解析完成：创建并提供子栏所需服务，再订阅四栏事件、绑数据与顶部操作行。</summary>
@@ -601,7 +623,7 @@ public partial class InfoPanel
   private void CancelPendingAutoPublish()
   {
     _autoPublishPending = false;
-    _autoPublishTimer?.Stop();
+    AutoPublishTimer.Stop();
   }
 
   /// <summary>发布收尾：发布期间若攒下了表变化就补发一次。</summary>
@@ -613,24 +635,11 @@ public partial class InfoPanel
 
   private void ScheduleAutoPublish()
   {
-    if (!EnsureAutoPublishTimer())
+    // 计时器是场景节点；面板不在树内时不启动（与懒建时代的守卫一致）
+    if (!IsInsideTree())
       return;
 
-    _autoPublishTimer!.Start();
-  }
-
-  private bool EnsureAutoPublishTimer()
-  {
-    if (_autoPublishTimer is not null && GodotObject.IsInstanceValid(_autoPublishTimer))
-      return true;
-
-    if (!IsInsideTree())
-      return false;
-
-    _autoPublishTimer = new Timer { OneShot = true, WaitTime = AutoPublishDebounceSeconds };
-    _autoPublishTimer.Timeout += OnAutoPublishTimeout;
-    AddChild(_autoPublishTimer);
-    return true;
+    AutoPublishTimer.Start();
   }
 
   private async void OnAutoPublishTimeout()
@@ -723,8 +732,7 @@ public partial class InfoPanel
   {
     _lastReport = report;
 
-    EnsureReportDialog();
-    _reportDialog!.Title = "发布结果";
+    ReportDialog.Title = "发布结果";
 
     var text = report.ToDisplayText();
     if (notSent is { Count: > 0 })
@@ -734,39 +742,25 @@ public partial class InfoPanel
         $"\n未发送（前一项失败即停）：{string.Join("、", notSent.Select(PublishOrder.GetTitle))}";
     }
 
-    _reportDialog.DialogText = text;
+    ReportDialog.DialogText = text;
 
     if (_retryButton is not null)
       _retryButton.Visible = report.FailedKinds.Count > 0;
 
-    _reportDialog.PopupCentered(new Vector2I(720, 460));
+    ReportDialog.PopupCentered(new Vector2I(720, 460));
   }
 
   private void PresentMessage(string title, string text)
   {
     _lastReport = null;
 
-    EnsureReportDialog();
-    _reportDialog!.Title = title;
-    _reportDialog.DialogText = text;
+    ReportDialog.Title = title;
+    ReportDialog.DialogText = text;
 
     if (_retryButton is not null)
       _retryButton.Visible = false;
 
-    _reportDialog.PopupCentered(new Vector2I(720, 460));
-  }
-
-  private void EnsureReportDialog()
-  {
-    if (_reportDialog is not null && GodotObject.IsInstanceValid(_reportDialog))
-      return;
-
-    _reportDialog = new AcceptDialog { Title = "发布结果" };
-    AddChild(_reportDialog);
-
-    // 自定义按钮只在建对话框时添加一次：每次 Popup 都 AddButton 会把按钮越堆越多
-    _retryButton = _reportDialog.AddButton("只重试失败项", true);
-    _retryButton.Pressed += OnRetryFailedPressed;
+    ReportDialog.PopupCentered(new Vector2I(720, 460));
   }
 
   private async void OnRetryFailedPressed()
@@ -779,7 +773,7 @@ public partial class InfoPanel
     if (!EnsureTargets(targets))
       return;
 
-    _reportDialog?.Hide();
+    ReportDialog?.Hide();
 
     var report = await _publisher.PublishAllAsync(targets, this, failedKinds);
     PresentReport(report);

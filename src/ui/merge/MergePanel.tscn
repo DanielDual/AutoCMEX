@@ -220,3 +220,11 @@ text = "导出完整包"
 unique_name_in_owner = true
 layout_mode = 2
 text = "导出对应表"
+
+[node name="ImportPackageDialog" type="FileDialog" parent="." unique_id=1737855868]
+unique_name_in_owner = true
+title = "Open a File"
+mode_overrides_title = false
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.zip ; 创作者包")

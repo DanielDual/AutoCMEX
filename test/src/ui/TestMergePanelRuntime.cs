@@ -84,6 +84,7 @@ public class TestMergePanelRuntime : TestClass
     panel.ResourceList.ShouldNotBeNull();
     panel.ObjectList.ShouldNotBeNull();
     panel.ImportPackageBtn.ShouldNotBeNull();
+    panel.ImportPackageDialog.ShouldNotBeNull();
     panel.RemovePackageBtn.ShouldNotBeNull();
 
     panel.TemplatePathEdit.ShouldNotBeNull();
@@ -105,6 +106,35 @@ public class TestMergePanelRuntime : TestClass
     panel.AutoRenameConflictsToggle.ShouldNotBeNull();
     panel.ExportFullPackageBtn.ShouldNotBeNull();
     panel.ExportMappingBtn.ShouldNotBeNull();
+  }
+
+  /// <summary>
+  /// 装配契约：导入创作者包的文件选择框是 <c>MergePanel.tscn</c> 的场景节点，
+  /// 模式/过滤按场景声明；节点被释放后再次点击导入由 IsInstanceValid 双检兜住。
+  /// </summary>
+  [Test]
+  public void RealScene_HasSceneImportPackageDialog_AndGuardsFreedNode()
+  {
+    _dm = CreateDataManager();
+    var panel = InstantiatePanel();
+
+    panel.ImportPackageDialog.ShouldNotBeNull("导入对话框应是场景节点");
+
+    // 注入的是接口适配器：取底层 Godot 对象核对模式/过滤与旧实现一致
+    var node = (FileDialog)panel.ImportPackageDialog.GetTargetObj<GodotObject>();
+    node.ShouldNotBeNull();
+    node.GetParent().ShouldBe(panel, "对话框应是 MergePanel.tscn 的直接子节点");
+    node.FileMode.ShouldBe(FileDialog.FileModeEnum.OpenFile);
+    node.Access.ShouldBe(FileDialog.AccessEnum.Filesystem);
+    node.UseNativeDialog.ShouldBeFalse();
+    node.Filters.Length.ShouldBe(1);
+    node.Filters[0].ShouldBe("*.zip ; 创作者包");
+
+    // 双检：场景节点被释放后再点导入不得对失效节点弹窗，也不得抛异常（面板仍在树内、仍可用）
+    node.Free();
+    panel.GetNode<Button>("%ImportPackageBtn").EmitSignal(BaseButton.SignalName.Pressed);
+
+    panel.IsInsideTree().ShouldBeTrue();
   }
 
   [Test]

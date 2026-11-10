@@ -39,6 +39,14 @@ public partial class GuessingTablePanel : VBoxContainer, IGuessingTablePanel
   [Node("%PublishButton")]
   public IButton PublishButton { get; set; } = default!;
 
+  /// <summary>右键「复制」菜单（栏场景节点，交给 <see cref="TablePreviewExport"/> 填充与弹出）。</summary>
+  [Node("%TableImageMenu")]
+  public IPopupMenu TableImageMenu { get; set; } = default!;
+
+  /// <summary>导出失败提示框（栏场景节点；非独占，避免与其它子窗口冲突）。</summary>
+  [Node("%TableImageMessage")]
+  public IAcceptDialog TableImageMessage { get; set; } = default!;
+
   #region Dependencies
 
   /// <summary>数据管理器（由信息面板经 AutoInject 提供，与发布编排同源）。</summary>
@@ -198,6 +206,8 @@ public partial class GuessingTablePanel : VBoxContainer, IGuessingTablePanel
     _previewExport = new TablePreviewExport(
       this,
       TableGrid,
+      TableImageMenu,
+      TableImageMessage,
       model => TableImageRenderer.RenderToImageAsync(this, model),
       new WindowsTableImageExportBackend()
     );

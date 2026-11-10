@@ -59,6 +59,11 @@ public sealed class WindowsTableImageExportBackend : ITableImageExportBackend
 /// 拖拽阈值取 <see cref="Viewport.GetDragThreshold"/>，避免与系统手感不一致；
 /// 拖拽由 Windows OLE 完成，期间主线程阻塞属已知行为。
 /// </para>
+/// <para>
+/// 右键菜单与失败提示框由栏场景（<c>CreatorRemainingPanel.tscn</c> / <c>GuessingTablePanel.tscn</c>）
+/// 提供并经构造函数注入：本组件只负责填充内容与弹出，不创建、不释放节点（生命周期归栏面板），
+/// 因此面板重新解析后可复用同一对节点。
+/// </para>
 /// </remarks>
 public sealed class TablePreviewExport : IDisposable
 {
@@ -67,11 +72,16 @@ public sealed class TablePreviewExport : IDisposable
 
   private readonly Node _owner;
   private readonly IControl _target;
+
+  /// <summary>右键菜单（由栏场景提供，本组件只负责填充与弹出，不负责生命周期）。</summary>
+  private readonly IPopupMenu _menu;
+
+  /// <summary>导出失败提示框（由栏场景提供，同样不归本组件释放）。</summary>
+  private readonly IAcceptDialog _messageDialog;
+
   private readonly Func<TableModel, Task<TableImageRenderResult>> _render;
   private readonly ITableImageExportBackend _backend;
 
-  private PopupMenu? _menu;
-  private AcceptDialog? _messageDialog;
   private Image? _image;
   private TableModel? _model;
   private string _signature = string.Empty;
@@ -85,19 +95,25 @@ public sealed class TablePreviewExport : IDisposable
   private Window? _rootWindow;
 
   /// <summary>创建预览导出组件并接管目标控件的鼠标输入。</summary>
-  /// <param name="owner">宿主节点（面板），用于挂菜单/对话框与取视口。</param>
+  /// <param name="owner">宿主节点（面板），用于取视口与判断是否在树内。</param>
   /// <param name="target">接收右键与拖动输入的表格控件。</param>
+  /// <param name="menu">右键菜单（栏场景提供）。</param>
+  /// <param name="messageDialog">导出失败提示框（栏场景提供）。</param>
   /// <param name="render">表格内存出图回调（生产环境走 <see cref="TableImageRenderer"/>）。</param>
   /// <param name="backend">剪贴板/拖放后端。</param>
   public TablePreviewExport(
     Node owner,
     IControl target,
+    IPopupMenu menu,
+    IAcceptDialog messageDialog,
     Func<TableModel, Task<TableImageRenderResult>> render,
     ITableImageExportBackend backend
   )
   {
     _owner = owner ?? throw new ArgumentNullException(nameof(owner));
     _target = target ?? throw new ArgumentNullException(nameof(target));
+    _menu = menu ?? throw new ArgumentNullException(nameof(menu));
+    _messageDialog = messageDialog ?? throw new ArgumentNullException(nameof(messageDialog));
     _render = render ?? throw new ArgumentNullException(nameof(render));
     _backend = backend ?? throw new ArgumentNullException(nameof(backend));
 
@@ -105,6 +121,9 @@ public sealed class TablePreviewExport : IDisposable
     _target.MouseFilter = Control.MouseFilterEnum.Pass;
     _target.GuiInput += OnGuiInput;
     _target.MouseEntered += OnMouseEntered;
+
+    // 菜单是场景节点：信号在构造时挂一次，Dispose 时退订
+    _menu.IdPressed += OnMenuPressed;
 
     _rootWindow = _owner.GetTree()?.Root;
     if (_rootWindow is not null)
@@ -159,16 +178,18 @@ public sealed class TablePreviewExport : IDisposable
       _rootWindow = null;
     }
 
-    if (_menu is not null && GodotObject.IsInstanceValid(_menu))
+    // 菜单与提示框是场景节点（归栏面板所有）：这里只退订信号并隐藏，不释放节点。
+    // 节点可能先于本对象被释放（栏面板先退出），退订前必须确认底层对象仍有效。
+    var menu = _menu.GetTargetObj<GodotObject>();
+    if (menu is not null && GodotObject.IsInstanceValid(menu))
     {
       _menu.IdPressed -= OnMenuPressed;
-      _menu.QueueFree();
+      _menu.Hide();
     }
-    _menu = null;
 
-    if (_messageDialog is not null && GodotObject.IsInstanceValid(_messageDialog))
-      _messageDialog.QueueFree();
-    _messageDialog = null;
+    var message = _messageDialog.GetTargetObj<GodotObject>();
+    if (message is not null && GodotObject.IsInstanceValid(message))
+      _messageDialog.Hide();
 
     _image = null;
     _imageSignature = string.Empty;
@@ -316,8 +337,7 @@ public sealed class TablePreviewExport : IDisposable
     // 右键是惰性出图的交互入口：首次触发时图还没好，菜单项保持禁用
     EnsureImage();
 
-    EnsureMenu();
-    _menu!.Clear();
+    _menu.Clear();
     _menu.AddItem(CopyMenuText, 0);
     _menu.SetItemDisabled(0, !HasImage);
 
@@ -329,16 +349,6 @@ public sealed class TablePreviewExport : IDisposable
         ? (Vector2I)viewport.GetMousePosition()
         : DisplayServer.MouseGetPosition();
     _menu.Popup();
-  }
-
-  private void EnsureMenu()
-  {
-    if (_menu is not null && GodotObject.IsInstanceValid(_menu))
-      return;
-
-    _menu = new PopupMenu { Name = "TableImageMenu" };
-    _menu.IdPressed += OnMenuPressed;
-    _owner.AddChild(_menu);
   }
 
   private void OnMenuPressed(long id)
@@ -370,7 +380,7 @@ public sealed class TablePreviewExport : IDisposable
       return;
 
     var image = _image;
-    _menu?.Hide();
+    _menu.Hide();
 
     var fileName =
       $"drag_{DateTime.UtcNow.ToString("yyyyMMdd-HHmmss-fff", CultureInfo.InvariantCulture)}_"
@@ -402,26 +412,10 @@ public sealed class TablePreviewExport : IDisposable
 
   private void ShowMessage(string title, string text)
   {
-    EnsureMessageDialog();
-    _messageDialog!.Title = title;
+    _messageDialog.Title = title;
     _messageDialog.DialogText = text;
 
     if (_owner.IsInsideTree())
       _messageDialog.PopupCentered(new Vector2I(560, 320));
-  }
-
-  private void EnsureMessageDialog()
-  {
-    if (_messageDialog is not null && GodotObject.IsInstanceValid(_messageDialog))
-      return;
-
-    // 非独占：导出失败提示只是信息展示，独占子窗口会与其它弹出窗口（菜单/文件框）冲突
-    _messageDialog = new AcceptDialog
-    {
-      Name = "TableImageMessage",
-      Title = "表格图片导出",
-      Exclusive = false,
-    };
-    _owner.AddChild(_messageDialog);
   }
 }

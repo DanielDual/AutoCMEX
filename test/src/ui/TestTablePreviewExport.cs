@@ -47,6 +47,13 @@ public class TestTablePreviewExport : TestClass
 
   private Node _owner = default!;
   private Control _target = default!;
+
+  /// <summary>右键菜单：与生产一致，由宿主场景提供后注入（组件不再运行期 AddChild）。</summary>
+  private PopupMenu _menu = default!;
+
+  /// <summary>导出失败提示框：同样由宿主场景提供后注入。</summary>
+  private AcceptDialog _messageDialog = default!;
+
   private FakeBackend _backend = default!;
   private TablePreviewExport _export = default!;
   private int _renderCount;
@@ -68,11 +75,29 @@ public class TestTablePreviewExport : TestClass
     TestScene.AddChild(_owner);
     _owner.AddChild(_target);
 
+    // 与生产同构：菜单/提示框先在场景里建好，再注入组件（所有权归场景，组件只填内容）
+    _menu = new PopupMenu { Name = "TableImageMenu" };
+    _messageDialog = new AcceptDialog
+    {
+      Name = "TableImageMessage",
+      Title = "表格图片导出",
+      Exclusive = false,
+    };
+    _owner.AddChild(_menu);
+    _owner.AddChild(_messageDialog);
+
     _backend = new FakeBackend();
     _renderCount = 0;
     _failRender = false;
     _pendingRender = null;
-    _export = new TablePreviewExport(_owner, new ControlAdapter(_target), _ => Render(), _backend);
+    _export = new TablePreviewExport(
+      _owner,
+      new ControlAdapter(_target),
+      new PopupMenuAdapter(_menu),
+      new AcceptDialogAdapter(_messageDialog),
+      _ => Render(),
+      _backend
+    );
   }
 
   [Cleanup]
@@ -147,7 +172,7 @@ public class TestTablePreviewExport : TestClass
     EmitGui(MakeMouseButton(MouseButton.Right, false, new Vector2(10, 10)));
   }
 
-  private PopupMenu FindMenu() => _owner.GetChildren().OfType<PopupMenu>().Single();
+  private PopupMenu FindMenu() => _menu;
 
   [Test]
   public void Update_DefersRenderUntilInteractionAndSkipsUnchangedContent()
@@ -224,9 +249,10 @@ public class TestTablePreviewExport : TestClass
 
     FindMenu().EmitSignal(PopupMenu.SignalName.IdPressed, 0L);
 
-    var dialog = _owner.GetChildren().OfType<AcceptDialog>().Single();
-    dialog.DialogText.ShouldBe("失败原因");
-    dialog.Hide();
+    // 提示框是注入的场景节点：组件只负责填内容并弹出
+    _messageDialog.DialogText.ShouldBe("失败原因");
+    _messageDialog.Title.ShouldBe("复制失败");
+    _messageDialog.Hide();
   }
 
   [Test]
@@ -315,16 +341,25 @@ public class TestTablePreviewExport : TestClass
   public async Task Dispose_ClearsImageAndUnsubscribes()
   {
     _export.Update(CreateModel("A"));
-    EnterTarget();
-    _export.HasImage.ShouldBeTrue();
+    RightClick();
+    FindMenu().EmitSignal(PopupMenu.SignalName.IdPressed, 0L);
+    _backend.Copied.Count.ShouldBe(1);
+    FindMenu().Hide();
+    _backend.Copied.Clear();
 
     _export.Dispose();
     _export.HasImage.ShouldBeFalse();
 
-    // Dispose 后菜单已入删除队列；等一帧后确认不再响应右键
+    // 菜单/提示框归场景所有：Dispose 不得释放它们（重新解析后可复用），只退订交互
+    GodotObject.IsInstanceValid(_menu).ShouldBeTrue("Dispose 不得释放场景承载的菜单");
+    GodotObject.IsInstanceValid(_messageDialog).ShouldBeTrue("Dispose 不得释放场景承载的提示框");
+
+    // 退订后再交互：右键不再填菜单、菜单回调也不再复制
     await _owner.ToSignal(_owner.GetTree(), SceneTree.SignalName.ProcessFrame);
     RightClick();
-    _owner.GetChildren().OfType<PopupMenu>().ShouldBeEmpty();
+    FindMenu().Visible.ShouldBeFalse("Dispose 后不得再响应右键弹菜单");
+    FindMenu().EmitSignal(PopupMenu.SignalName.IdPressed, 0L);
+    _backend.Copied.ShouldBeEmpty("Dispose 后菜单回调应已退订");
   }
 
   [Test]
@@ -336,8 +371,34 @@ public class TestTablePreviewExport : TestClass
     EmitGui(MakeMouseButton(MouseButton.Left, true, new Vector2(20, 20)));
     EmitGui(MouseMotion(new Vector2(160, 160), MouseButtonMask.Left));
 
-    var dialog = _owner.GetChildren().OfType<AcceptDialog>().Single();
-    dialog.DialogText.ShouldBe("失败原因");
-    dialog.Hide();
+    // 提示框是注入的场景节点：组件只负责填内容并弹出
+    _messageDialog.DialogText.ShouldBe("失败原因");
+    _messageDialog.Title.ShouldBe("拖拽失败");
+    _messageDialog.Hide();
+  }
+
+  /// <summary>
+  /// 装配契约：菜单与提示框由宿主场景提供后注入，组件只填充/弹出它们，不改变父子关系、
+  /// 不在 <see cref="TablePreviewExport.Dispose"/> 里释放（生命周期归栏面板）。
+  /// </summary>
+  [Test]
+  public void SceneProvidedMenuAndDialog_AreFilledAndNotReparented()
+  {
+    _menu.GetParent().ShouldBe(_owner, "菜单应仍是宿主提供的那个场景节点");
+    _messageDialog.GetParent().ShouldBe(_owner, "提示框应仍是宿主提供的那个场景节点");
+
+    _export.Update(CreateModel("A"));
+    RightClick();
+    FindMenu().ItemCount.ShouldBe(1, "右键应填充注入的菜单");
+    FindMenu().GetItemText(0).ShouldBe("复制");
+    FindMenu().GetParent().ShouldBe(_owner, "填充/弹出不得改挂菜单父节点");
+
+    _menu.Hide();
+    _backend.FailCopy = true;
+    FindMenu().EmitSignal(PopupMenu.SignalName.IdPressed, 0L);
+    _messageDialog.DialogText.ShouldBe("失败原因", "失败提示应写入注入的提示框");
+    _messageDialog.Title.ShouldBe("复制失败");
+    _messageDialog.GetParent().ShouldBe(_owner);
+    _messageDialog.Hide();
   }
 }

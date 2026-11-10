@@ -12,6 +12,7 @@ using AutoCMEX.Core.WebSocket;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Info;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
 using Godot;
 using Moq;
@@ -210,7 +211,7 @@ public class TestInfoPanel : TestClass
     }
   }
 
-  /// <summary>取面板的报告对话框（面板只建一个，标题随用途变化）。</summary>
+  /// <summary>取面板的报告对话框（场景节点，标题随用途变化）。</summary>
   private static AcceptDialog FindDialog(Node panel)
   {
     var dialog = FindDialogOrNull(panel);
@@ -218,8 +219,18 @@ public class TestInfoPanel : TestClass
     return dialog!;
   }
 
-  private static AcceptDialog? FindDialogOrNull(Node panel) =>
-    panel.GetChildren().OfType<AcceptDialog>().LastOrDefault(d => d is not FileDialog);
+  /// <summary>
+  /// 取「当前正弹出」的报告对话框；未弹出（隐藏）时返回 <c>null</c>。
+  /// </summary>
+  /// <remarks>
+  /// 报告框改为 <c>InfoPanel.tscn</c> 的场景节点后不再「用时才建」，因此「没弹过」由 <c>Visible == false</c>
+  /// 表达（与原先「节点为 null」等价）；断言只表达用户可见语义，不放宽。
+  /// </remarks>
+  private static AcceptDialog? FindDialogOrNull(Node panel)
+  {
+    var dialog = panel.GetNode<AcceptDialog>("%ReportDialog");
+    return dialog.Visible ? dialog : null;
+  }
 
   /// <summary>取报告对话框上的「只重试失败项」按钮（由 <c>AcceptDialog.AddButton</c> 追加）。</summary>
   private static Button FindRetryButton(Node panel)
@@ -410,7 +421,64 @@ public class TestInfoPanel : TestClass
   }
 
   /// <summary>
-  /// 批3-A 装配契约：GIF 集栏是 <c>InfoPanel.tscn</c> 里的场景内实例 + AutoInject 依赖注入，
+  /// 装配契约：自动推送防抖计时器与发布报告框都是 <c>InfoPanel.tscn</c> 的场景节点，
+  /// 不再由面板在运行期 <c>new</c> 出来再 <c>AddChild</c>。
+  /// </summary>
+  /// <remarks>
+  /// 计时器 <c>wait_time</c> 必须与 <see cref="InfoPanel.AutoPublishDebounceSeconds"/> 一致（两处漂移会让
+  /// 自动推送的合并窗口悄悄变长/变短）；报告框默认隐藏，只在发布结束时弹出。
+  /// </remarks>
+  [Test]
+  public async Task RealScene_CarriesAutoPublishTimerAndReportDialog()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    panel.AutoPublishTimer.ShouldNotBeNull("防抖计时器应是场景节点");
+    panel.AutoPublishTimer.OneShot.ShouldBeTrue("防抖计时器必须单次触发");
+    panel.AutoPublishTimer.WaitTime.ShouldBe(InfoPanel.AutoPublishDebounceSeconds, 0.001);
+    panel.AutoPublishTimer.GetParent().ShouldBe(panel, "计时器应是 InfoPanel.tscn 的直接子节点");
+    panel.AutoPublishTimer.IsInsideTree().ShouldBeTrue();
+
+    panel.ReportDialog.ShouldNotBeNull("发布报告框应是场景节点");
+    panel.ReportDialog.GetParent().ShouldBe(panel, "报告框应是 InfoPanel.tscn 的直接子节点");
+    panel.ReportDialog.Title.ShouldBe("发布结果");
+    panel.ReportDialog.Visible.ShouldBeFalse("报告框默认隐藏，只在发布结束时弹出");
+  }
+
+  /// <summary>
+  /// 装配契约：两栏的右键菜单与导出失败提示框都是栏场景节点，
+  /// 由 <see cref="TablePreviewExport"/> 填充/弹出，不再由它运行期 <c>AddChild</c>。
+  /// </summary>
+  [Test]
+  public async Task TableColumns_CarrySceneMenusAndMessageDialogs()
+  {
+    CreateDataManager(new[] { CreateBoss() });
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+
+    var guessing = (GuessingTablePanel)panel.ColumnPanels[1]!;
+    var creator = (CreatorRemainingPanel)panel.ColumnPanels[2]!;
+
+    var checks = new (Node Column, IPopupMenu Menu, IAcceptDialog Message)[]
+    {
+      (guessing, guessing.TableImageMenu, guessing.TableImageMessage),
+      (creator, creator.TableImageMenu, creator.TableImageMessage),
+    };
+    foreach (var (column, menu, message) in checks)
+    {
+      menu.ShouldNotBeNull("右键菜单应是栏场景节点");
+      message.ShouldNotBeNull("导出失败提示框应是栏场景节点");
+      menu.GetParent().ShouldBe(column, "菜单应是栏场景的直接子节点（运行期不再 AddChild）");
+      message.GetParent().ShouldBe(column, "提示框应是栏场景的直接子节点");
+      message.Title.ShouldBe("表格图片导出");
+      message.Exclusive.ShouldBeFalse("提示框必须非独占，避免与其它子窗口冲突");
+    }
+  }
+
+  /// <summary>
+  /// 装配契约：GIF 集栏是 <c>InfoPanel.tscn</c> 里的场景内实例 + AutoInject 依赖注入，
   /// 而不是信息面板在运行时 <c>AddChild</c> 并用 <c>Setup(...)</c> 手动传依赖。
   /// </summary>
   /// <remarks>
@@ -436,7 +504,7 @@ public class TestInfoPanel : TestClass
   }
 
   /// <summary>
-  /// 批3-B 装配契约：两张表栏同样是 <c>InfoPanel.tscn</c> 里的场景内实例 + AutoInject 依赖注入，
+  /// 装配契约：两张表栏同样是 <c>InfoPanel.tscn</c> 里的场景内实例 + AutoInject 依赖注入，
   /// 不再由信息面板在运行时 <c>AddChild</c> 并用 <c>Setup(...)</c> 手动传依赖。
   /// </summary>
   /// <remarks>
@@ -467,7 +535,7 @@ public class TestInfoPanel : TestClass
   }
 
   /// <summary>
-  /// 批3-C 装配契约：活动规则栏同样是 <c>InfoPanel.tscn</c> 里的场景内实例 + AutoInject 依赖注入，
+  /// 装配契约：活动规则栏同样是 <c>InfoPanel.tscn</c> 里的场景内实例 + AutoInject 依赖注入，
   /// 不再由信息面板在运行时 <c>AddChild</c> 并用 <c>Setup(...)</c> 手动传依赖。
   /// </summary>
   /// <remarks>
@@ -716,7 +784,7 @@ public class TestInfoPanel : TestClass
   /// 一次猜测里连改 K 张符卡（同一帧内 K 次数据通知）：每张表只重建一次，而不是 K 次。
   /// </summary>
   /// <remarks>
-  /// 这是 P1 的核心回归：合并前每张卡都要排一次全量重建（节点重建 + 离屏出图），
+  /// 这是核心回归：合并前每张卡都要排一次全量重建（节点重建 + 离屏出图），
   /// 一轮连猜 59 张就是 59 次。计数器断言直接盯住「重建发生了几次」，比断言最终画面更能守住性能语义。
   /// </remarks>
   [Test]
@@ -1112,7 +1180,7 @@ public class TestInfoPanel : TestClass
   }
 
   /// <summary>
-  /// 批3-C 重入护栏：同一栏首次发布还没结束时再次触发，只发一次。
+  /// 重入护栏：同一栏首次发布还没结束时再次触发，只发一次。
   /// </summary>
   /// <remarks>
   /// 事件化之后栏位自己的忙碌态只覆盖同步派发段，覆盖不到真正的串行发送区间（等回执）；
@@ -1154,7 +1222,7 @@ public class TestInfoPanel : TestClass
   }
 
   /// <summary>
-  /// 批3 收尾（评审警告）：单栏发布在飞期间对应栏发布按钮置灰，回执到达（成功/失败）后恢复。
+  /// 单栏发布在飞期间对应栏发布按钮置灰，回执到达（成功/失败）后恢复。
   /// </summary>
   /// <remarks>
   /// 忙碌态由信息面板在真正的串行发送区间驱动（事件同步派发覆盖不到等回执阶段），栏位只负责按该

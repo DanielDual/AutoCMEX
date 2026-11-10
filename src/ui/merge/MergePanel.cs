@@ -122,6 +122,14 @@ public partial class MergePanel : Control, IMergePanel
 
   #endregion
 
+  #region 场景内对话框
+
+  /// <summary>导入创作者包的文件选择框（场景节点；复用同一实例才能沿用上次尺寸）。</summary>
+  [Node("%ImportPackageDialog")]
+  public IFileDialog ImportPackageDialog { get; set; } = default!;
+
+  #endregion
+
   #region Dependencies
 
   [Dependency]
@@ -139,7 +147,6 @@ public partial class MergePanel : Control, IMergePanel
   private AutoList<SpellCardMappingEntry>.Binding? _mappingBinding;
   private AutoValue<int>.Binding? _selectedPackageIndexBinding;
   private int _selectedMapping = -1;
-  private FileDialog? _importPackageDialog;
 
   /// <summary>每个创作者包 <see cref="CreatorPackage.IsDeleted"/> 的元素级绑定（包增删时重挂）。</summary>
   /// <remarks>
@@ -171,6 +178,7 @@ public partial class MergePanel : Control, IMergePanel
   public void OnReady()
   {
     ImportPackageBtn.Pressed += OnImportPackage;
+    ImportPackageDialog.FileSelected += OnImportPackageFileSelected;
     RemovePackageBtn.Pressed += OnRemovePackage;
     PackageList.ItemSelected += _ => OnPackageSelected();
     ImportTemplateBtn.Pressed += OnImportTemplate;
@@ -454,26 +462,13 @@ public partial class MergePanel : Control, IMergePanel
     if (_dm == null)
       return;
 
-    FileDialogSizing.Popup(EnsureImportPackageDialog());
-  }
+    // 双检：对话框是场景节点，但面板退出/场景重建后可能已被释放；
+    // 先取底层 Godot 对象确认仍有效，避免对失效节点弹窗（与其它面板的 IsInstanceValid 双检一致）。
+    var dialog = ImportPackageDialog?.GetTargetObj<GodotObject>();
+    if (dialog is null || !GodotObject.IsInstanceValid(dialog))
+      return;
 
-  /// <summary>导入创作者包用的文件对话框：只建一次，复用实例才能沿用上次尺寸。</summary>
-  /// <returns>已挂到本面板的对话框。</returns>
-  private FileDialog EnsureImportPackageDialog()
-  {
-    if (_importPackageDialog is not null)
-      return _importPackageDialog;
-
-    _importPackageDialog = new FileDialog
-    {
-      FileMode = FileDialog.FileModeEnum.OpenFile,
-      Filters = new[] { "*.zip ; 创作者包" },
-      Access = FileDialog.AccessEnum.Filesystem,
-      UseNativeDialog = false,
-    };
-    _importPackageDialog.FileSelected += OnImportPackageFileSelected;
-    AddChild(_importPackageDialog);
-    return _importPackageDialog;
+    FileDialogSizing.Popup(ImportPackageDialog);
   }
 
   /// <summary>选定创作者包：解包成功后追加包与对应表映射，并触发自动保存；失败只记日志。</summary>

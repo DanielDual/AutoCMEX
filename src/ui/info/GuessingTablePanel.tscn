@@ -24,3 +24,11 @@ columns = 3
 unique_name_in_owner = true
 layout_mode = 2
 text = "发布该表"
+
+[node name="TableImageMenu" type="PopupMenu" parent="." unique_id=40317509]
+unique_name_in_owner = true
+
+[node name="TableImageMessage" type="AcceptDialog" parent="." unique_id=1022977162]
+unique_name_in_owner = true
+title = "表格图片导出"
+exclusive = false
