@@ -293,9 +293,9 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 ### 配置与插件部署（P4）
 
-设置板块「信息」类别页在目标群列表下方挂一组常显的「符卡 GIF 录制设置」（`RecordingConfigPanel`，已取消折叠复选框）：引擎目录、并行度、沙箱根、插件状态、高级参数五段。该类别页没有独立场景（节点直接写在 `SettingsPanel.tscn` 里），故分组由 `InfoConfigPanel.EnsureRecordingSection` 在依赖解析后用 `new` 建出、挂到页面内容的 `%PageBody` 末尾，并在该页每次被切显时刷新一次状态（`VisibilityChanged`）。
+设置板块「信息」类别页在目标群列表下方挂一组常显的「符卡 GIF 录制设置」（`RecordingConfigPanel`，已取消折叠复选框）：引擎目录、并行度、沙箱根、插件状态、高级参数五段。该类别页没有独立场景（节点直接写在 `SettingsPanel.tscn` 里），故分组由 `InfoConfigPanel` 在依赖解析后按需 `GD.Load<PackedScene>("res://src/ui/settings/RecordingConfigPanel.tscn").Instantiate<RecordingConfigPanel>()`（与 `AiModelConfigPanel` 加载 `ModelEntryPanel.tscn` 同范式），`Name` 设为 "RecordingSection"，挂到页面内容的 `%PageBody` 末尾，并在该页每次被切显时刷新一次状态（`VisibilityChanged`）。结构与静态文案都在独立场景里（规则 7/8/13 已满足），代码只做 `[Node]` 注入、信号连接、运行期才能算出的文本（默认沙箱占位符、常量上限 tooltip）与 Sync 绑定。
 
-`RecordingConfigPanel` 已按规则 1/5 接入 AutoInject：`[Meta(typeof(IAutoNode))]` + `_Notification` 转发给 `this.Notify`，DataManager 走 `[Dependency]`（由设置面板树内的 provider 就近提供）；控件在 `OnReady` 一次建好，配置回填与 Sync 绑定在 `OnResolved` 装配（依赖重新解析时先释放旧绑定，规则 20）。控件仍由 C# 构建（规则 7/8/13 的**文档化例外**）：本分组没有独立 `.tscn`，二十余个控件写进共享的 `SettingsPanel.tscn` 既挤又容易与其它类别页互相牵连；结构收敛只补 DI 与生命周期，场景化留待单独评估。
+`RecordingConfigPanel` 按规则 1/5 接入 AutoInject：`[Meta(typeof(IAutoNode))]` + `_Notification` 转发给 `this.Notify`，DataManager 走 `[Dependency]`（由设置面板树内的 provider 就近提供）；控件结构全部来自 `RecordingConfigPanel.tscn`，代码在 `OnReady` 只连接信号与运行期文本，配置回填与 Sync 绑定在 `OnResolved` 装配（依赖重新解析时先释放旧绑定，规则 20）。**按需创建的理由**：本页没有独立场景，分组随页面打开才需要实例化，故不在 `SettingsPanel.tscn` 里常驻。
 
 **双滚动结构是有意设计**：目标群列表行数随活动规模浮动，固定高度（600px）单独滚动可避免把页面撑长；录制设置整组较长，放在列表下方由页面滚动承接。
 
@@ -325,7 +325,7 @@ LuaSTGSub.exe "setting.mod='<工程包名>'; setting.autocmex_job='autocmex/jobs
 
 ### 录制入口、`manifest.json` 与自动导入（P5，已完成）
 
-入口复用信息板块 GIF 集栏里既有的「录制」按钮（`GifSetPanel.%RecordButton`，此前为占位禁用），不新增类别页、不改 `GifSetPanel.tscn`。点击后按序执行：**前置检查**（引擎目录、插件状态、沙箱根，复用 `PluginDeployer` 与 `RecordingSandbox.TryValidateRoot`；不通过则不起任何进程并在原处说明原因）→ **手选工程包 zip** → **手选输出目录** → `RecordingOrchestrator.RunAsync`；进度以 C# 构建的模态对话框呈现（`RecordingRunPanel`：阶段 + 已完成/总数 + 各 worker 正在录的卡 + 取消），取消沿用既有语义。该对话框已按规则 5 接入 AutoInject 生命周期（`[Meta(typeof(IAutoNode))]` + `_Notification`），但 `RecordingRunner` 仍是构造参数——它是「跑一轮」的命令而非从祖先注入的服务，单测靠替换它驱动对话框；本类没有 `[Node]`/`[Dependency]` 成员，控件同样用 C# 构建（规则 7/8/13 的**文档化例外**，无独立场景）。
+入口复用信息板块 GIF 集栏里既有的「录制」按钮（`GifSetPanel.%RecordButton`，此前为占位禁用），不新增类别页；录制相关的导入对话框与进度对话框改由 `GifSetPanel.tscn` 承载。点击后按序执行：**前置检查**（引擎目录、插件状态、沙箱根，复用 `PluginDeployer` 与 `RecordingSandbox.TryValidateRoot`；不通过则不起任何进程并在原处说明原因）→ **手选工程包 zip** → **手选输出目录** → `RecordingOrchestrator.RunAsync`；进度以模态对话框 `RecordingRunPanel` 呈现。该对话框是 `RecordingRunPanel.tscn` 的场景实例，以 `%RecordingRunPanel` 内嵌在 `GifSetPanel.tscn` 里；对话框脚本用 `[Node]` 注入四个 Label（阶段 / 完成计数 / 各 worker 正在录的卡 / 结束汇总）。`RecordingRunner` 不再是构造参数，而是 `IRecordingRunPanel` 接口上的 `Runner` 属性（命令而非服务，单测替换它以驱动对话框）；`Start` 在 `Runner` 未装配时抛 `InvalidOperationException`。取消按钮仍由 `AcceptDialog.AddButton` 创建——对话框自带 chrome 的文档化例外；取消语义沿用既有：关闭窗口即取消本轮，已归集的产物与报告保留。
 
 `manifest.json` 由编排层在**归集之后**写出（只有归集后才拿得到尺寸），字段来源：
 
@@ -381,7 +381,7 @@ P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完�
 
 ## 工程纪律与已知旧账
 
-本节收口三类跨模块、容易复犯的纪律与仍未清的旧债；判定依据是 `docs/engineering-guidelines.md` 的规则 18/19/20/21/22/25/30。
+本节收口四类跨模块、容易复犯的纪律与仍未清的旧债；判定依据是 `docs/engineering-guidelines.md` 的规则 18/19/20/21/22/25/30。
 
 ### 列表级绑定不覆盖元素级
 
@@ -397,6 +397,13 @@ P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完�
 - **在飞护栏**：信息面板按 `PublishItemKind` 记录在飞的单栏发布（`_publishingKinds`），重复触发直接丢弃；在飞期间经对应栏的 `SetPublishBusy` 把该栏发布按钮置灰，收尾与异常路径都在 `finally` 复位。「一键转发」与自动推送仍走 `_isPublishing`，两条链互不影响。
 - **日志注入（已清）**：服务与面板改为显式注入 `ILog`（`DataManager.GetLogger(module)` 按模块名取、保留日志模块筛选），`AppLogs` 静态入口只保留在 `Main.cs` 启动层与 `MainWindow` 的一次 bootstrap。
 
+### 弹窗与计时器归属场景
+
+- **一律进场景**：所有 `FileDialog` / `AcceptDialog` / `PopupMenu` / `Godot.Timer` 都是所属面板 `.tscn` 里的常驻节点（`unique_name_in_owner` + `[Node("%…")]` 接口注入），不再在代码里 `new` 后 `AddChild`。生命周期归面板：组件/服务只负责填充内容、弹出与启停，不 `AddChild`、不 `QueueFree`（`Dispose` 只退订信号并把节点隐藏，且退订前用 `GetTargetObj<GodotObject>() + IsInstanceValid` 双检，节点可能先于组件释放），因此面板重新解析后可复用同一对节点。先例：`InfoPanel.%AutoPublishTimer` / `%ReportDialog`、两表栏的 `%TableImageMenu` / `%TableImageMessage`、`MergePanel.%ImportPackageDialog`、`SettingsPanel.%InfoMessageDialog`、`GifSetPanel` 的导入与录制对话框及 `%RecordingRunPanel`。
+- **title 与 mode 必须成对**：`FileDialog` 的 `title` 必须同时写 `mode_overrides_title = false`，否则加载时会被 `file_mode` 重写成英文默认值（如 `Open a File` / `Open a Directory`）。
+- **Access 写枚举整数**：`.tscn` 里 `FileDialog.Access` 是枚举整数值——`Filesystem = 2`（不要写 `1`，那是 `UserData`）；`file_mode` 同理用整数（`OpenFile = 0`、`OpenDir = 2`）。
+- **chrome 例外**：对话框自带按钮（`AcceptDialog.AddButton` 创建的「取消录制」「只重试失败项」）不写进场景，属对话框 chrome 例外；其余结构与文案一律进场景。
+
 ### 测试纪律
 
 - UI 测试用 `FakeNodeTree` + `FakeDependency` 搭假场景，不实例化完整场景；只有需要真实 AutoInject 链路（动态实例化子面板、面板级接线、`.tscn` 里的节点引用与依赖提供）的用例才加载真实场景。
@@ -405,7 +412,6 @@ P1 插件 + 枚举最小闭环（已完成）→ P2 单卡录制闭环（已完�
 
 ### 已知旧账（未清）
 
-- **录制两面板未场景化**：`RecordingConfigPanel` / `RecordingRunPanel` 的控件仍由 C# 构建、无独立 `.tscn`（规则 7/8/13 的文档化例外，见「配置与插件部署」「录制入口」两节）。
 - **少量测试仍手动刷新**：多数「改完模型手动 `Refresh`」的用例已改为「写模型 → 等帧 → 断言」；剩余几处是面板确无绑定路径（替换列表实例、嵌套别名列表、进页清空提示、依赖 `MergeConfig.SharpEditorPath` 的按钮态）或固定帧等待，已就地注释。
 - **规则未落自动守护**：规则已迁入 `docs/engineering-guidelines.md`，按约定暂不引入 analyzer/CI 守护，新代码靠评审拦。
 - **设置板块仍有空类别页**：左侧 7 个类别里「猜测」「整合」「帮助」「通用」4 页仍为空占位（「AI 模型」「群聊」「信息」3 页已实现）。
