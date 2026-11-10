@@ -77,7 +77,7 @@ public class TestModelEntryPanelRuntime : TestClass
   }
 
   /// <summary>
-  /// 批3-C：行级模型不再走 <c>Setup(model, dm)</c>，改为入树前赋 <see cref="ModelEntryPanel.Model"/>；
+  /// 行级模型不再走 <c>Setup(model, dm)</c>，改为入树前赋 <see cref="ModelEntryPanel.Model"/>；
   /// 依赖由 <c>[Dependency] DataManager</c> 提供，Ready 后由依赖解析回填控件。
   /// </summary>
   [Test]
@@ -110,7 +110,7 @@ public class TestModelEntryPanelRuntime : TestClass
   }
 
   /// <summary>
-  /// 批3-C：行面板的编辑必须写回模型（原来挂在 <c>Setup</c> 的匿名处理器里，迁移后由 OnReady 只挂一次）。
+  /// 行面板的编辑必须写回模型（处理器在 <c>OnReady</c> 只挂一次）。
   /// </summary>
   [Test]
   public void RowEdits_WriteBackToModel()
@@ -189,7 +189,7 @@ public class TestModelEntryPanelRuntime : TestClass
     panel.ActiveModelSelect.ItemCount.ShouldBe(4);
     panel.ModelList.GetChildren().Count.ShouldBe(3);
 
-    // 批3-C：每行是「先赋 Model 再入树」，且行的 [Dependency] DataManager 解析自本面板的 provider
+    // 每行是「先赋 Model 再入树」，且行的 [Dependency] DataManager 解析自本面板的 provider
     var entries = panel.ModelList.GetChildren().OfType<ModelEntryPanel>().ToList();
     entries.Count.ShouldBe(3);
     for (var i = 0; i < entries.Count; i++)
@@ -250,7 +250,7 @@ public class TestModelEntryPanelRuntime : TestClass
   }
 
   /// <summary>
-  /// 回归（S6）：新增模型后逐项填完端点/模型 Id/密钥（只写数据模型，不手动 Refresh），
+  /// 回归：新增模型后逐项填完端点/模型 Id/密钥（只写数据模型，不手动 Refresh），
   /// 下拉项必须解除 disabled 并能被激活。
   /// 旧实现只绑 AiModels 列表：列表本身没变，元素字段写入不触发任何刷新，
   /// 下拉项一直停在上一次的 disabled 态 → 本会话无法激活 → 猜测页「模糊化」永久灰。

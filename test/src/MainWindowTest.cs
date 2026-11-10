@@ -126,7 +126,7 @@ public class MainWindowTest : TestClass
   }
 
   /// <summary>
-  /// 退出护栏（批次 6/7 审查阻塞项）：关窗通知必须在节点树拆解前立起退出护栏。
+  /// 退出护栏：关窗通知必须在节点树拆解前立起，晚了子面板会先退出。
   /// </summary>
   /// <remarks>
   /// Godot 4.7.1 实测子节点先退出、此时父窗口仍 inside；若只在 <c>_ExitTree</c> 置位，

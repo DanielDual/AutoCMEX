@@ -389,7 +389,7 @@ public class GuessEngineTest : TestClass
     result.IsSuccess.ShouldBeTrue();
     result.Response.ShouldBe("0/3");
     result.Details.Count.ShouldBe(3);
-    // A2 文案在 3 张场景同样钉住：每条都写明「猜错，实际为空」，不是占位或待验证
+    // 同一文案在 3 处场景同样钉住：每条都写明「猜错，实际为空」，不是占位或待验证
     foreach (var detail in result.Details)
     {
       detail.ShouldContain("猜错");

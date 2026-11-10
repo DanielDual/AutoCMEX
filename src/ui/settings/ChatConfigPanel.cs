@@ -251,7 +251,7 @@ public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
   /// </summary>
   /// <remarks>
   /// 每次 <c>value_changed</c> 都直接写模型会让 <see cref="AutoCMEX.UI.Main.MainWindow"/> 的端口绑定
-  /// 每 tick 触发一次完整 WebSocket 重启（停/Dispose/重建/启）并重置 1500ms 自动保存防抖（S10）；
+  /// 每 tick 触发一次完整 WebSocket 重启（停/Dispose/重建/启）并重置 1500ms 自动保存防抖；
   /// 滚轮和连点箭头时这种写入尤其密集。
   /// </remarks>
   /// <param name="value">控件当前值。</param>
@@ -315,7 +315,7 @@ public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
   /// 退出前把去抖窗口内还没提交的端口编辑写回模型（只写模型，不排自动保存）。
   /// </summary>
   /// <remarks>
-  /// 退出路径由批0 的 <see cref="DataManager.Dispose"/> 同步落盘，因此这里写模型即可保住这一笔；
+  /// 退出路径由 <see cref="DataManager.Dispose"/> 同步落盘，因此这里写模型即可保住这一笔；
   /// 写模型会同步通知 MainWindow 的端口绑定，但 MainWindow 已由退出护栏挡住
   /// （关窗通知 / 离树后不再重启 WebSocket），不会在拆解期重建实例或日志服务。
   /// 判空 + 防重入：面板可能在依赖解析前就被释放，节点树拆解也不保证只来一次通知。

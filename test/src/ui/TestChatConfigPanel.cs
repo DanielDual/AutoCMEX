@@ -200,7 +200,7 @@ public class TestChatConfigPanel : TestClass
 
   /// <summary>
   /// 端口连改只写一次：真机 SpinBox 每次改值都同步发 <c>value_changed</c>，
-  /// 逐次写模型会让 MainWindow 每 tick 重启一次 WebSocket 并重置保存防抖（S10）。
+  /// 逐次写模型会让 MainWindow 每 tick 重启一次 WebSocket 并重置保存防抖。
   /// </summary>
   [Test]
   public async Task PortChanges_AreDebouncedIntoOneWrite()
@@ -376,7 +376,7 @@ public class TestChatConfigPanel : TestClass
   }
 
   /// <summary>
-  /// 去抖窗口内退出（关窗）：待提交的端口必须在退出前写回模型，交给批0 的退出落盘；
+  /// 去抖窗口内退出（关窗）：待提交的端口必须在退出前写回模型，交给退出落盘；
   /// 写回只发生一次，且退出路径不排自动保存（落盘统一由 DataManager.Dispose 负责）。
   /// </summary>
   [Test]

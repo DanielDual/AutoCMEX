@@ -1185,7 +1185,7 @@ public class MergerTest : TestClass
   [Test]
   public void Hierarchy_ReturnToOverflowAfterJump_IsDetectedAndNormalized()
   {
-    // 审查反例：深层节点(4)经「跳层到达」后再浅层回落(2)，父链回溯越界——Sharp 会 NRE。
+    // 反例：深层节点(4)经「跳层到达」后再浅层回落(2)，父链回溯越界——Sharp 会 NRE。
     // 修正前 Find 漏报 → 修正后应检测到，且 Normalize 后无越界、幂等。
     var text =
       "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"

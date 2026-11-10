@@ -84,7 +84,7 @@ public class TestLogPanel : TestClass
   public void ClearBtn_IsNotNull() => _panel.ClearBtn.ShouldNotBeNull();
 
   /// <summary>
-  /// 回归（S7）：首次出现的模块名可能来自写日志线程（WebSocket/录制线程池）。
+  /// 回归：首次出现的模块名可能来自写日志线程（WebSocket/录制线程池）。
   /// 写日志线程只能入队，控件（模块筛选下拉）必须等主线程 <c>_Process</c> 排空后再改。
   /// </summary>
   [Test]
@@ -103,7 +103,7 @@ public class TestLogPanel : TestClass
   }
 
   /// <summary>
-  /// 回归（S7）：主线程排空后同一模块只注册一次（队列里可能堆着同一模块的多条日志）。
+  /// 回归：主线程排空后同一模块只注册一次（队列里可能堆着同一模块的多条日志）。
   /// </summary>
   [Test]
   public async Task BackgroundThreadModule_IsRegisteredOncePerModule()

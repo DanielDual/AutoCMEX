@@ -16,7 +16,7 @@ using Moq;
 using Shouldly;
 
 /// <summary>
-/// DataManager 保存链路回归测试（批1-A：单消费者 + 快照 + 原子写 + 加载失败处理）。
+/// DataManager 保存链路回归测试（单消费者 + 快照 + 原子写 + 加载失败处理）。
 /// </summary>
 /// <remarks>
 /// <para>
@@ -80,7 +80,7 @@ public class DataManagerSaveTest : TestClass
   }
 
   /// <summary>
-  /// 防抖未到期就 Dispose：必须把等待中的改动同步落盘（S2 的核心回归）。
+  /// 防抖未到期就 Dispose：必须把等待中的改动同步落盘（核心回归）。
   /// </summary>
   [Test]
   public void Dispose_FlushesChangesInsideDebounceWindow()
