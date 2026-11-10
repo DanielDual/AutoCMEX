@@ -66,6 +66,30 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
   [Node("%PublishButton")]
   public IButton PublishButton { get; set; } = default!;
 
+  /// <summary>导入文件夹选择器（场景内常驻对话框；模式/过滤/标题都写在场景里）。</summary>
+  [Node("%FolderDialog")]
+  public IFileDialog FolderDialog { get; set; } = default!;
+
+  /// <summary>导入压缩包选择器（场景内常驻对话框）。</summary>
+  [Node("%ZipDialog")]
+  public IFileDialog ZipDialog { get; set; } = default!;
+
+  /// <summary>导入/录制结果提示框（场景内常驻对话框，标题按用途在运行时改写）。</summary>
+  [Node("%MessageDialog")]
+  public IAcceptDialog MessageDialog { get; set; } = default!;
+
+  /// <summary>录制入口的工程包选择器（场景内常驻对话框）。</summary>
+  [Node("%RecordZipDialog")]
+  public IFileDialog RecordZipDialog { get; set; } = default!;
+
+  /// <summary>录制入口的输出目录选择器（场景内常驻对话框）。</summary>
+  [Node("%RecordOutputDirDialog")]
+  public IFileDialog RecordOutputDirDialog { get; set; } = default!;
+
+  /// <summary>录制过程对话框（GifSetPanel.tscn 内的场景实例，Runner 由本栏注入）。</summary>
+  [Node("%RecordingRunPanel")]
+  public IRecordingRunPanel RecordingRun { get; set; } = default!;
+
   #region Dependencies
 
   /// <summary>数据管理器（由信息面板经 AutoInject 提供）。</summary>
@@ -101,14 +125,6 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
   private readonly GifPlaybackCoordinator _coordinator = new();
   private readonly List<CardRef> _cards = new();
 
-  private FileDialog? _folderDialog;
-  private FileDialog? _zipDialog;
-  private FileDialog? _recordZipDialog;
-  private FileDialog? _recordOutputDirDialog;
-  private AcceptDialog? _messageDialog;
-
-  private RecordingRunPanel? _runPanel;
-
   /// <summary>已手选、等待接着选输出目录的工程包；两步选择之间的中间态。</summary>
   private string? _pendingModPackZip;
 
@@ -143,8 +159,13 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
 
     DisposeActiveSetBindings();
 
-    // 本栏退出后不该还有引擎在后台跑；取消语义会保留已归集的产物与报告
-    _runPanel?.Cancel();
+    // 本栏退出后不该还有引擎在后台跑；取消语义会保留已归集的产物与报告。
+    // 录制过程对话框是场景子节点，退订后由它随本栏一起释放。
+    if (RecordingRun is not null)
+    {
+      RecordingRun.Finished -= OnRecordingFinished;
+      RecordingRun.Cancel();
+    }
 
     ReleaseCards();
   }
@@ -158,9 +179,18 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
   public void OnReady()
   {
     // 录制入口已接通：场景里该按钮仍是占位态（disabled + 过时 tooltip），故在这里点亮并换成可执行提示
-    EnsureRecordDialogs();
     RecordButton.Disabled = false;
     RecordButton.TooltipText = "选工程包与输出目录后自动逐张录制，录完自动导入为本栏的集";
+
+    // 对话框都是场景内常驻节点：信号在 OnReady 连一次（按节点缓存后每次唤起都复用同一实例）
+    FolderDialog.DirSelected += OnImportFolderSelected;
+    ZipDialog.FileSelected += OnImportZipSelected;
+    RecordZipDialog.FileSelected += OnRecordZipSelected;
+    RecordOutputDirDialog.DirSelected += OnRecordOutputDirSelected;
+
+    // 录制过程对话框也是场景实例：注入跑一轮的委托与结束回调
+    RecordingRun.Runner = RunRecordingAsync;
+    RecordingRun.Finished += OnRecordingFinished;
 
     ImportFolderButton.Pressed += OnImportFolderPressed;
     ImportZipButton.Pressed += OnImportZipPressed;
@@ -508,64 +538,11 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
 
   private void OnCardScrollValueChanged(double value) => RefreshPlayback();
 
-  /// <summary>导入文件夹：选择器只建一次，信号也只在创建分支里连一次。</summary>
-  /// <remarks>
-  /// 订阅必须写在 <c>??=</c> 的创建分支里（与 <see cref="EnsureRecordDialogs"/> 同写法）：
-  /// 写成 <c>_folderDialog.DirSelected += ...</c> 会在每次按下按钮时重复连接，
-  /// Godot 4 对同一 Callable 的重复连接会报 "already connected" 引擎错误并刷屏。
-  /// </remarks>
-  private void OnImportFolderPressed()
-  {
-    if (_folderDialog is null)
-    {
-      _folderDialog = CreateFileDialog(
-        "选择 GIF 集文件夹（需含 manifest.json）",
-        FileDialog.FileModeEnum.OpenDir,
-        Array.Empty<string>()
-      );
-      _folderDialog.DirSelected += OnImportFolderSelected;
-    }
+  /// <summary>导入文件夹：选择器是场景内的常驻节点，信号已在 <see cref="OnReady"/> 连过一次。</summary>
+  private void OnImportFolderPressed() => FileDialogSizing.Popup(FolderDialog);
 
-    FileDialogSizing.Popup(_folderDialog);
-  }
-
-  /// <summary>导入压缩包：选择器只建一次，信号也只在创建分支里连一次。</summary>
-  private void OnImportZipPressed()
-  {
-    if (_zipDialog is null)
-    {
-      _zipDialog = CreateFileDialog(
-        "选择 GIF 集压缩包",
-        FileDialog.FileModeEnum.OpenFile,
-        new[] { "*.zip" }
-      );
-      _zipDialog.FileSelected += OnImportZipSelected;
-    }
-
-    FileDialogSizing.Popup(_zipDialog);
-  }
-
-  private FileDialog CreateFileDialog(
-    string title,
-    FileDialog.FileModeEnum mode,
-    IReadOnlyList<string> filters
-  )
-  {
-    var dialog = new FileDialog
-    {
-      Title = title,
-      FileMode = mode,
-      Access = FileDialog.AccessEnum.Filesystem,
-      Unresizable = false,
-      UseNativeDialog = false,
-    };
-
-    foreach (var filter in filters)
-      dialog.AddFilter(filter, "压缩包");
-
-    AddChild(dialog);
-    return dialog;
-  }
+  /// <summary>导入压缩包：选择器是场景内的常驻节点，信号已在 <see cref="OnReady"/> 连过一次。</summary>
+  private void OnImportZipPressed() => FileDialogSizing.Popup(ZipDialog);
 
   private void OnImportFolderSelected(string path) => Import(() => _gifSets!.ImportFolder(path));
 
@@ -629,9 +606,9 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
   private void OnRecordPressed()
   {
     // 已有轮次在跑：把进度窗拉回前台即可，不起第二轮（同一引擎目录不能并发）
-    if (_runPanel is { IsRunning: true })
+    if (RecordingRun is { IsRunning: true })
     {
-      _runPanel.PopupCentered(new Vector2I(760, 460));
+      RecordingRun.BringToFront();
       return;
     }
 
@@ -643,35 +620,7 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
     }
 
     _pendingModPackZip = null;
-    EnsureRecordDialogs();
-    FileDialogSizing.Popup(_recordZipDialog!);
-  }
-
-  /// <summary>创建录制用的两个选择器（只建一次、信号只连一次，避免重复起录）。</summary>
-  private void EnsureRecordDialogs()
-  {
-    if (_recordZipDialog is null)
-    {
-      _recordZipDialog = CreateFileDialog(
-        "选择要录制的工程包（zip）",
-        FileDialog.FileModeEnum.OpenFile,
-        new[] { "*.zip" }
-      );
-      // 与导入用的两个同模式，故给出可辨识的节点名（排查与单测都靠它区分）
-      _recordZipDialog.Name = "RecordZipDialog";
-      _recordZipDialog.FileSelected += OnRecordZipSelected;
-    }
-
-    if (_recordOutputDirDialog is null)
-    {
-      _recordOutputDirDialog = CreateFileDialog(
-        "选择录制产物的输出目录",
-        FileDialog.FileModeEnum.OpenDir,
-        Array.Empty<string>()
-      );
-      _recordOutputDirDialog.Name = "RecordOutputDirDialog";
-      _recordOutputDirDialog.DirSelected += OnRecordOutputDirSelected;
-    }
+    FileDialogSizing.Popup(RecordZipDialog);
   }
 
   /// <summary>选定工程包后接着选输出目录。</summary>
@@ -679,8 +628,7 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
   private void OnRecordZipSelected(string path)
   {
     _pendingModPackZip = path;
-    EnsureRecordDialogs();
-    FileDialogSizing.Popup(_recordOutputDirDialog!);
+    FileDialogSizing.Popup(RecordOutputDirDialog);
   }
 
   /// <summary>选定输出目录后起录。</summary>
@@ -724,16 +672,9 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
     );
     _pendingModPackZip = null;
 
-    if (_runPanel is null || !GodotObject.IsInstanceValid(_runPanel))
-    {
-      _runPanel = new RecordingRunPanel(RunRecordingAsync);
-      _runPanel.Finished += OnRecordingFinished;
-      AddChild(_runPanel);
-    }
-
     _pendingStatus = null;
     SetInfoLabel.Text = $"录制中：成功产物将写入 {outputDir}";
-    _runPanel.Start(request);
+    RecordingRun.Start(request);
   }
 
   /// <summary>跑一轮录制的默认实现（UI 侧唯一入口）。</summary>
@@ -787,7 +728,7 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
       summary.Add(result.EngineLogTail!);
 
     var text = string.Join("\n", summary);
-    _runPanel?.AppendSummary(text);
+    RecordingRun.AppendSummary(text);
 
     if (result.Error is not null)
     {
@@ -820,15 +761,9 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
 
   private void ShowMessage(string title, string text)
   {
-    if (_messageDialog is null || !GodotObject.IsInstanceValid(_messageDialog))
-    {
-      _messageDialog = new AcceptDialog();
-      AddChild(_messageDialog);
-    }
-
-    _messageDialog.Title = title;
-    _messageDialog.DialogText = text;
-    _messageDialog.PopupCentered(new Vector2I(640, 420));
+    MessageDialog.Title = title;
+    MessageDialog.DialogText = text;
+    MessageDialog.PopupCentered(new Vector2I(640, 420));
   }
 
   /// <summary>发布按钮：触发 <see cref="PublishRequested"/>，由信息面板统一编排发布。</summary>

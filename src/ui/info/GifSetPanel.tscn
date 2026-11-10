@@ -1,6 +1,8 @@
 [gd_scene format=3 uid="uid://cb6agaer6y6bb"]
 
 [ext_resource type="Script" uid="uid://bhgy8p7su4gho" path="res://src/ui/info/GifSetPanel.cs" id="1_1aedx"]
+[ext_resource type="PackedScene" uid="uid://ipexju1fouqd" path="res://src/ui/info/RecordingRunPanel.tscn" id="2_runpanel"]
+[ext_resource type="Script" uid="uid://u766xcs1jqjg" path="res://src/ui/info/RecordingRunPanel.cs" id="3_73m1s"]
 
 [node name="GifSetColumn" type="VBoxContainer" unique_id=1730915910]
 script = ExtResource("1_1aedx")
@@ -60,3 +62,43 @@ theme_override_constants/separation = 10
 unique_name_in_owner = true
 layout_mode = 2
 text = "发布 GIF 集"
+
+[node name="FolderDialog" type="FileDialog" parent="." unique_id=152611782]
+unique_name_in_owner = true
+title = "选择 GIF 集文件夹（需含 manifest.json）"
+mode_overrides_title = false
+file_mode = 2
+access = 2
+
+[node name="ZipDialog" type="FileDialog" parent="." unique_id=2041220630]
+unique_name_in_owner = true
+title = "选择 GIF 集压缩包"
+mode_overrides_title = false
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.zip ; 压缩包")
+
+[node name="MessageDialog" type="AcceptDialog" parent="." unique_id=595385761]
+unique_name_in_owner = true
+title = "提示"
+
+[node name="RecordZipDialog" type="FileDialog" parent="." unique_id=84361317]
+unique_name_in_owner = true
+title = "选择要录制的工程包（zip）"
+mode_overrides_title = false
+file_mode = 0
+access = 2
+filters = PackedStringArray("*.zip ; 压缩包")
+
+[node name="RecordOutputDirDialog" type="FileDialog" parent="." unique_id=1484543807]
+unique_name_in_owner = true
+title = "选择录制产物的输出目录"
+mode_overrides_title = false
+file_mode = 2
+access = 2
+
+[node name="RecordingRunPanel" type="AcceptDialog" parent="." unique_id=1275864302 instance=ExtResource("2_runpanel")]
+unique_name_in_owner = true
+title = "符卡 GIF 录制"
+ok_button_text = "关闭"
+script = ExtResource("3_73m1s")

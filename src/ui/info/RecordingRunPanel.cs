@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoCMEX.Models;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.Introspection;
 using Godot;
 
@@ -29,27 +30,38 @@ public delegate Task<RecordingRunResult> RecordingRunner(
 /// <remarks>
 /// <para>
 /// 只负责展示与生命周期，不碰服务层：录成之后的落库（导入为 GIF 集并选中）由调用方在
-/// <see cref="Finished"/> 里完成。这样单测能直接替换 <see cref="RecordingRunner"/> 驱动本对话框，
+/// <see cref="Finished"/> 里完成。这样单测能直接替换 <see cref="Runner"/> 驱动本对话框，
 /// 不必真启游戏进程。
+/// </para>
+/// <para>
+/// 本对话框是 <c>RecordingRunPanel.tscn</c>（根 <see cref="AcceptDialog"/>）的场景实例：
+/// 结构与静态文案在场景里，代码只做 <see cref="Runner"/> 注入、进度/收尾刷新与信号连接。
+/// 取消按钮仍由 <see cref="AcceptDialog.AddButton"/> 创建——那是对话框自带 chrome 的文档化例外
+/// （与「只重试失败项」同一处理）。
 /// </para>
 /// <para>
 /// 关闭窗口在运行中意为「取消录制」（产物与报告照常保留，报告标 <c>cancelled</c>），
 /// 因为窗口一关就再没有别的地方能中止本轮。
 /// </para>
-/// <para>
-/// 按规则 5 接入 AutoInject 的生命周期（<c>[Meta(typeof(IAutoNode))]</c> + <c>_Notification</c>），
-/// 但 <see cref="RecordingRunner"/> 仍是构造参数：它是「跑一轮」的命令，不是从祖先注入的服务，
-/// 单测也靠替换它来驱动对话框；本类没有 <c>[Node]</c>/<c>[Dependency]</c> 成员。
-/// 控件同样用 C# 构建（规则 7/8/13 的文档化例外，无独立场景）。
-/// </para>
 /// </remarks>
 [Meta(typeof(IAutoNode))]
-public sealed partial class RecordingRunPanel : AcceptDialog
+public sealed partial class RecordingRunPanel : AcceptDialog, IRecordingRunPanel
 {
   /// <summary>取消按钮的动作名（<see cref="AcceptDialog.CustomAction"/> 的参数）。</summary>
   public const string CancelAction = "cancel_recording";
 
-  private readonly RecordingRunner _runner;
+  [Node("%StageLabel")]
+  public ILabel StageLabel { get; set; } = default!;
+
+  [Node("%CountLabel")]
+  public ILabel CountLabel { get; set; } = default!;
+
+  [Node("%WorkersLabel")]
+  public ILabel WorkersLabel { get; set; } = default!;
+
+  [Node("%SummaryLabel")]
+  public ILabel SummaryLabel { get; set; } = default!;
+
   private CancellationTokenSource? _cts;
   private Button? _cancelButton;
   private RecordingProgress? _pendingProgress;
@@ -57,23 +69,7 @@ public sealed partial class RecordingRunPanel : AcceptDialog
   private bool _renderQueued;
 
   /// <inheritdoc/>
-  public override void _Notification(int what) => this.Notify(what);
-
-  /// <summary>供 Introspection 生成器创建类型元数据实例；正常使用请用带 runner 的构造。</summary>
-  public RecordingRunPanel()
-  {
-    _runner = default!;
-  }
-
-  /// <summary>构建对话框（内容全用 C# 搭建，不改任何场景文件）。</summary>
-  /// <param name="runner">跑一轮录制的委托（默认实现见调用方，单测可替换）。</param>
-  /// <exception cref="ArgumentNullException"><paramref name="runner"/> 为 <c>null</c>。</exception>
-  public RecordingRunPanel(RecordingRunner runner)
-    : this()
-  {
-    _runner = runner ?? throw new ArgumentNullException(nameof(runner));
-    BuildUi();
-  }
+  public RecordingRunner? Runner { get; set; }
 
   /// <summary>一轮录制结束（成功、取消或失败都触发）。</summary>
   public event Action<RecordingRunResult>? Finished;
@@ -81,33 +77,43 @@ public sealed partial class RecordingRunPanel : AcceptDialog
   /// <summary>本轮是否还在跑。</summary>
   public bool IsRunning { get; private set; }
 
-  /// <summary>阶段与输出目录。</summary>
-  public Label StageLabel { get; private set; } = null!;
-
-  /// <summary>完成计数。</summary>
-  public Label CountLabel { get; private set; } = null!;
-
-  /// <summary>各 worker 正在录的卡。</summary>
-  public Label WorkersLabel { get; private set; } = null!;
-
-  /// <summary>结束汇总（由调用方在导入之后回填）。</summary>
-  public Label SummaryLabel { get; private set; } = null!;
-
-  /// <summary>取消按钮（运行中可点，结束后隐藏）。</summary>
+  /// <summary>取消按钮（运行中可点，结束后隐藏；由 <see cref="AcceptDialog.AddButton"/> 创建）。</summary>
   public Button CancelButton => _cancelButton!;
+
+  /// <inheritdoc/>
+  public override void _Notification(int what) => this.Notify(what);
+
+  /// <summary>AutoInject 节点注入完成：创建取消按钮并连接对话框信号。</summary>
+  /// <remarks>
+  /// 信号连接放这里而不是 <see cref="RunAsync"/> 等路径：<c>OnReady</c> 每个节点实例只执行一次，
+  /// 重复连接同一信号 Godot 会报 "already connected"。
+  /// </remarks>
+  public void OnReady()
+  {
+    _cancelButton = AddButton("取消录制", true, CancelAction);
+    // 未起录时没有任何可取消的东西，先藏起来（起录时再点亮）
+    _cancelButton.Visible = false;
+    _cancelButton.Disabled = true;
+
+    CloseRequested += OnCloseRequested;
+    CustomAction += OnCustomAction;
+  }
 
   /// <summary>
   /// 起录一轮：弹出本对话框并开始上报进度。
   /// </summary>
   /// <param name="request">本轮输入。</param>
   /// <exception cref="ArgumentNullException"><paramref name="request"/> 为 <c>null</c>。</exception>
+  /// <exception cref="InvalidOperationException"><see cref="Runner"/> 尚未设置。</exception>
   public void Start(RecordingRequest request)
   {
     ArgumentNullException.ThrowIfNull(request);
-    if (_runner is null)
+
+    var runner = Runner;
+    if (runner is null)
     {
       throw new InvalidOperationException(
-        "RecordingRunPanel 必须通过带 runner 的构造创建；无参构造仅供 Introspection 元数据使用。"
+        "RecordingRunPanel.Runner 尚未设置：起录前必须由调用方注入跑一轮录制的委托。"
       );
     }
 
@@ -126,10 +132,10 @@ public sealed partial class RecordingRunPanel : AcceptDialog
     CancelButton.Disabled = false;
     CancelButton.Visible = true;
 
-    PopupCentered(new Vector2I(760, 460));
+    BringToFront();
 
     // 进度可能从后台线程上报：只记快照并排一次延时刷新，回主线程再碰控件
-    _ = RunAsync(request, new Progress<RecordingProgress>(OnProgress), _cts.Token);
+    _ = RunAsync(runner, request, new Progress<RecordingProgress>(OnProgress), _cts.Token);
   }
 
   /// <summary>请求取消本轮（已结束则忽略）。</summary>
@@ -144,6 +150,9 @@ public sealed partial class RecordingRunPanel : AcceptDialog
     StageLabel.Text = "阶段：正在取消（等待当前卡的进程结束）…";
     _cts?.Cancel();
   }
+
+  /// <summary>把已在跑的对话框拉回前台（重复点录制时用）。</summary>
+  public void BringToFront() => PopupCentered(new Vector2I(760, 460));
 
   /// <summary>回填结束汇总（由调用方在自动导入之后调用）。</summary>
   /// <param name="summary">汇总文本。</param>
@@ -190,11 +199,13 @@ public sealed partial class RecordingRunPanel : AcceptDialog
   }
 
   /// <summary>跑一轮并收尾（异常兜底成结果，不让异常冒进 Godot 主循环）。</summary>
+  /// <param name="runner">跑一轮录制的委托（<see cref="Start"/> 已校验非空）。</param>
   /// <param name="request">本轮输入。</param>
   /// <param name="progress">进度回调。</param>
   /// <param name="cancellationToken">取消令牌。</param>
   /// <returns>无。</returns>
   private async Task RunAsync(
+    RecordingRunner runner,
     RecordingRequest request,
     IProgress<RecordingProgress> progress,
     CancellationToken cancellationToken
@@ -203,7 +214,7 @@ public sealed partial class RecordingRunPanel : AcceptDialog
     RecordingRunResult result;
     try
     {
-      result = await _runner(request, progress, cancellationToken);
+      result = await runner(request, progress, cancellationToken);
     }
     catch (Exception ex)
     {
@@ -268,37 +279,6 @@ public sealed partial class RecordingRunPanel : AcceptDialog
         + (slot.Attempt > 1 ? $"（第 {slot.Attempt} 次尝试）" : string.Empty)
       );
     return "正在录制：\n" + string.Join("\n", lines);
-  }
-
-  /// <summary>搭建对话框内容（单个容器承载全部控件：AcceptDialog 只给内容区一个矩形）。</summary>
-  private void BuildUi()
-  {
-    Title = "符卡 GIF 录制";
-    OkButtonText = "关闭";
-    Exclusive = true;
-    Unresizable = false;
-    CloseRequested += OnCloseRequested;
-
-    var body = new VBoxContainer { CustomMinimumSize = new Vector2(680, 300) };
-    body.AddThemeConstantOverride("separation", 8);
-
-    StageLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-    CountLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-    WorkersLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-    SummaryLabel = new Label { AutowrapMode = TextServer.AutowrapMode.WordSmart };
-
-    body.AddChild(StageLabel);
-    body.AddChild(CountLabel);
-    body.AddChild(WorkersLabel);
-    body.AddChild(new HSeparator());
-    body.AddChild(SummaryLabel);
-    AddChild(body);
-
-    _cancelButton = AddButton("取消录制", true, CancelAction);
-    // 未起录时没有任何可取消的东西，先藏起来（起录时再点亮）
-    _cancelButton.Visible = false;
-    _cancelButton.Disabled = true;
-    CustomAction += OnCustomAction;
   }
 
   /// <summary>处理自定义按钮动作。</summary>

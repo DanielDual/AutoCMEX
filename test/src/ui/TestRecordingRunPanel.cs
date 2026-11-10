@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Info;
+using Chickensoft.AutoInject;
 using Chickensoft.GoDotTest;
 using Godot;
 using Shouldly;
@@ -18,6 +19,9 @@ using Shouldly;
 /// </summary>
 public class TestRecordingRunPanel : TestClass
 {
+  /// <summary>对话框场景（根 AcceptDialog + 四个标签），测试按真实装配加载。</summary>
+  private const string PanelScenePath = "res://src/ui/info/RecordingRunPanel.tscn";
+
   private Node? _host;
 
   public TestRecordingRunPanel(Node testScene)
@@ -34,9 +38,42 @@ public class TestRecordingRunPanel : TestClass
     _host = null;
   }
 
+  /// <summary>没有注入 <see cref="RecordingRunPanel.Runner"/> 时不得静默起录（原构造期空值校验的位置前移到起录时）。</summary>
   [Test]
-  public void Constructor_NullRunner_Throws() =>
-    Should.Throw<ArgumentNullException>(() => new RecordingRunPanel(null!));
+  public void Start_WithoutRunner_Throws()
+  {
+    var panel = Mount();
+
+    var ex = Should.Throw<InvalidOperationException>(() =>
+      panel.Start(CreateRequest("out/gifset"))
+    );
+    ex.Message.ShouldContain("Runner");
+  }
+
+  /// <summary>
+  /// 装配契约：四个标签由场景注入，取消按钮在起录前隐藏且禁用（场景里不预设可用按钮）。
+  /// </summary>
+  [Test]
+  public void SceneContract_InjectsLabelsAndKeepsCancelHiddenUntilStart()
+  {
+    var panel = Mount();
+
+    panel.StageLabel.ShouldNotBeNull();
+    panel.CountLabel.ShouldNotBeNull();
+    panel.WorkersLabel.ShouldNotBeNull();
+    panel.SummaryLabel.ShouldNotBeNull();
+
+    // 标题/按钮文案来自场景（不是运行期拼的）
+    panel.Title.ShouldBe("符卡 GIF 录制");
+    panel.OkButtonText.ShouldBe("关闭");
+
+    panel.CancelButton.Visible.ShouldBeFalse();
+    panel.CancelButton.Disabled.ShouldBeTrue();
+
+    // 模态语义：exclusive 由 AcceptDialog 构造默认值提供，场景里不写 exclusive=true
+    // （写 true 不产生序列化差分），用断言锁住这个隐含默认，防止将来手改场景后静默退化。
+    panel.Exclusive.ShouldBeTrue();
+  }
 
   [Test]
   public async Task Start_ShowsOutputDirAndLocksCloseUntilFinished()
@@ -265,15 +302,19 @@ public class TestRecordingRunPanel : TestClass
     panel.SummaryLabel.Text.ShouldBe("本轮录制：成功 3　失败 0");
   }
 
-  /// <summary>挂一个用假录制委托驱动的对话框（必须进场景树，延时刷新才有主循环可跑）。</summary>
-  /// <param name="runner">假录制委托。</param>
+  /// <summary>挂一个用假录制委托驱动的对话框（场景实例；必须进场景树，延时刷新才有主循环可跑）。</summary>
+  /// <param name="runner">假录制委托；不传用于「未注入 Runner」的契约用例。</param>
   /// <returns>对话框。</returns>
-  private RecordingRunPanel Mount(RecordingRunner runner)
+  private RecordingRunPanel Mount(RecordingRunner? runner = null)
   {
     _host = new Node();
     TestScene.AddChild(_host);
 
-    var panel = new RecordingRunPanel(runner);
+    var panel = GD.Load<PackedScene>(PanelScenePath).Instantiate<RecordingRunPanel>();
+    (panel as IAutoInit).IsTesting = true;
+    panel.Runner = runner;
+
+    // 进树即注入 [Node] 并触发 OnReady（取消按钮在这里创建）
     _host.AddChild(panel);
     return panel;
   }

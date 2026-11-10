@@ -132,9 +132,14 @@ public class TestGifSetPanel : TestClass
   private static bool IsRecordDialog(FileDialog dialog) =>
     dialog.Name.ToString().StartsWith("Record", StringComparison.Ordinal);
 
-  /// <summary>取错误明细弹窗（<see cref="FileDialog"/> 也是 <see cref="AcceptDialog"/>，必须排除）。</summary>
+  /// <summary>
+  /// 取导入/录制提示弹窗：场景内常驻节点，按节点名取。
+  /// </summary>
+  /// <remarks>
+  /// 不能再用「最后一个非 FileDialog 的 AcceptDialog」——录制过程对话框也是场景实例，会把顺序搞乱。
+  /// </remarks>
   private static AcceptDialog? GetMessageDialog(Node column) =>
-    column.GetChildren().OfType<AcceptDialog>().LastOrDefault(d => d is not FileDialog);
+    column.FindChild("MessageDialog", owned: false, recursive: true) as AcceptDialog;
 
   private static OptionButton GetSetSelector(Node column) =>
     (OptionButton)column.FindChild("SetSelector", owned: false, recursive: true)!;
@@ -276,6 +281,53 @@ public class TestGifSetPanel : TestClass
     var record = (Button)column.FindChild("RecordButton", owned: false, recursive: true)!;
     record.Disabled.ShouldBeFalse();
     record.TooltipText.ShouldNotBeEmpty();
+  }
+
+  /// <summary>
+  /// 装配契约：四个选择器、提示框与录制过程对话框都是场景内常驻节点，
+  /// 模式/过滤/标题按场景声明；运行期不新增子节点。
+  /// </summary>
+  [Test]
+  public async Task SceneContract_DialogsAreSceneNodesWithExpectedShapes()
+  {
+    var panel = InstantiatePanel();
+    await SettleAsync(panel);
+    var column = GetGifColumn(panel);
+
+    var folder = GetFileDialog(column, FileDialog.FileModeEnum.OpenDir);
+    folder.Title.ShouldBe("选择 GIF 集文件夹（需含 manifest.json）");
+    folder.ModeOverridesTitle.ShouldBeFalse("标题必须由场景声明，不能被文件模式覆盖");
+    folder.Access.ShouldBe(FileDialog.AccessEnum.Filesystem);
+    folder.UseNativeDialog.ShouldBeFalse();
+    folder.Visible.ShouldBeFalse("常驻对话框默认隐藏");
+
+    var zip = GetFileDialog(column, FileDialog.FileModeEnum.OpenFile);
+    zip.Title.ShouldBe("选择 GIF 集压缩包");
+    zip.Filters.Length.ShouldBe(1);
+    zip.Filters[0].ShouldContain("*.zip");
+
+    var recordZip = GetRecordDialog(column, FileDialog.FileModeEnum.OpenFile);
+    recordZip.Title.ShouldBe("选择要录制的工程包（zip）");
+    recordZip.Filters.Length.ShouldBe(1);
+    recordZip.Filters[0].ShouldContain("*.zip");
+
+    var recordOut = GetRecordDialog(column, FileDialog.FileModeEnum.OpenDir);
+    recordOut.Title.ShouldBe("选择录制产物的输出目录");
+
+    // 提示框与录制过程对话框都是场景内常驻节点，默认隐藏
+    GetMessageDialog(column).ShouldNotBeNull("提示框应是场景内常驻节点");
+    var run = column.FindChild("RecordingRunPanel", owned: false, recursive: true);
+    run.ShouldNotBeNull("录制过程对话框应是场景实例");
+    (run as AcceptDialog)!.Visible.ShouldBeFalse();
+    (run as IRecordingRunPanel)!.IsRunning.ShouldBeFalse();
+
+    // 运行期点开选择器不得再新增子节点（懒建时代每次首点都会 AddChild 一个 FileDialog）
+    var childCount = column.GetChildCount();
+    ((Button)column.FindChild("ImportFolderButton", owned: false, recursive: true)!).EmitSignal(
+      BaseButton.SignalName.Pressed
+    );
+    await SettleAsync(panel);
+    column.GetChildCount().ShouldBe(childCount, "对话框是场景内常驻节点，运行期不得新增子节点");
   }
 
   [Test]
@@ -672,7 +724,7 @@ public class TestGifSetPanel : TestClass
   }
 
   /// <summary>
-  /// 回归（B6）：同一文件夹重复导入时服务端原地更新已有集记录（列表不增删），
+  /// 回归：同一文件夹重复导入时服务端原地更新已有集记录（列表不增删），
   /// 只绑集列表会让集摘要与卡片停在旧值；必须靠活动集元素级绑定驱动重建。
   /// </summary>
   [Test]
@@ -805,7 +857,7 @@ public class TestGifSetPanel : TestClass
   }
 
   /// <summary>
-  /// 回归（S4）：导入选择器会复用，但信号订阅只能在创建分支里挂一次。
+  /// 回归：导入选择器会复用，但信号订阅只能在创建分支里挂一次。
   /// 旧写法把 <c>+=</c> 放在 <c>??=</c> 外面，第 N 次按下导入按钮就会重复连接同一条信号
   /// （Godot 4 对同一 Callable 的重复连接会持续报 "already connected" 引擎错误）。
   /// </summary>
@@ -850,7 +902,7 @@ public class TestGifSetPanel : TestClass
   }
 
   /// <summary>
-  /// 回归（S4）：连点两次导入后只做一次选择，只能导入一个集、只能解压一份。
+  /// 回归：连点两次导入后只做一次选择，只能导入一个集、只能解压一份。
   /// 压缩包导入每次都会新建 GUID 托管目录，重复执行会留下重复集与重复解压目录。
   /// </summary>
   [Test]
