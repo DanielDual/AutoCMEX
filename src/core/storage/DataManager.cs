@@ -18,7 +18,7 @@ using Chickensoft.Sync.Primitives;
 /// <para>
 /// 自动保存是单消费者流水线：防抖到期后由 <c>_saveGate</c> 选出一个任务，再经构造时注入的
 /// <c>dispatch</c> 把「捕获 + 序列化」调度到主线程执行——活的 <see cref="AutoList{T}"/>
-/// （含 <c>Boss.SpellCards</c> 等嵌套集合）只在主线程枚举，7 段数据全部序列化成字符串；
+/// （含 <c>Boss.SpellCards</c> 等嵌套集合）只在主线程枚举，8 段数据全部序列化成字符串；
 /// 线程池只负责把字符串用临时文件 + <see cref="File.Move(string, string, bool)"/> 原子替换写盘。
 /// 抢不到写权的到期只置脏标记，由持有者收尾补写，不丢弃改动。
 /// </para>
@@ -61,6 +61,16 @@ public class DataManager : IDisposable
   private MergeConfig _mergeConfig = new();
   private InfoConfig _infoConfig = new();
   private RecordingConfig _recordingConfig = new();
+  private UiLayoutData _uiLayout = new();
+
+  /// <summary>
+  /// UI 布局记忆的只读保护标记（<c>true</c> = 盘上版本高于当前程序，本次运行放弃读写该段）。
+  /// </summary>
+  /// <remarks>
+  /// 布局文件版本过新说明用户用过更新的程序：此时既不能把新格式当旧格式解释，也不能用旧格式
+  /// 覆盖它，所以整段退化为「只在内存用默认值、保存时跳过该文件」，其余 7 段照常读写。
+  /// </remarks>
+  private bool _uiLayoutReadOnly;
 
   private CancellationTokenSource? _saveCts;
 
@@ -120,6 +130,15 @@ public class DataManager : IDisposable
   public MergeConfig MergeConfig => _mergeConfig;
   public InfoConfig InfoConfig => _infoConfig;
   public RecordingConfig RecordingConfig => _recordingConfig;
+
+  /// <summary>
+  /// UI 布局记忆数据（主窗口几何 / 文件选择窗口尺寸 / 各板块分割条）。
+  /// </summary>
+  /// <remarks>
+  /// 这是一次性快照而非双向数据源：UI 在启动或弹窗弹出时读一次并应用，用户调整后回写这里，
+  /// 因此不要对它 <c>Bind()</c> 做模型 → UI 的刷新（详见 <see cref="UiLayoutData"/> 的类注释）。
+  /// </remarks>
+  public UiLayoutData UiLayout => _uiLayout;
 
   /// <summary>
   /// 数据目录绝对路径。
@@ -229,6 +248,7 @@ public class DataManager : IDisposable
         new AutoListConverter<SpellCardMappingEntry>(),
         new AutoListConverter<GifSetRecord>(),
         new AutoListConverter<TargetGroup>(),
+        new AutoListConverter<SplitLayoutRecord>(),
         new AutoValueJsonConverterFactory(),
       },
     };
@@ -273,10 +293,35 @@ public class DataManager : IDisposable
     // 同上：录制配置也含 AutoValue 属性
     _recordingConfig.EnsureIntegrity();
 
+    // 第 8 段：UI 布局记忆。版本高于当前程序时整段退化为只读（内存用默认值、保存时跳过该文件），
+    // 避免旧版本用自己认识的字段把新格式覆盖掉。
+    var loadedUiLayout = LoadJson<UiLayoutData>("ui_layout.json");
+    var loadedUiLayoutVersion = loadedUiLayout?.Version?.Value ?? UiLayoutData.CurrentVersion;
+    if (loadedUiLayoutVersion > UiLayoutData.CurrentVersion)
+    {
+      _uiLayout = new();
+      _uiLayoutReadOnly = true;
+      _log.Warn(
+        $"DataManager: ui_layout.json version {loadedUiLayoutVersion} is newer than "
+          + $"supported {UiLayoutData.CurrentVersion}; UI layout is read-only for this run."
+      );
+    }
+    else
+    {
+      _uiLayout = loadedUiLayout ?? new();
+      // 回填被 JSON 显式 null 覆盖的 AutoValue/AutoList 属性，再收敛非法值（顺序不可颠倒）
+      _uiLayout.EnsureIntegrity();
+      _uiLayout.Sanitize();
+      MigrateUiLayout(_uiLayout);
+      // 同一次 LoadAll 内可能先读到过新版本文件、之后文件被换回旧格式：标记必须随之复位
+      _uiLayoutReadOnly = false;
+    }
+
     _log.Print(
       $"DataManager.LoadAll: bosses={_bosses.Count}, aliases={_aliases.Count}, "
         + $"aiModels={_settings.AiModels.Count}, creatorPackages={_creatorPackages.Count}, "
-        + $"gifSets={_infoConfig.GifSets.Count}, targetGroups={_settings.TargetGroups.Count}"
+        + $"gifSets={_infoConfig.GifSets.Count}, targetGroups={_settings.TargetGroups.Count}, "
+        + $"uiLayoutSplits={_uiLayout.Splits.Count}"
     );
 
     // 解密 API 密钥
@@ -287,6 +332,26 @@ public class DataManager : IDisposable
         model.EncryptedApiKey.Value = _encryptor.Decrypt(model.EncryptedApiKey.Value);
       }
     }
+  }
+
+  /// <summary>
+  /// 按版本逐级迁移 UI 布局数据（当前数据结构只有 v1，没有实际迁移动作）。
+  /// </summary>
+  /// <remarks>
+  /// 保留方法作为逐版本迁移的固定落点：每段只负责一次升版，避免跨版本跳级时漏掉中间版本的字段
+  /// 改写。以后新增 v2 时在此追加 <c>if (data.Version.Value &lt; 2) { ...; data.Version.Value = 2; }</c>。
+  /// 版本修正（<c>&lt;= 0</c> 视为当前版本）由 <see cref="UiLayoutData.Sanitize"/> 负责，因此这里
+  /// 正常情况下直接返回。
+  /// </remarks>
+  /// <param name="data">已完成 <see cref="UiLayoutData.EnsureIntegrity"/> 与
+  /// <see cref="UiLayoutData.Sanitize"/> 的布局数据。</param>
+  private static void MigrateUiLayout(UiLayoutData data)
+  {
+    if (data.Version.Value == UiLayoutData.CurrentVersion)
+      return;
+
+    // 兜底对齐：迁移动作全部执行完后统一收口到当前版本
+    data.Version.Value = UiLayoutData.CurrentVersion;
   }
 
   /// <summary>
@@ -415,7 +480,7 @@ public class DataManager : IDisposable
   /// <summary>
   /// 把「捕获 + 序列化」调度到主线程执行；已释放时不枚举任何集合。
   /// </summary>
-  /// <returns>7 段 JSON 快照；已释放时为 <c>null</c>。</returns>
+  /// <returns>8 段 JSON 快照；已释放时为 <c>null</c>。</returns>
   private Task<SavePayload?> CapturePayloadOnMainThreadAsync()
   {
     var completion = new TaskCompletionSource<SavePayload?>(
@@ -524,11 +589,12 @@ public class DataManager : IDisposable
     _creatorPackages.Dispose();
     _mergeConfig.Mapping.Dispose();
     _infoConfig.GifSets?.Dispose();
+    _uiLayout.Splits?.Dispose();
     GC.SuppressFinalize(this);
   }
 
   /// <summary>
-  /// 一次保存的 7 段已序列化 JSON：捕获阶段产出，写盘阶段只落文本。
+  /// 一次保存的 8 段已序列化 JSON：捕获阶段产出，写盘阶段只落文本。
   /// </summary>
   private sealed class SavePayload
   {
@@ -555,13 +621,19 @@ public class DataManager : IDisposable
 
     /// <summary>录制配置 JSON（<c>recording_config.json</c>）。</summary>
     public string RecordingConfigJson { get; init; } = "{}";
+
+    /// <summary>
+    /// UI 布局记忆 JSON（<c>ui_layout.json</c>）；<c>null</c> 表示本次跳过写该文件
+    /// （盘上版本高于当前程序时的只读保护）。
+    /// </summary>
+    public string? UiLayoutJson { get; init; }
   }
 
   /// <summary>
-  /// 在主线程捕获并序列化 7 段数据（深序列化：活 <see cref="AutoList{T}"/> 与嵌套集合都在这里
+  /// 在主线程捕获并序列化 8 段数据（深序列化：活 <see cref="AutoList{T}"/> 与嵌套集合都在这里
   /// 变成字符串，池线程不再触碰任何活集合）。
   /// </summary>
-  /// <returns>与活模型脱钩的 7 段 JSON。</returns>
+  /// <returns>与活模型脱钩的 8 段 JSON。</returns>
   private SavePayload BuildSavePayload() =>
     new()
     {
@@ -573,6 +645,8 @@ public class DataManager : IDisposable
       MergeConfigJson = JsonSerializer.Serialize(_mergeConfig, _jsonOptions),
       InfoConfigJson = JsonSerializer.Serialize(_infoConfig, _jsonOptions),
       RecordingConfigJson = JsonSerializer.Serialize(_recordingConfig, _jsonOptions),
+      // 只读保护：版本过新时置 null，WritePayload 据此跳过 ui_layout.json
+      UiLayoutJson = _uiLayoutReadOnly ? null : JsonSerializer.Serialize(_uiLayout, _jsonOptions),
     };
 
   /// <summary>
@@ -616,7 +690,7 @@ public class DataManager : IDisposable
   }
 
   /// <summary>
-  /// 把 7 段已序列化 JSON 原子写入数据目录；只做文件 IO，可由线程池执行。
+  /// 把 8 段已序列化 JSON 原子写入数据目录；只做文件 IO，可由线程池执行。
   /// </summary>
   /// <param name="payload">待写入的 JSON 文本。</param>
   private void WritePayload(SavePayload payload)
@@ -628,6 +702,10 @@ public class DataManager : IDisposable
     WriteJsonAtomic(Path.Combine(_dataDir, "merge_config.json"), payload.MergeConfigJson);
     WriteJsonAtomic(Path.Combine(_dataDir, "info_config.json"), payload.InfoConfigJson);
     WriteJsonAtomic(Path.Combine(_dataDir, "recording_config.json"), payload.RecordingConfigJson);
+
+    // 版本过新的只读保护：UiLayoutJson 为 null 时本次跳过该文件，其余 7 段照常落盘
+    if (payload.UiLayoutJson != null)
+      WriteJsonAtomic(Path.Combine(_dataDir, "ui_layout.json"), payload.UiLayoutJson);
   }
 
   /// <summary>
