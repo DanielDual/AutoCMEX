@@ -1,5 +1,9 @@
 namespace AutoCMEX;
 
+using System;
+using System.Collections.Generic;
+using System.IO;
+using AutoCMEX.Core.Storage;
 using AutoCMEX.UI;
 using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
@@ -17,6 +21,9 @@ using Shouldly;
 /// </remarks>
 public class FileDialogSizingTest : TestClass
 {
+  /// <summary>待删除的临时数据根目录（跨重启用例使用）。</summary>
+  private readonly List<string> _tempRoots = new();
+
   public FileDialogSizingTest(Node testScene)
     : base(testScene) { }
 
@@ -24,7 +31,32 @@ public class FileDialogSizingTest : TestClass
   public void Setup() => FileDialogSizing.ResetMemoryForTests();
 
   [Cleanup]
-  public void Cleanup() => FileDialogSizing.ResetMemoryForTests();
+  public void Cleanup()
+  {
+    FileDialogSizing.ResetMemoryForTests();
+
+    foreach (var root in _tempRoots)
+    {
+      if (Directory.Exists(root))
+        Directory.Delete(root, recursive: true);
+    }
+
+    _tempRoots.Clear();
+  }
+
+  /// <summary>建一份临时目录里的 <see cref="DataManager"/>（数据目录为 root/data）。</summary>
+  private DataManager CreateDataManager()
+  {
+    var root = Path.Combine(
+      Path.GetTempPath(),
+      "AutoCMEX_DialogSize_" + Guid.NewGuid().ToString("N")[..8]
+    );
+    _tempRoots.Add(root);
+
+    var dataManager = new DataManager(Path.Combine(root, "data"), new AesEncryptor("test-key"));
+    dataManager.LoadAll();
+    return dataManager;
+  }
 
   // ==================== Resolve Tests ====================
 
@@ -246,5 +278,141 @@ public class FileDialogSizingTest : TestClass
 
     var expected = FileDialogSizing.Resolve(FileDialogSizing.FallbackParentSize);
     dialog.Verify(d => d.PopupCentered(It.Is<Vector2I?>(size => size == expected)), Times.Once);
+  }
+
+  // ==================== 跨重启记忆 ====================
+
+  /// <summary>内存记忆为空时，首次弹出采用 ui_layout.json 里上次真改过的尺寸。</summary>
+  [Test]
+  public void Popup_WithData_UsesPersistedSizeOnFirstOpen()
+  {
+    var dataManager = CreateDataManager();
+    try
+    {
+      dataManager.UiLayout.FileDialogWidth.Value = 900;
+      dataManager.UiLayout.FileDialogHeight.Value = 600;
+
+      var dialog = new Mock<IFileDialog>();
+      dialog.SetupProperty(d => d.Size, Vector2I.Zero);
+
+      FileDialogSizing.Popup(dialog.Object, dataManager);
+
+      dialog.Verify(
+        d => d.PopupCentered(It.Is<Vector2I?>(size => size == new Vector2I(900, 600))),
+        Times.Once
+      );
+      dialog.Object.Size.ShouldBe(new Vector2I(900, 600));
+    }
+    finally
+    {
+      dataManager.Dispose();
+    }
+  }
+
+  /// <summary>内存记忆优先于落盘记忆（同一次运行里换过尺寸时不给旧尺寸盖回去）。</summary>
+  [Test]
+  public void Popup_WithData_MemoryTakesPrecedenceOverPersisted()
+  {
+    var dataManager = CreateDataManager();
+    try
+    {
+      dataManager.UiLayout.FileDialogWidth.Value = 900;
+      dataManager.UiLayout.FileDialogHeight.Value = 600;
+
+      var first = new Mock<IFileDialog>();
+      first.SetupProperty(d => d.Size, new Vector2I(640, 360));
+      first.SetupGet(d => d.Visible).Returns(false);
+      FileDialogSizing.Popup(first.Object, dataManager);
+
+      // 用户这次拖成 1100×700 后关闭 → 内存与落盘都记成新值
+      var resized = new Vector2I(1100, 700);
+      first.Object.Size = resized;
+      first.Raise(d => d.VisibilityChanged += null);
+
+      var second = new Mock<IFileDialog>();
+      second.SetupProperty(d => d.Size, Vector2I.Zero);
+      FileDialogSizing.Popup(second.Object, dataManager);
+
+      second.Verify(d => d.PopupCentered(It.Is<Vector2I?>(size => size == resized)), Times.Once);
+    }
+    finally
+    {
+      dataManager.Dispose();
+    }
+  }
+
+  /// <summary>用户真改尺寸后关闭：尺寸写回 ui_layout.json（跨重启生效）。</summary>
+  [Test]
+  public void Popup_WithData_HideAfterResize_WritesModel()
+  {
+    var dataManager = CreateDataManager();
+    try
+    {
+      var dialog = new Mock<IFileDialog>();
+      dialog.SetupProperty(d => d.Size, new Vector2I(640, 360));
+      dialog.SetupGet(d => d.Visible).Returns(false);
+
+      FileDialogSizing.Popup(dialog.Object, dataManager);
+
+      dialog.Object.Size = new Vector2I(1111, 777);
+      dialog.Raise(d => d.VisibilityChanged += null);
+
+      dataManager.UiLayout.FileDialogWidth.Value.ShouldBe(1111);
+      dataManager.UiLayout.FileDialogHeight.Value.ShouldBe(777);
+    }
+    finally
+    {
+      dataManager.Dispose();
+    }
+  }
+
+  /// <summary>只关闭、没改尺寸：不写落盘记忆（保持视口 80% 动态策略）。</summary>
+  [Test]
+  public void Popup_WithData_HideWithoutResize_DoesNotWriteModel()
+  {
+    var dataManager = CreateDataManager();
+    try
+    {
+      var dialog = new Mock<IFileDialog>();
+      dialog.SetupProperty(d => d.Size, new Vector2I(640, 360));
+      dialog.SetupGet(d => d.Visible).Returns(false);
+
+      FileDialogSizing.Popup(dialog.Object, dataManager);
+      dialog.Raise(d => d.VisibilityChanged += null);
+
+      dataManager.UiLayout.FileDialogWidth.Value.ShouldBeNull();
+      dataManager.UiLayout.FileDialogHeight.Value.ShouldBeNull();
+    }
+    finally
+    {
+      dataManager.Dispose();
+    }
+  }
+
+  /// <summary>先无参弹出、后经带数据入口补绑：补绑后隐藏才写落盘模型（不重复订阅）。</summary>
+  [Test]
+  public void Popup_WithoutDataThenWithData_BindsPersistedMemoryAndWritesModel()
+  {
+    var dataManager = CreateDataManager();
+    try
+    {
+      var dialog = new Mock<IFileDialog>();
+      dialog.SetupProperty(d => d.Size, new Vector2I(640, 360));
+      dialog.SetupGet(d => d.Visible).Returns(false);
+
+      // 无参重载没有数据来源，但同一实例随后经带数据入口弹出时应补上落盘来源
+      FileDialogSizing.Popup(dialog.Object);
+      FileDialogSizing.Popup(dialog.Object, dataManager);
+
+      dialog.Object.Size = new Vector2I(1234, 567);
+      dialog.Raise(d => d.VisibilityChanged += null);
+
+      dataManager.UiLayout.FileDialogWidth.Value.ShouldBe(1234);
+      dataManager.UiLayout.FileDialogHeight.Value.ShouldBe(567);
+    }
+    finally
+    {
+      dataManager.Dispose();
+    }
   }
 }

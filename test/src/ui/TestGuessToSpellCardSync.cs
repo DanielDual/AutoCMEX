@@ -195,6 +195,13 @@ public class TestGuessToSpellCardSync : TestClass
     clearDroppedBtn.SetupProperty(m => m.Disabled);
     var removeDroppedBtn = new Mock<IButton>();
     removeDroppedBtn.SetupProperty(m => m.Disabled);
+    // 分割条布局接线路需要这两个节点（本用例不关心布局，给可写替身即可）
+    var contentSplit = new Mock<ISplitContainer>();
+    contentSplit.SetupProperty(m => m.SplitOffset);
+    contentSplit.SetupProperty(m => m.Collapsed);
+    var leftSplit = new Mock<ISplitContainer>();
+    leftSplit.SetupProperty(m => m.SplitOffset);
+    leftSplit.SetupProperty(m => m.Collapsed);
 
     _guessPanel = new GuessingPanel();
     (_guessPanel as IAutoInit).IsTesting = true;
@@ -210,6 +217,8 @@ public class TestGuessToSpellCardSync : TestClass
         ["%RetryDroppedBtn"] = retryDroppedBtn.Object,
         ["%ClearDroppedBtn"] = clearDroppedBtn.Object,
         ["%RemoveDroppedBtn"] = removeDroppedBtn.Object,
+        ["%ContentArea"] = contentSplit.Object,
+        ["%LeftSplit"] = leftSplit.Object,
       }
     );
     _guessPanel.FakeDependency<DataManager>(_dm);

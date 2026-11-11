@@ -33,7 +33,7 @@ using Shouldly;
 /// </remarks>
 public class DataManagerSaveTest : TestClass
 {
-  /// <summary>SaveAll 负责写出的 7 个数据文件。</summary>
+  /// <summary>SaveAll 负责写出的 8 个数据文件。</summary>
   private static readonly string[] SavedFileNames =
   {
     "spellcard_table.json",
@@ -43,6 +43,7 @@ public class DataManagerSaveTest : TestClass
     "merge_config.json",
     "info_config.json",
     "recording_config.json",
+    "ui_layout.json",
   };
 
   private string _root = string.Empty;
@@ -176,7 +177,7 @@ public class DataManagerSaveTest : TestClass
           dm.TriggerAutoSave();
       });
 
-      // 防抖默认 1500ms：等自动保存真正把 7 个文件写完
+      // 防抖默认 1500ms：等自动保存真正把 8 个文件写完
       await WaitUntilAsync(
         () => SavedFileNames.All(name => File.Exists(Path.Combine(_dataDir, name))),
         timeoutMs: 8000
@@ -253,7 +254,7 @@ public class DataManagerSaveTest : TestClass
   /// 队列调度器 + 主线程排空模拟 <c>Callable.From(action).CallDeferred()</c>：
   /// 防抖到期发生在池线程，捕获动作必须排队后由主线程执行，否则读活 AutoList 会与主线程
   /// 的模型修改竞态。这里同时守住三条：<c>auto-save completed</c> 至少一次、捕获线程 == 主线程、
-  /// 7 个文件均可解析。
+  /// 8 个文件均可解析。
   /// </remarks>
   [Test]
   public async Task AutoSave_WhileMainThreadMutates_CapturesOnMainThreadAndSucceeds()
@@ -330,7 +331,7 @@ public class DataManagerSaveTest : TestClass
       // 防抖到期发生在池线程：必须经 dispatcher 回主线程后才执行捕获
       Volatile.Read(ref dispatchThreadId).ShouldNotBe(mainThreadId);
 
-      // 自动保存已落盘的 7 个文件都必须是完整可解析的 JSON
+      // 自动保存已落盘的 8 个文件都必须是完整可解析的 JSON
       foreach (var name in SavedFileNames)
         ShouldParseAsJson(Path.Combine(_dataDir, name));
 

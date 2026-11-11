@@ -54,6 +54,10 @@ public class MainWindowTest : TestClass
     var leftPanel = new Mock<IVBoxContainer>();
     var rightPanel = new Mock<IControl>();
 
+    // 主分割条：真实 HSplitContainer 适配成接口（与 AutoConnect 生产方式一致）
+    var mainContainer = new HSplitContainer();
+    _toCleanup.Add(mainContainer);
+
     _mergeBtn = new Mock<IButton>();
     _guessingBtn = new Mock<IButton>();
     _infoBtn = new Mock<IButton>();
@@ -93,6 +97,7 @@ public class MainWindowTest : TestClass
       {
         ["%LeftPanel"] = leftPanel.Object,
         ["%RightPanel"] = rightPanel.Object,
+        ["%MainContainer"] = GodotInterfaces.Adapt<ISplitContainer>(mainContainer),
         ["%MergeBtn"] = _mergeBtn.Object,
         ["%GuessingBtn"] = _guessingBtn.Object,
         ["%InfoBtn"] = _infoBtn.Object,
@@ -206,6 +211,31 @@ public class MainWindowTest : TestClass
 
     _webSocketPanel.Visible.ShouldBeTrue();
     _logPanel.Visible.ShouldBeFalse();
+  }
+
+  /// <summary>
+  /// 导航分割条是主窗口的布局容器，必须解析成接口类型（规则 27），且测试模式不建立接线路。
+  /// </summary>
+  [Test]
+  public void MainWindow_MainContainer_ResolvedAsSplitContainer()
+  {
+    _mainWindow.MainContainer.ShouldNotBeNull();
+    _mainWindow.MainContainer.ShouldBeAssignableTo<ISplitContainer>();
+  }
+
+  /// <summary>
+  /// 测试模式没有 DataManager：主分割条接线路不建立，OnProvided 不得触碰分割条。
+  /// </summary>
+  [Test]
+  public void MainWindow_TestMode_SkipsSplitLayoutWiring()
+  {
+    _mainWindow.HasMainNavSplitLinkForTests.ShouldBeFalse(
+      "测试模式没有 DataManager，不应建立布局接线路"
+    );
+    _mainWindow.IsExitingForTests.ShouldBeFalse();
+
+    // 分割条本身仍可用：读写属性不得抛异常（没有订阅者，写入不会落模型）
+    Should.NotThrow(() => _mainWindow.MainContainer.SplitOffset = 300);
   }
 
   [Test]

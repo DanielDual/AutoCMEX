@@ -6,8 +6,10 @@ using System.Linq;
 using System.Threading.Tasks;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
+using AutoCMEX.UI;
 using AutoCMEX.UI.Merge;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
 using Chickensoft.Sync.Primitives;
 using Godot;
@@ -106,6 +108,34 @@ public class TestMergePanelRuntime : TestClass
     panel.AutoRenameConflictsToggle.ShouldNotBeNull();
     panel.ExportFullPackageBtn.ShouldNotBeNull();
     panel.ExportMappingBtn.ShouldNotBeNull();
+  }
+
+  /// <summary>
+  /// 分割条布局记忆：预置 <c>merge.root</c> 记录后实例化真实场景，根分割条采用记忆 offset；
+  /// 拖拽信号把新 offset 写回模型（至少覆盖一个 key，其余 key 由单元测试
+  /// <see cref="SplitLayoutLinkTest"/> 覆盖）。
+  /// </summary>
+  [Test]
+  public void RealScene_AppliesRememberedSplitOffsetAndWritesBackOnDrag()
+  {
+    _dm = CreateDataManager();
+    _dm.UiLayout.Splits.Add(
+      new SplitLayoutRecord { Key = new(UiLayoutKeys.MergeRoot), Offset = new(420) }
+    );
+
+    var panel = InstantiatePanel();
+
+    var rootSplit = (HSplitContainer)panel.FindChild("RootSplit", owned: false);
+    rootSplit.ShouldNotBeNull();
+
+    var adaptedRoot = GodotInterfaces.Adapt<ISplitContainer>(rootSplit);
+    adaptedRoot.SplitOffset.ShouldBe(420);
+
+    // 拖拽信号里的 offset 是引擎给出的新位置：接线器据此更新内存模型
+    rootSplit.EmitSignal(SplitContainer.SignalName.Dragged, 500);
+
+    _dm.UiLayout.Splits.Single(record => record.Key.Value == UiLayoutKeys.MergeRoot)
+      .Offset.Value.ShouldBe(500);
   }
 
   /// <summary>

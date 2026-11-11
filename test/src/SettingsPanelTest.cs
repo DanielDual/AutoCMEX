@@ -2,7 +2,10 @@ namespace AutoCMEX;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using AutoCMEX.Core.Storage;
+using AutoCMEX.Models;
+using AutoCMEX.UI;
 using AutoCMEX.UI.Settings;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
@@ -19,6 +22,7 @@ public class SettingsPanelTest : TestClass
   private SettingsPanel _panel = default!;
   private DataManager _dm = default!;
   private Mock<IItemList> _categoryList = default!;
+  private Mock<ISplitContainer> _contentArea = default!;
   private InfoConfigPanel _infoConfigPanel = default!;
   private readonly List<Node> _toCleanup = new();
 
@@ -42,6 +46,9 @@ public class SettingsPanelTest : TestClass
     searchBar.SetupProperty(m => m.PlaceholderText);
     _categoryList = new Mock<IItemList>();
     var configArea = new Mock<IControl>();
+    _contentArea = new Mock<ISplitContainer>();
+    _contentArea.SetupProperty(m => m.SplitOffset);
+    _contentArea.SetupProperty(m => m.Collapsed);
 
     _panel.FakeNodeTree(
       new()
@@ -49,6 +56,7 @@ public class SettingsPanelTest : TestClass
         ["%SearchBar"] = searchBar.Object,
         ["%CategoryList"] = _categoryList.Object,
         ["%ConfigArea"] = configArea.Object,
+        ["%ContentArea"] = _contentArea.Object,
       }
     );
 
@@ -60,6 +68,12 @@ public class SettingsPanelTest : TestClass
     _toCleanup.Add(_infoConfigPanel);
 
     _panel.FakeDependency<DataManager>(_dm);
+
+    // 预置内容栏分割条布局记忆：OnResolved 建立接线路时应用
+    _dm.UiLayout.Splits.Add(
+      new SplitLayoutRecord { Key = new(UiLayoutKeys.SettingsContent), Offset = new(260) }
+    );
+
     _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
   }
@@ -142,5 +156,24 @@ public class SettingsPanelTest : TestClass
     // 切回「AI模型」应重新隐藏「信息」页
     _categoryList.Raise(m => m.ItemSelected += null, 0L);
     _infoConfigPanel.Visible.ShouldBeFalse();
+  }
+
+  // ==================== 分割条布局记忆 ====================
+
+  /// <summary>OnResolved 把内容栏分割条的记忆 offset 应用到场景节点。</summary>
+  [Test]
+  public void SettingsPanel_ContentArea_AppliesRememberedOffset()
+  {
+    _contentArea.Object.SplitOffset.ShouldBe(260);
+  }
+
+  /// <summary>拖拽内容栏分割条：模型里同键记录被更新为新 offset。</summary>
+  [Test]
+  public void SettingsPanel_ContentArea_Dragged_UpdatesModel()
+  {
+    _contentArea.Raise(m => m.Dragged += null, 480L);
+
+    _dm.UiLayout.Splits.Single(record => record.Key.Value == UiLayoutKeys.SettingsContent)
+      .Offset.Value.ShouldBe(480);
   }
 }

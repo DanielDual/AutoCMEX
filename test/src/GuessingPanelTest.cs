@@ -2,11 +2,13 @@ namespace AutoCMEX;
 
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Threading.Tasks;
 using AutoCMEX.Core.Ai;
 using AutoCMEX.Core.Guessing;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
+using AutoCMEX.UI;
 using AutoCMEX.UI.Guessing;
 using Chickensoft.AutoInject;
 using Chickensoft.GodotNodeInterfaces;
@@ -28,6 +30,8 @@ public class GuessingPanelTest : TestClass
   private Mock<IButton> _fuzzifyBtn = default!;
   private Mock<IRichTextLabel> _responseDisplay = default!;
   private Mock<IDroppedGuessRetryService> _retryService = default!;
+  private Mock<ISplitContainer> _contentSplit = default!;
+  private Mock<ISplitContainer> _leftSplit = default!;
   private readonly List<Node> _toCleanup = new();
 
   public GuessingPanelTest(Node testScene)
@@ -61,6 +65,13 @@ public class GuessingPanelTest : TestClass
     _removeDroppedBtn = new Mock<IButton>();
     _removeDroppedBtn.SetupProperty(m => m.Disabled);
 
+    _contentSplit = new Mock<ISplitContainer>();
+    _contentSplit.SetupProperty(m => m.SplitOffset);
+    _contentSplit.SetupProperty(m => m.Collapsed);
+    _leftSplit = new Mock<ISplitContainer>();
+    _leftSplit.SetupProperty(m => m.SplitOffset);
+    _leftSplit.SetupProperty(m => m.Collapsed);
+
     _panel.FakeNodeTree(
       new()
       {
@@ -72,6 +83,8 @@ public class GuessingPanelTest : TestClass
         ["%RetryDroppedBtn"] = _retryDroppedBtn.Object,
         ["%ClearDroppedBtn"] = _clearDroppedBtn.Object,
         ["%RemoveDroppedBtn"] = _removeDroppedBtn.Object,
+        ["%ContentArea"] = _contentSplit.Object,
+        ["%LeftSplit"] = _leftSplit.Object,
       }
     );
 
@@ -90,6 +103,19 @@ public class GuessingPanelTest : TestClass
     // 重试链路的终点在协调器里（它负责回帖），面板只负责发起与展示结局
     _retryService = new Mock<IDroppedGuessRetryService>();
     _panel.FakeDependency<IDroppedGuessRetryService>(_retryService.Object);
+
+    // 预置分割条布局记忆：OnResolved 建立接线路时应用（内容栏 300px、左栏 120px 且折叠）
+    _dm.UiLayout.Splits.Add(
+      new SplitLayoutRecord { Key = new(UiLayoutKeys.GuessingContent), Offset = new(300) }
+    );
+    _dm.UiLayout.Splits.Add(
+      new SplitLayoutRecord
+      {
+        Key = new(UiLayoutKeys.GuessingLeft),
+        Offset = new(120),
+        Collapsed = new(true),
+      }
+    );
 
     _panel._Notification((int)Node.NotificationEnterTree);
     _panel._Notification((int)Node.NotificationReady);
@@ -342,5 +368,37 @@ public class GuessingPanelTest : TestClass
       m => m.AddItem(It.IsAny<string>(), It.IsAny<Texture2D>(), It.IsAny<bool>()),
       Times.Never
     );
+  }
+
+  // ==================== 分割条布局记忆 ====================
+
+  /// <summary>OnResolved 把模型里的两条分割条记忆应用到场景节点。</summary>
+  [Test]
+  public void SplitLayout_AppliesRememberedValues()
+  {
+    _contentSplit.Object.SplitOffset.ShouldBe(300);
+    _leftSplit.Object.SplitOffset.ShouldBe(120);
+    _leftSplit.Object.Collapsed.ShouldBeTrue();
+  }
+
+  /// <summary>拖拽内容栏分割条：只写内存模型（信号参数即新 offset）。</summary>
+  [Test]
+  public void SplitLayout_Dragged_UpdatesModel()
+  {
+    _contentSplit.Raise(m => m.Dragged += null, 640L);
+
+    _dm.UiLayout.Splits.Single(record => record.Key.Value == UiLayoutKeys.GuessingContent)
+      .Offset.Value.ShouldBe(640);
+  }
+
+  /// <summary>拖拽左栏分割条：模型里已有的那条记录被原地更新，不新增重复键。</summary>
+  [Test]
+  public void SplitLayout_Dragged_UpdatesExistingRecord()
+  {
+    _leftSplit.Raise(m => m.Dragged += null, 260L);
+
+    _dm.UiLayout.Splits.Count(record => record.Key.Value == UiLayoutKeys.GuessingLeft).ShouldBe(1);
+    _dm.UiLayout.Splits.Single(record => record.Key.Value == UiLayoutKeys.GuessingLeft)
+      .Offset.Value.ShouldBe(260);
   }
 }
