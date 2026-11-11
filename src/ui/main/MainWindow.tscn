@@ -3,12 +3,18 @@
 [ext_resource type="Script" uid="uid://cxr7py3jcoul" path="res://src/ui/main/MainWindow.cs" id="1_h87f7"]
 [ext_resource type="PackedScene" uid="uid://b0o67jk40412y" path="res://src/ui/guessing/GuessingPanel.tscn" id="2_guessing"]
 [ext_resource type="PackedScene" uid="uid://gihori8we6rx" path="res://src/ui/settings/SettingsPanel.tscn" id="3_settings"]
+[ext_resource type="Script" uid="uid://2wmiys2krodb" path="res://src/ui/merge/MergePanel.cs" id="4_7oob7"]
 [ext_resource type="PackedScene" uid="uid://b4urpmt0s8fl6" path="res://src/ui/logging/LogPanel.tscn" id="4_log"]
 [ext_resource type="PackedScene" uid="uid://wsdpnl001" path="res://src/ui/websocket/WebSocketPanel.tscn" id="5_ws"]
+[ext_resource type="Script" uid="uid://c41htm0llrugj" path="res://src/ui/guessing/GuessingPanel.cs" id="6_jbwjj"]
 [ext_resource type="PackedScene" uid="uid://xa0vkqnpj1n0" path="res://src/ui/merge/MergePanel.tscn" id="6_merge"]
 [ext_resource type="PackedScene" uid="uid://cmb8ndpqvxtot" path="res://src/ui/info/InfoPanel.tscn" id="7_info"]
+[ext_resource type="Script" uid="uid://bq7n2xk4mveas" path="res://src/ui/info/InfoPanel.cs" id="8_hcsoo"]
 [ext_resource type="PackedScene" uid="uid://lpqr6wef3tj8" path="res://src/ui/help/HelpPanel.tscn" id="8_help"]
 [ext_resource type="Texture2D" uid="uid://vy3jnr6nuosn" path="res://src/assets/brand/logo-lockup.svg" id="9_logo"]
+[ext_resource type="Script" uid="uid://cmxsol0aje66q" path="res://src/ui/settings/SettingsPanel.cs" id="10_h4oum"]
+[ext_resource type="Script" uid="uid://dqi1jkjb7r7xb" path="res://src/ui/logging/LogPanel.cs" id="13_r7xnw"]
+[ext_resource type="Script" uid="uid://jk08wt8jy0bg" path="res://src/ui/websocket/WebSocketPanel.cs" id="15_hfla7"]
 
 [node name="Control2" type="Control" unique_id=764712909]
 layout_mode = 3
@@ -20,6 +26,7 @@ grow_vertical = 2
 script = ExtResource("1_h87f7")
 
 [node name="MainContainer" type="HSplitContainer" parent="." unique_id=2009167682]
+unique_name_in_owner = true
 layout_mode = 1
 anchors_preset = 15
 anchor_right = 1.0
@@ -36,8 +43,8 @@ layout_mode = 2
 
 [node name="Logo" type="TextureRect" parent="MainContainer/LeftPanel" unique_id=1068289772]
 custom_minimum_size = Vector2(184, 56)
-size_flags_horizontal = 4
 layout_mode = 2
+size_flags_horizontal = 4
 texture = ExtResource("9_logo")
 expand_mode = 1
 stretch_mode = 5
@@ -116,6 +123,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("4_7oob7")
 
 [node name="GuessingPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187084 instance=ExtResource("2_guessing")]
 unique_name_in_owner = true
@@ -126,6 +134,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("6_jbwjj")
 
 [node name="InfoPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187085 instance=ExtResource("7_info")]
 unique_name_in_owner = true
@@ -136,6 +145,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("8_hcsoo")
 
 [node name="SettingsPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187087 instance=ExtResource("3_settings")]
 unique_name_in_owner = true
@@ -146,6 +156,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("10_h4oum")
 
 [node name="HelpPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187088 instance=ExtResource("8_help")]
 unique_name_in_owner = true
@@ -166,6 +177,7 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("13_r7xnw")
 
 [node name="WebSocketPanel" type="Control" parent="MainContainer/RightPanel" unique_id=1266187091 instance=ExtResource("5_ws")]
 unique_name_in_owner = true
@@ -176,3 +188,4 @@ anchor_right = 1.0
 anchor_bottom = 1.0
 grow_horizontal = 2
 grow_vertical = 2
+script = ExtResource("15_hfla7")

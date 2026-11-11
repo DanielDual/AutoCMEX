@@ -435,12 +435,12 @@ public partial class SpellCardPanel : VBoxContainer
 
   private void OnImportCardTable()
   {
-    FileDialogSizing.Popup(ImportFileDialog);
+    FileDialogSizing.Popup(ImportFileDialog, _dm!);
   }
 
   private void OnExportCardTable()
   {
-    FileDialogSizing.Popup(ExportFileDialog);
+    FileDialogSizing.Popup(ExportFileDialog, _dm!);
   }
 
   private void OnCardExportFileSelected(string path)

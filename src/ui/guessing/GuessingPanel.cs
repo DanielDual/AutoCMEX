@@ -39,6 +39,18 @@ public partial class GuessingPanel : Control, IGuessingPanel
 
   #endregion
 
+  #region 分割条布局
+
+  /// <summary>猜测板块内容分割条（左 / 右两栏），位置由 <c>ui_layout.json</c> 的 <c>guessing.content</c> 记录还原。</summary>
+  [Node("%ContentArea")]
+  public ISplitContainer ContentArea { get; set; } = default!;
+
+  /// <summary>猜测板块左栏分割条（符卡 / 别名），对应语义键 <c>guessing.left</c>。</summary>
+  [Node("%LeftSplit")]
+  public ISplitContainer LeftSplit { get; set; } = default!;
+
+  #endregion
+
   #region Dropped UI Nodes
 
   [Node("%DroppedList")]
@@ -89,6 +101,9 @@ public partial class GuessingPanel : Control, IGuessingPanel
   private AutoList<DroppedGuess>.Binding? _droppedGuessesBinding;
   private bool _isRetrying;
 
+  /// <summary>两条分割条的布局接线路（内容 / 左栏），在 <see cref="OnResolved"/> 中按语义键建立并应用。</summary>
+  private readonly List<SplitLayoutLink> _splitLinks = new();
+
   /// <summary>本面板日志：依赖解析时按模块名取自 <see cref="DataManager.GetLogger"/>（生产为 ILogService 模块 logger，测试为 NullLog）。</summary>
   /// <remarks>解析前退回 NullLog 兜底；所有使用点都在 OnResolved 之后（按钮/重试等用户交互）。</remarks>
   private ILog _log = NullLog.Instance;
@@ -115,6 +130,10 @@ public partial class GuessingPanel : Control, IGuessingPanel
     _activeAiModelIdBinding?.Dispose();
     _aiModelsBinding?.Dispose();
     _droppedGuessesBinding?.Dispose();
+
+    // 退出前把两条分割条的当前布局写回模型；随后主窗口的 DataManager.Dispose 统一落盘
+    foreach (var link in _splitLinks)
+      link.Capture();
   }
 
   public void OnReady()
@@ -144,6 +163,7 @@ public partial class GuessingPanel : Control, IGuessingPanel
         .OnValue(_ => UpdateFuzzifyButtonState());
       _aiModelsBinding = _dm.Settings.AiModels.Bind().OnModify(() => UpdateFuzzifyButtonState());
       UpdateFuzzifyButtonState();
+      EnsureSplitLayoutLinks();
     }
 
     if (_guessProcessingService != null)
@@ -153,6 +173,24 @@ public partial class GuessingPanel : Control, IGuessingPanel
         .OnModify(() => CallDeferred(nameof(RefreshDroppedUI)));
       RefreshDroppedUI();
     }
+  }
+
+  /// <summary>
+  /// 建立并应用两条分割条的布局接线路（规则 6：依赖解析完成后接线；重复解析只重新应用，不重复订阅信号）。
+  /// </summary>
+  private void EnsureSplitLayoutLinks()
+  {
+    if (_dm is null)
+      return;
+
+    if (_splitLinks.Count == 0)
+    {
+      _splitLinks.Add(new SplitLayoutLink(ContentArea, UiLayoutKeys.GuessingContent, _dm));
+      _splitLinks.Add(new SplitLayoutLink(LeftSplit, UiLayoutKeys.GuessingLeft, _dm));
+    }
+
+    foreach (var link in _splitLinks)
+      link.Apply();
   }
 
   private void UpdateFuzzifyButtonState()

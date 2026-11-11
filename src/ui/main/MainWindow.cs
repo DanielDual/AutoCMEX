@@ -51,6 +51,10 @@ public partial class MainWindow
   [Node("%RightPanel")]
   public IControl RightPanel { get; set; } = default!;
 
+  /// <summary>主分割条（左导航 / 右内容）；位置由 <c>ui_layout.json</c> 的 <c>main.nav</c> 记录还原。</summary>
+  [Node("%MainContainer")]
+  public ISplitContainer MainContainer { get; set; } = default!;
+
   [Node("%MergeBtn")]
   public IButton MergeBtn { get; set; } = default!;
 
@@ -149,6 +153,12 @@ public partial class MainWindow
   private Control? _currentPanel;
   private const string DefaultPanel = "guessing";
 
+  /// <summary>主窗口几何接线路；测试模式不构造（<c>null</c>）。</summary>
+  private WindowLayoutState? _windowLayout;
+
+  /// <summary>主分割条的布局接线路；测试模式不构造（<c>null</c>）。</summary>
+  private SplitLayoutLink? _mainNavSplitLink;
+
   /// <summary>
   /// 当前运行时主窗口实例。Main 的退出路径不持有 DataManager，
   /// 经 <see cref="FlushPendingSave"/> 这个静态入口让主窗口先落盘（测试模式不注册）。
@@ -178,13 +188,26 @@ public partial class MainWindow
   public override void _Notification(int what)
   {
     if (what == (int)NotificationWMCloseRequest)
+    {
       _exiting = true;
+      // 关窗时先把窗口几何写进模型，再同步落盘；_ExitTree 仍会兜底一次（幂等）
+      _windowLayout?.Capture();
+      SavePendingChanges();
+    }
+    else if (what == (int)NotificationWMSizeChanged || what == (int)NotificationWMPositionChanged)
+    {
+      // 窗口尺寸 / 位置变化时刷新「还原矩形」：最大化状态下写回的是这里记下的普通态几何
+      _windowLayout?.Track();
+    }
 
     this.Notify(what);
   }
 
   /// <summary>是否已立起退出护栏（测试用：验证关窗通知在树拆解前就生效）。</summary>
   internal bool IsExitingForTests => _exiting;
+
+  /// <summary>是否已建立主分割条接线路（测试用：验证测试模式跳过接线）。</summary>
+  internal bool HasMainNavSplitLinkForTests => _mainNavSplitLink is not null;
 
   public override void _ExitTree()
   {
@@ -201,6 +224,9 @@ public partial class MainWindow
     _webSocketPortBinding?.Dispose();
     _koishiWebSocketUrlBinding?.Dispose();
     _webSocketLifecycle?.Dispose();
+    // 退出前把窗口几何与导航分割条写回模型：随后 Dispose 的末次落盘把它们写进 ui_layout.json
+    _windowLayout?.Capture();
+    _mainNavSplitLink?.Capture();
     // DataManager.Dispose 内部会再同步落盘一次，覆盖「关窗通知没走到」的退出路径
     _dataManager?.Dispose();
     _finalSaveFlushed = true;
@@ -276,6 +302,14 @@ public partial class MainWindow
       );
       _dataManager.LoadAll();
 
+      // 主窗口几何还原：数据加载完成后立即应用（越早越不闪），测试模式不进入本分支
+      _windowLayout = new WindowLayoutState(
+        AdaptMainWindow(),
+        _dataManager,
+        _logService.GetLogger(nameof(WindowLayoutState))
+      );
+      _windowLayout.Apply();
+
       var aiLog = _logService.GetLogger(nameof(AiServiceFactory));
       _aiServiceFactory = new AiServiceFactory(_dataManager, aiLog);
 
@@ -333,6 +367,15 @@ public partial class MainWindow
   {
     // 所有依赖已提供，初始化 UI
     LeftPanel.CustomMinimumSize = new Vector2(LeftPanelWidth, 0);
+
+    // 导航分割条布局还原（规则 6：依赖解析完成后接线；测试模式没有 DataManager，跳过）。
+    // 取到局部变量再判空：直接对字段判空会让后续对 _dataManager 的读取被流分析视为可能为空
+    var dataManager = _dataManager;
+    if (dataManager is not null)
+    {
+      _mainNavSplitLink = new SplitLayoutLink(MainContainer, UiLayoutKeys.MainNav, dataManager);
+      _mainNavSplitLink.Apply();
+    }
 
     // 注册导航按钮
     _navButtons["merge"] = MergeBtn;
@@ -424,6 +467,19 @@ public partial class MainWindow
     {
       btn.Disabled = k == key;
     }
+  }
+
+  /// <summary>
+  /// 取主窗口的节点接口适配器；拿不到（未入树 / 适配失败）时返回 <c>null</c>，让几何接线路整体退化。
+  /// </summary>
+  /// <returns>主窗口的 <see cref="IWindow"/> 适配器，或 <c>null</c>。</returns>
+  private IWindow? AdaptMainWindow()
+  {
+    var window = GetWindow();
+    if (window is null)
+      return null;
+
+    return GodotInterfaces.AdaptNode(window) as IWindow;
   }
 
   /// <summary>

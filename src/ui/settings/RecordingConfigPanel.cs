@@ -147,14 +147,14 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   private void OnChooseEngineDirPressed()
   {
     PrepareDialog(EngineDirDialog, _config.EngineDir.Value);
-    FileDialogSizing.Popup(EngineDirDialog);
+    FileDialogSizing.Popup(EngineDirDialog, _dm);
   }
 
   /// <summary>点「选择目录…」：定位到当前沙箱根后弹出目录选择框。</summary>
   private void OnChooseSandboxRootPressed()
   {
     PrepareDialog(SandboxRootDialog, _config.SandboxRoot.Value);
-    FileDialogSizing.Popup(SandboxRootDialog);
+    FileDialogSizing.Popup(SandboxRootDialog, _dm);
   }
 
   /// <summary>AutoInject 依赖解析完成：取配置、挂绑定并首次渲染；重复解析时先释放上一轮绑定。</summary>

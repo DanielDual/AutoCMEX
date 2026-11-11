@@ -2,6 +2,8 @@ namespace AutoCMEX.UI;
 
 using System;
 using System.Runtime.CompilerServices;
+using AutoCMEX.Core.Storage;
+using AutoCMEX.Models;
 using Chickensoft.GodotNodeInterfaces;
 using Godot;
 
@@ -14,11 +16,16 @@ using Godot;
 /// （写死的像素值不随主窗口与主题缩放变化）。
 /// </para>
 /// <para>
-/// 尺寸记忆是<b>进程内全局</b>的，且只在用户真的把某个对话框拖成别的尺寸时才更新：之后所有文件对话框都用这个尺寸。
+/// 尺寸记忆是<b>全局</b>的，且只在用户真的把某个对话框拖成别的尺寸时才更新：之后所有文件对话框都用这个尺寸。
 /// 用户没改过尺寸时不会写记忆，仍按主窗口<b>视口尺寸</b> × <see cref="DefaultParentRatio"/> 打开
 /// （主窗口尺寸变化时跟着重算）。记忆尺寸在显示时按当前视口收敛，但不会把收敛后的值写回记忆
 /// （主窗口临时缩小后恢复，弹窗仍回到用户当初的尺寸）；引擎把窗口抬到内容最小尺寸也不算用户改动。
-/// 跨重启不记忆。
+/// 跨重启记忆：带 <see cref="DataManager"/> 的弹出入口会把用户真改过的尺寸写回
+/// <c>ui_layout.json</c> 并触发防抖保存，下次启动首次弹出时直接采用（进程内记忆仍优先）。
+/// </para>
+/// <para>
+/// 两个入口的区别：无参重载只做进程内记忆（行为与旧实现一致，兼容既有调用与测试）；带
+/// <see cref="DataManager"/> 的重载多一层落盘记忆，供所有真实面板使用。
 /// </para>
 /// <para>
 /// 父尺寸必须取 <c>Root.GetVisibleRect().Size</c>（内容缩放后的 UI 坐标），不能用 <c>Root.Size</c>（窗口像素尺寸）：
@@ -68,10 +75,17 @@ public static class FileDialogSizing
   }
 
   /// <summary>
-  /// 统一弹出入口（节点接口形式，场景内注入的对话框）。
+  /// 统一弹出入口（节点接口形式，场景内注入的对话框），带跨重启的尺寸记忆。
   /// </summary>
   /// <param name="dialog">要弹出的文件对话框；可见性与信号连接仍由调用方负责。</param>
-  public static void Popup(IFileDialog dialog) => Open(dialog, dialog);
+  /// <param name="data">数据管理器：优先采用 <c>ui_layout.json</c> 里记住的尺寸，用户改过时写回并触发保存。</param>
+  public static void Popup(IFileDialog dialog, DataManager data) => Open(dialog, dialog, data);
+
+  /// <summary>
+  /// 统一弹出入口（节点接口形式），只做进程内尺寸记忆（行为与旧实现一致）。
+  /// </summary>
+  /// <param name="dialog">要弹出的文件对话框；可见性与信号连接仍由调用方负责。</param>
+  public static void Popup(IFileDialog dialog) => Open(dialog, dialog, null);
 
   /// <summary>
   /// 统一弹出入口（具体节点形式，代码创建的 <see cref="FileDialog"/>）。
@@ -88,36 +102,64 @@ public static class FileDialogSizing
       return;
     }
 
-    Open(adapted, dialog);
+    Open(adapted, dialog, null);
   }
 
-  /// <summary>按全局记忆尺寸（或视口 80%）弹出，并在 popup 后补回被引擎钳小的尺寸。</summary>
+  /// <summary>按记忆尺寸（进程内 → 落盘 → 视口 80%）弹出，并在 popup 后补回被引擎钳小的尺寸。</summary>
   /// <param name="dialog">节点接口形式的对话框（适配器或 Mock）。</param>
   /// <param name="instanceKey">对话框实例键：用于保证同一实例只挂一次「隐藏时记住尺寸」。</param>
-  private static void Open(IFileDialog dialog, object instanceKey)
+  /// <param name="data">可选的数据管理器；为空时只做进程内记忆。</param>
+  private static void Open(IFileDialog dialog, object instanceKey, DataManager? data)
   {
-    Hook(dialog, instanceKey);
+    Hook(dialog, instanceKey, data);
 
     var viewport = ViewportSize(dialog);
-    var target = Clamp(_remembered ?? Resolve(viewport), viewport);
+    var target = Clamp(ResolveTarget(viewport, data), viewport);
     _applied.AddOrUpdate(instanceKey, target);
     dialog.PopupCentered(target);
     // popup 会把尺寸钳到屏幕可用区域的像素值，这里补回目标尺寸（位置已按 target 居中）
     dialog.Size = target;
   }
 
+  /// <summary>
+  /// 解析本次弹出的目标尺寸：进程内记忆优先，其次 <c>ui_layout.json</c> 里上次真改过的尺寸，
+  /// 都没有时按视口 80%。
+  /// </summary>
+  /// <param name="viewport">主窗口视口尺寸（UI 坐标）。</param>
+  /// <param name="data">可选的数据管理器；为空表示只做进程内记忆。</param>
+  /// <returns>未经视口收敛的目标尺寸。</returns>
+  private static Vector2I ResolveTarget(Vector2I viewport, DataManager? data)
+  {
+    if (_remembered is { } remembered)
+      return remembered;
+
+    var persistedWidth = data?.UiLayout.FileDialogWidth.Value;
+    var persistedHeight = data?.UiLayout.FileDialogHeight.Value;
+    if (persistedWidth is > 0 && persistedHeight is > 0)
+      return new Vector2I(persistedWidth.Value, persistedHeight.Value);
+
+    return Resolve(viewport);
+  }
+
   /// <summary>给对话框挂「隐藏时回写尺寸」，同一实例只挂一次。</summary>
   /// <param name="dialog">要挂的对话框。</param>
   /// <param name="instanceKey">区分实例的键：场景节点用适配器本身，代码创建的节点用具体节点。</param>
-  private static void Hook(IFileDialog dialog, object instanceKey)
+  /// <param name="data">可选的数据管理器；后一次带数据弹出时补上，不重复订阅。</param>
+  private static void Hook(IFileDialog dialog, object instanceKey, DataManager? data)
   {
-    if (_hooked.TryGetValue(instanceKey, out _))
+    if (_hooked.TryGetValue(instanceKey, out var existing))
+    {
+      // 同一实例可能先经无记忆入口弹出过：这里补上落盘来源，不重复挂处理函数
+      existing.BindData(data);
       return;
+    }
 
     // 记下委托本体，才能在 ResetMemoryForTests 里成对解绑：只清表不解绑会让同一实例
     // 在重新弹出后再挂一个处理函数，测试之间累积、且隐藏一次会回写多次。
     var handler = new Action(() => RememberSizeOnHide(dialog, instanceKey));
-    _hooked.AddOrUpdate(instanceKey, new HookedDialog(dialog, handler));
+    var hooked = new HookedDialog(dialog, handler);
+    hooked.BindData(data);
+    _hooked.AddOrUpdate(instanceKey, hooked);
     dialog.VisibilityChanged += handler;
   }
 
@@ -153,6 +195,15 @@ public static class FileDialogSizing
     }
 
     _remembered = size;
+
+    // 跨重启记忆：同一份尺寸写回 ui_layout.json，并排一次防抖保存
+    // （与其余配置一致走 DataManager 的唯一持久化入口）
+    if (_hooked.TryGetValue(instanceKey, out var hooked) && hooked.UiLayout is { } uiLayout)
+    {
+      uiLayout.FileDialogWidth.Value = size.X;
+      uiLayout.FileDialogHeight.Value = size.Y;
+      hooked.TriggerAutoSave?.Invoke();
+    }
   }
 
   /// <summary>取主窗口视口尺寸（内容缩放后的 UI 坐标）；拿不到时回落兜底尺寸。</summary>
@@ -220,5 +271,24 @@ public static class FileDialogSizing
 
     /// <summary>当初订阅的委托本体（解绑必须用同一实例）。</summary>
     public Action Handler { get; }
+
+    /// <summary>落盘记忆的来源模型；无参重载弹出时为 <c>null</c>（只做进程内记忆）。</summary>
+    public UiLayoutData? UiLayout { get; private set; }
+
+    /// <summary>触发防抖自动保存的委托；与 <see cref="UiLayout"/> 同时绑定。</summary>
+    public Action? TriggerAutoSave { get; private set; }
+
+    /// <summary>
+    /// 绑定落盘记忆来源（只在提供数据管理器时生效；已绑定过则不覆盖）。
+    /// </summary>
+    /// <param name="data">调用方传入的数据管理器；<c>null</c> 表示本次只做进程内记忆。</param>
+    public void BindData(DataManager? data)
+    {
+      if (data is null || UiLayout is not null)
+        return;
+
+      UiLayout = data.UiLayout;
+      TriggerAutoSave = data.TriggerAutoSave;
+    }
   }
 }

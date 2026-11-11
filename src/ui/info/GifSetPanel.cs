@@ -539,10 +539,10 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
   private void OnCardScrollValueChanged(double value) => RefreshPlayback();
 
   /// <summary>导入文件夹：选择器是场景内的常驻节点，信号已在 <see cref="OnReady"/> 连过一次。</summary>
-  private void OnImportFolderPressed() => FileDialogSizing.Popup(FolderDialog);
+  private void OnImportFolderPressed() => FileDialogSizing.Popup(FolderDialog, _dataManager!);
 
   /// <summary>导入压缩包：选择器是场景内的常驻节点，信号已在 <see cref="OnReady"/> 连过一次。</summary>
-  private void OnImportZipPressed() => FileDialogSizing.Popup(ZipDialog);
+  private void OnImportZipPressed() => FileDialogSizing.Popup(ZipDialog, _dataManager!);
 
   private void OnImportFolderSelected(string path) => Import(() => _gifSets!.ImportFolder(path));
 
@@ -620,7 +620,7 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
     }
 
     _pendingModPackZip = null;
-    FileDialogSizing.Popup(RecordZipDialog);
+    FileDialogSizing.Popup(RecordZipDialog, _dataManager!);
   }
 
   /// <summary>选定工程包后接着选输出目录。</summary>
@@ -628,7 +628,7 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
   private void OnRecordZipSelected(string path)
   {
     _pendingModPackZip = path;
-    FileDialogSizing.Popup(RecordOutputDirDialog);
+    FileDialogSizing.Popup(RecordOutputDirDialog, _dataManager!);
   }
 
   /// <summary>选定输出目录后起录。</summary>

@@ -130,6 +130,22 @@ public partial class MergePanel : Control, IMergePanel
 
   #endregion
 
+  #region 分割条布局
+
+  /// <summary>整合板块根分割条（左 / 右两栏），位置由 <c>ui_layout.json</c> 的 <c>merge.root</c> 记录还原。</summary>
+  [Node("%RootSplit")]
+  public ISplitContainer RootSplit { get; set; } = default!;
+
+  /// <summary>整合板块左栏分割条（左上 / 左下），对应语义键 <c>merge.left</c>。</summary>
+  [Node("%LeftSplit")]
+  public ISplitContainer LeftSplit { get; set; } = default!;
+
+  /// <summary>整合板块右栏分割条（右上 / 右下），对应语义键 <c>merge.right</c>。</summary>
+  [Node("%RightSplit")]
+  public ISplitContainer RightSplit { get; set; } = default!;
+
+  #endregion
+
   #region Dependencies
 
   [Dependency]
@@ -147,6 +163,9 @@ public partial class MergePanel : Control, IMergePanel
   private AutoList<SpellCardMappingEntry>.Binding? _mappingBinding;
   private AutoValue<int>.Binding? _selectedPackageIndexBinding;
   private int _selectedMapping = -1;
+
+  /// <summary>三条分割条的布局接线路（根 / 左 / 右），在 <see cref="OnResolved"/> 中按语义键建立并应用。</summary>
+  private readonly List<SplitLayoutLink> _splitLinks = new();
 
   /// <summary>每个创作者包 <see cref="CreatorPackage.IsDeleted"/> 的元素级绑定（包增删时重挂）。</summary>
   /// <remarks>
@@ -173,6 +192,10 @@ public partial class MergePanel : Control, IMergePanel
     _mappingBinding?.Dispose();
     _selectedPackageIndexBinding?.Dispose();
     DisposePackageDeletedBindings();
+
+    // 退出前把三条分割条的当前布局写回模型；随后主窗口的 DataManager.Dispose 统一落盘
+    foreach (var link in _splitLinks)
+      link.Capture();
   }
 
   public void OnReady()
@@ -247,8 +270,29 @@ public partial class MergePanel : Control, IMergePanel
     PluginDllEdit.TextChanged += _ => SyncConfigToModel();
     OutputDirEdit.TextChanged += _ => SyncConfigToModel();
 
+    EnsureSplitLayoutLinks();
+
     RefreshPackageList();
     RefreshMappingList();
+  }
+
+  /// <summary>
+  /// 建立并应用三条分割条的布局接线路（规则 6：依赖解析完成后接线；重复解析只重新应用，不重复订阅信号）。
+  /// </summary>
+  private void EnsureSplitLayoutLinks()
+  {
+    if (_dm is null)
+      return;
+
+    if (_splitLinks.Count == 0)
+    {
+      _splitLinks.Add(new SplitLayoutLink(RootSplit, UiLayoutKeys.MergeRoot, _dm));
+      _splitLinks.Add(new SplitLayoutLink(LeftSplit, UiLayoutKeys.MergeLeft, _dm));
+      _splitLinks.Add(new SplitLayoutLink(RightSplit, UiLayoutKeys.MergeRight, _dm));
+    }
+
+    foreach (var link in _splitLinks)
+      link.Apply();
   }
 
   #region 数据源
@@ -468,7 +512,7 @@ public partial class MergePanel : Control, IMergePanel
     if (dialog is null || !GodotObject.IsInstanceValid(dialog))
       return;
 
-    FileDialogSizing.Popup(ImportPackageDialog);
+    FileDialogSizing.Popup(ImportPackageDialog, _dm);
   }
 
   /// <summary>选定创作者包：解包成功后追加包与对应表映射，并触发自动保存；失败只记日志。</summary>

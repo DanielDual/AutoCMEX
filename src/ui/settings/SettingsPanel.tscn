@@ -26,6 +26,7 @@ placeholder_text = "搜索配置项..."
 layout_mode = 2
 
 [node name="ContentArea" type="HSplitContainer" parent="MainContainer" unique_id=912011176]
+unique_name_in_owner = true
 layout_mode = 2
 size_flags_vertical = 3
 split_offsets = PackedInt32Array(150)

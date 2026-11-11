@@ -199,12 +199,12 @@ public partial class AliasPanel : VBoxContainer
 
   private void OnImportAliasTable()
   {
-    FileDialogSizing.Popup(ImportFileDialog);
+    FileDialogSizing.Popup(ImportFileDialog, _dm!);
   }
 
   private void OnExportAliasTable()
   {
-    FileDialogSizing.Popup(ExportFileDialog);
+    FileDialogSizing.Popup(ExportFileDialog, _dm!);
   }
 
   /// <summary>导出别名表：第一列主名，之后每列一条别名，列数按最长的一行补齐。</summary>

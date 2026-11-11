@@ -1,6 +1,7 @@
 namespace AutoCMEX.UI.Settings;
 
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using AutoCMEX;
 using AutoCMEX.Core.Ai;
@@ -30,6 +31,10 @@ public partial class SettingsPanel : Control, ISettingsPanel
   [Node("%ConfigArea")]
   public IControl ConfigArea { get; set; } = default!;
 
+  /// <summary>设置板块内容分割条（类别 / 配置两栏），位置由 <c>ui_layout.json</c> 的 <c>settings.content</c> 记录还原。</summary>
+  [Node("%ContentArea")]
+  public ISplitContainer ContentArea { get; set; } = default!;
+
   [Node("%AiModelConfigPanel")]
   public IAiModelConfigPanel AiModelConfigPanel { get; set; } = default!;
 
@@ -51,6 +56,9 @@ public partial class SettingsPanel : Control, ISettingsPanel
   private AppSettings _settings = new();
   private DataManager? _dm;
 
+  /// <summary>内容分割条的布局接线路，在 <see cref="OnResolved"/> 中按语义键建立并应用。</summary>
+  private readonly List<SplitLayoutLink> _splitLinks = new();
+
   private readonly string[] _categories =
   {
     "AI模型",
@@ -64,6 +72,15 @@ public partial class SettingsPanel : Control, ISettingsPanel
   private int _currentCategory = -1;
 
   public override void _Notification(int what) => this.Notify(what);
+
+  /// <summary>
+  /// 退出前把内容分割条的当前布局写回模型；随后主窗口的 <c>DataManager.Dispose</c> 统一落盘。
+  /// </summary>
+  public override void _ExitTree()
+  {
+    foreach (var link in _splitLinks)
+      link.Capture();
+  }
 
   public void OnReady()
   {
@@ -86,7 +103,25 @@ public partial class SettingsPanel : Control, ISettingsPanel
   {
     _dm = DataManager;
     if (_dm != null)
+    {
       _settings = _dm.Settings;
+      EnsureSplitLayoutLink();
+    }
+  }
+
+  /// <summary>
+  /// 建立并应用内容分割条的布局接线路（规则 6：依赖解析完成后接线；重复解析只重新应用，不重复订阅信号）。
+  /// </summary>
+  private void EnsureSplitLayoutLink()
+  {
+    if (_dm is null)
+      return;
+
+    if (_splitLinks.Count == 0)
+      _splitLinks.Add(new SplitLayoutLink(ContentArea, UiLayoutKeys.SettingsContent, _dm));
+
+    foreach (var link in _splitLinks)
+      link.Apply();
   }
 
   private void OnCategorySelected(long index)

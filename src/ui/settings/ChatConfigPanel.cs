@@ -393,7 +393,7 @@ public partial class ChatConfigPanel : VBoxContainer, IChatConfigPanel
   private void OnInstallPlugin()
   {
     PluginFileDialog.Title = SelectDirectoryHint;
-    FileDialogSizing.Popup(PluginFileDialog);
+    FileDialogSizing.Popup(PluginFileDialog, _dm!);
   }
 
   /// <summary>
