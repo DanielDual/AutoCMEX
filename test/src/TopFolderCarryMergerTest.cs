@@ -127,4 +127,87 @@ public class TopFolderCarryMergerTest : TestClass
     reparsed.ShouldNotBeNull();
     reparsed.Nodes.Count.ShouldBe(r.Result.Merged.Count);
   }
+
+  // ==================== 资源物理落盘计划（ResourcePlacements，Phase 1 双改） ====================
+
+  /// <summary>含一个顶层文件夹（内含资源）+ 一张符卡的创作者包（文件夹名与资源路径可指定）。</summary>
+  private static string PackageDocWithResource(
+    string folderName,
+    string cardName,
+    string resourcePath
+  ) =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + folderName
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\""
+    + resourcePath
+    + "\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + cardName
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}\n";
+
+  /// <summary>把两个创作者包按映射顺序合并（整文件夹搬运算法）。</summary>
+  private static MergeResult MergeTwo(string pkgTextA, string pkgTextB, MergeOptions opt)
+  {
+    var template = LstgesParser.ParseDocument(BaseTemplate, out _)!;
+    var pkgA = new CreatorPackageDoc("A", LstgesParser.ParseDocument(pkgTextA, out _)!);
+    var pkgB = new CreatorPackageDoc("B", LstgesParser.ParseDocument(pkgTextB, out _)!);
+    return new TopFolderCarryMerger().Merge(
+      template,
+      new[] { pkgA, pkgB },
+      new[] { new MergeMappingEntry(0, 0, "A"), new MergeMappingEntry(1, 0, "B") },
+      opt
+    );
+  }
+
+  [Test]
+  public void Merge_ResourcePlacements_RecordedOnAutoRename()
+  {
+    var result = MergeTwo(
+      PackageDocWithResource("resAlice", "卡A", "res/boss.png"),
+      PackageDocWithResource("resBob", "卡B", "res/boss.png"),
+      new MergeOptions { AutoRenameResources = true }
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 双改契约与提取式一致：仅跨包同名资源收录，目标保留目录仅换文件名。
+    result.ResourcePlacements.Count.ShouldBe(2);
+    result.ResourcePlacements.ShouldContain(
+      new ResourcePlacement("A", "res/boss.png", "res/A_boss.png")
+    );
+    result.ResourcePlacements.ShouldContain(
+      new ResourcePlacement("B", "res/boss.png", "res/B_boss.png")
+    );
+  }
+
+  [Test]
+  public void Merge_ResourcePlacements_EmptyWhenRenameDisabled()
+  {
+    var result = MergeTwo(
+      PackageDocWithResource("resAlice", "卡A", "res/boss.png"),
+      PackageDocWithResource("resBob", "卡B", "res/boss.png"),
+      new MergeOptions()
+    );
+    result.IsSuccess.ShouldBeTrue();
+    result
+      .Conflicts.Any(c => c.Kind == MergeConflictKind.Resource && c.Name == "boss.png")
+      .ShouldBeTrue();
+    result.ResourcePlacements.ShouldBeEmpty();
+  }
+
+  [Test]
+  public void Merge_ResourcePlacements_EmptyWithoutCollision()
+  {
+    var result = MergeTwo(
+      PackageDocWithResource("resAlice", "卡A", "res/a.png"),
+      PackageDocWithResource("resBob", "卡B", "res/b.png"),
+      new MergeOptions { AutoRenameResources = true }
+    );
+    result.IsSuccess.ShouldBeTrue();
+    result.Conflicts.Any(c => c.Kind == MergeConflictKind.Resource).ShouldBeFalse();
+    result.ResourcePlacements.ShouldBeEmpty();
+  }
 }

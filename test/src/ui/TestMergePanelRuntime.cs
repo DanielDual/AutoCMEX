@@ -2,8 +2,11 @@ namespace AutoCMEX;
 
 using System;
 using System.Collections.Generic;
+using System.IO;
+using System.IO.Compression;
 using System.Linq;
 using System.Threading.Tasks;
+using AutoCMEX.Core.Merge;
 using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI;
@@ -24,6 +27,9 @@ public class TestMergePanelRuntime : TestClass
   private Node _host = default!;
   private DataManager _dm = default!;
 
+  /// <summary>导出夹具临时目录（<see cref="Cleanup"/> 统一清理；未使用夹具时为空串）。</summary>
+  private string _fixtureDir = string.Empty;
+
   public TestMergePanelRuntime(Node testScene)
     : base(testScene) { }
 
@@ -33,6 +39,16 @@ public class TestMergePanelRuntime : TestClass
     if (_host != null && !_host.IsQueuedForDeletion())
       _host.QueueFree();
     _dm?.Dispose();
+    if (!string.IsNullOrEmpty(_fixtureDir) && Directory.Exists(_fixtureDir))
+    {
+      try
+      {
+        Directory.Delete(_fixtureDir, true);
+      }
+      catch
+      { /* 清理失败不影响断言 */
+      }
+    }
   }
 
   private DataManager CreateDataManager()
@@ -784,5 +800,196 @@ public class TestMergePanelRuntime : TestClass
       .ShouldBe(new List<string> { "Alice", "Alice", "Bob", "Bob" });
     MappingNames(_dm.MergeConfig.Mapping)
       .ShouldBe(new List<string> { "a1", "a2", "b1", "b2" }, ignoreOrder: true);
+  }
+
+  // ==================== Phase 1：导出警告在冲突列表可见 ====================
+
+  /// <summary>双包同名资源导出夹具用的最小模板（含符卡/资源/对象三个注入点注释）。</summary>
+  private const string AutoRenameExportTemplate =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert spellcards here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert resources here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert objects here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n";
+
+  /// <summary>含一个文件夹与一张符卡、并引用 <c>res/shared.png</c> 的创作者包工程文本。</summary>
+  private static string AutoRenamePackageText(string card) =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"Resources\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"res/shared.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + card
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}\n";
+
+  /// <summary>
+  /// 构造「双包同名资源 + 其中一个包缺物理图片」的真实导出夹具（写入 <see cref="_fixtureDir"/>，
+  /// 由 <see cref="Cleanup"/> 清理），并预置模板/输出目录/开关；返回模板路径。
+  /// </summary>
+  private string CreateAutoRenameMissingImageFixture()
+  {
+    _fixtureDir = Path.Combine(
+      Path.GetTempPath(),
+      "AutoCMEX_MergePanelExport_" + Guid.NewGuid().ToString("N")[..8]
+    );
+    Directory.CreateDirectory(_fixtureDir);
+
+    var templatePath = Path.Combine(_fixtureDir, "template.lstgproj");
+    File.WriteAllText(templatePath, AutoRenameExportTemplate);
+
+    _dm = CreateDataManager();
+    foreach (
+      var (packageName, card, includeImage) in new[]
+      {
+        ("pkg_alice", "卡A", true),
+        ("pkg_bob", "卡B", false),
+      }
+    )
+    {
+      var zipPath = CreateSharedResourcePackage(packageName, card, includeImage);
+      var import = MergeImporter.ImportZip(zipPath);
+      import.IsSuccess.ShouldBeTrue();
+      _dm.CreatorPackages.Add(import.Package!);
+      foreach (var importCard in import.Cards)
+        _dm.MergeConfig.Mapping.Add(importCard);
+    }
+
+    _dm.MergeConfig.TemplatePath.Value = templatePath;
+    _dm.MergeConfig.OutputDir.Value = Path.Combine(_fixtureDir, "out");
+    _dm.MergeConfig.OutputName.Value = "mod";
+    _dm.MergeConfig.IncludeLstges.Value = true;
+    _dm.MergeConfig.AutoRenameConflicts.Value = true;
+    return templatePath;
+  }
+
+  /// <summary>
+  /// 写一个含 <c>root.lstges</c>（引用 <c>res/shared.png</c>）的创作者包 zip；
+  /// <paramref name="includeImage"/> 为 false 时故意不放物理图片。
+  /// </summary>
+  private string CreateSharedResourcePackage(string packageName, string card, bool includeImage)
+  {
+    var srcDir = Path.Combine(_fixtureDir, "src_" + packageName);
+    Directory.CreateDirectory(srcDir);
+    var lstgesPath = Path.Combine(srcDir, "root.lstges");
+    File.WriteAllText(lstgesPath, AutoRenamePackageText(card));
+
+    var zipPath = Path.Combine(_fixtureDir, packageName + ".zip");
+    using var fs = File.Create(zipPath);
+    using var zip = new ZipArchive(fs, ZipArchiveMode.Create);
+    zip.CreateEntryFromFile(lstgesPath, "root.lstges");
+    if (includeImage)
+    {
+      var imgPath = Path.Combine(srcDir, "shared.png");
+      File.WriteAllText(imgPath, "PNG-" + packageName);
+      zip.CreateEntryFromFile(imgPath, "res/shared.png");
+    }
+    return zipPath;
+  }
+
+  [Test]
+  public async Task RealScene_ExportFullPackage_ShowsMissingRenameWarningRow()
+  {
+    CreateAutoRenameMissingImageFixture();
+    var panel = InstantiatePanel();
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    // 驱动真实「导出完整包」按钮（未配置 Sharp → 跳过 zip 打包，不阻塞合并/警告展示）
+    panel
+      .GetNode<Godot.Button>("%ExportFullPackageBtn")
+      .EmitSignal(Godot.Button.SignalName.Pressed);
+
+    var rows = Enumerable
+      .Range(0, panel.ConflictList.ItemCount)
+      .Select(i => panel.ConflictList.GetItemText(i))
+      .ToList();
+
+    // 正向：缺失资源警告以「[警告]」前缀出现在冲突列表，且带包名便于定位
+    rows.ShouldContain(r => r.StartsWith("[警告]"), string.Join(" | ", rows));
+    rows.ShouldContain(
+      r => r.Contains("自动改名资源缺失") && r.Contains("pkg_bob"),
+      string.Join(" | ", rows)
+    );
+    // 警告不阻塞导出：走完全流程并提示对应表已导出
+    rows.ShouldContain(r => r.StartsWith("[完成]"));
+  }
+
+  // ==================== Phase 1：算法联动置灰 + 实验性标签 ====================
+
+  [Test]
+  public async Task RealScene_SwitchAlgorithm_TogglesGroupByCreatorAvailability()
+  {
+    _dm = CreateDataManager();
+    var panel = InstantiatePanel();
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    // 默认提取式：可用、无 hover 说明
+    _dm.MergeConfig.Algorithm.Value.ShouldBe(MergeAlgorithm.Extractive);
+    panel.GroupByCreatorFoldersToggle.Disabled.ShouldBeFalse();
+    panel.GroupByCreatorFoldersToggle.TooltipText.ShouldBeNullOrEmpty();
+
+    var node =
+      panel.FindChild("MergeAlgorithmOption", owned: false, recursive: true) as Godot.OptionButton;
+    node.ShouldNotBeNull();
+
+    // 用户切到按顶层文件夹整搬 → 置灰 + hover 说明；模型写回
+    node!.Selected = (int)MergeAlgorithm.TopFolderCarry;
+    node.EmitSignal(Godot.OptionButton.SignalName.ItemSelected, (int)MergeAlgorithm.TopFolderCarry);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    _dm.MergeConfig.Algorithm.Value.ShouldBe(MergeAlgorithm.TopFolderCarry);
+    panel.GroupByCreatorFoldersToggle.Disabled.ShouldBeTrue();
+    panel.GroupByCreatorFoldersToggle.TooltipText.ShouldNotBeNullOrEmpty();
+
+    // 切回提取式 → 恢复可用并清空说明（状态可逆、不残留）
+    node.Selected = (int)MergeAlgorithm.Extractive;
+    node.EmitSignal(Godot.OptionButton.SignalName.ItemSelected, (int)MergeAlgorithm.Extractive);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    _dm.MergeConfig.Algorithm.Value.ShouldBe(MergeAlgorithm.Extractive);
+    panel.GroupByCreatorFoldersToggle.Disabled.ShouldBeFalse();
+    panel.GroupByCreatorFoldersToggle.TooltipText.ShouldBeNullOrEmpty();
+  }
+
+  [Test]
+  public async Task LoadConfig_Backfill_TopFolderCarry_DisablesGroupByCreator()
+  {
+    _dm = CreateDataManager();
+    _dm.MergeConfig.Algorithm.Value = MergeAlgorithm.TopFolderCarry;
+    _dm.MergeConfig.GroupByCreatorFolders.Value = true;
+
+    var panel = InstantiatePanel();
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    // 配置回填后状态一致：算法回显、开关值保留但置灰 + 说明
+    panel.MergeAlgorithmOption.Selected.ShouldBe((int)MergeAlgorithm.TopFolderCarry);
+    panel.GroupByCreatorFoldersToggle.ButtonPressed.ShouldBeTrue();
+    panel.GroupByCreatorFoldersToggle.Disabled.ShouldBeTrue();
+    panel.GroupByCreatorFoldersToggle.TooltipText.ShouldNotBeNullOrEmpty();
+
+    // 回填只同步控件状态，不写模型（不清掉用户已保存的开关值）
+    _dm.MergeConfig.Algorithm.Value.ShouldBe(MergeAlgorithm.TopFolderCarry);
+    _dm.MergeConfig.GroupByCreatorFolders.Value.ShouldBeTrue();
+  }
+
+  [Test]
+  public void RealScene_AutoRenameToggle_LabelMarksExperimental()
+  {
+    _dm = CreateDataManager();
+    var panel = InstantiatePanel();
+
+    // 场景文本含「实验性」，向用户明示自动改名的边界（只覆盖跨包同名资源文件）
+    panel.AutoRenameConflictsToggle.Text.ShouldContain("实验性");
+  }
+
+  [Test]
+  public void RealScene_ObfuscateLuaToggle_LabelMarksExperimental()
+  {
+    _dm = CreateDataManager();
+    var panel = InstantiatePanel();
+
+    // 混淆同样标「实验性」：Prometheus 对少数 Lua 写法不兼容，失败时导出 fail-closed
+    panel.ObfuscateLuaToggle.Text.ShouldContain("实验性");
   }
 }

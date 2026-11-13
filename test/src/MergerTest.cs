@@ -1933,4 +1933,91 @@ public class MergerTest : TestClass
     }
     return false;
   }
+
+  // ==================== 资源物理落盘计划（ResourcePlacements，Phase 1 双改） ====================
+
+  [Test]
+  public void Merge_ResourcePlacements_RecordedOnAutoRename()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false, "boss.png")), out _)!
+    );
+    var pkgB = new CreatorPackageDoc(
+      "B",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡B", false, "boss.png")), out _)!
+    );
+
+    var opt = new MergeOptions { AutoRenameResources = true };
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA, pkgB },
+      new[] { new MergeMappingEntry(0, 0, "A"), new MergeMappingEntry(1, 0, "B") },
+      opt
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 双改契约：仅跨包同名资源收录，源为原相对路径、目标保留目录仅换文件名。
+    result.ResourcePlacements.Count.ShouldBe(2);
+    result.ResourcePlacements.ShouldContain(
+      new ResourcePlacement("A", "res/boss.png", "res/A_boss.png")
+    );
+    result.ResourcePlacements.ShouldContain(
+      new ResourcePlacement("B", "res/boss.png", "res/B_boss.png")
+    );
+  }
+
+  [Test]
+  public void Merge_ResourcePlacements_EmptyWhenRenameDisabled()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false, "boss.png")), out _)!
+    );
+    var pkgB = new CreatorPackageDoc(
+      "B",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡B", false, "boss.png")), out _)!
+    );
+
+    // 默认关闭自动改名：冲突仍记录，但无物理落盘计划（零行为变化）
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA, pkgB },
+      new[] { new MergeMappingEntry(0, 0, "A"), new MergeMappingEntry(1, 0, "B") }
+    );
+    result.IsSuccess.ShouldBeTrue();
+    result
+      .Conflicts.Any(c => c.Kind == MergeConflictKind.Resource && c.Name == "boss.png")
+      .ShouldBeTrue();
+    result.ResourcePlacements.ShouldBeEmpty();
+  }
+
+  [Test]
+  public void Merge_ResourcePlacements_EmptyWithoutCollision()
+  {
+    var template = LstgesParser.ParseDocument(TemplateText, out _)!;
+    var pkgA = new CreatorPackageDoc(
+      "A",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡A", false, "boss_a.png")), out _)!
+    );
+    var pkgB = new CreatorPackageDoc(
+      "B",
+      LstgesParser.ParseDocument(PackageDoc(SpellCard("卡B", false, "boss_b.png")), out _)!
+    );
+
+    var opt = new MergeOptions { AutoRenameResources = true };
+    var result = new Merger().Merge(
+      template,
+      new[] { pkgA, pkgB },
+      new[] { new MergeMappingEntry(0, 0, "A"), new MergeMappingEntry(1, 0, "B") },
+      opt
+    );
+    result.IsSuccess.ShouldBeTrue();
+
+    // 无跨包同名冲突：即使开着自动改名也不产生落盘计划
+    result.Conflicts.Any(c => c.Kind == MergeConflictKind.Resource).ShouldBeFalse();
+    result.ResourcePlacements.ShouldBeEmpty();
+  }
 }

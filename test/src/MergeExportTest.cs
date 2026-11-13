@@ -438,4 +438,286 @@ public class MergeExportTest : TestClass
     var outDir = dm.MergeConfig.OutputDir.Value;
     File.Exists(Path.Combine(outDir, "sample_exp", "special.lua")).ShouldBeTrue(); // 输出目录 sample_exp/ 子目录出现
   }
+
+  // ==================== 冲突自动改名（Phase 1 双改端到端） ====================
+
+  private const string TwoPackageTemplate =
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"boss\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert spellcards here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert resources here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".General.Comment, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Comment\",\"attrInput\":\"Insert objects here\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n";
+
+  /// <summary>同名资源（<c>res/shared.png</c>）位于顶层文件夹内的创作者包工程文本。</summary>
+  private static string TwoPackageText(string folder, string card) =>
+    "0,{\"$type\":\".RootFolder, LuaSTGEditorSharp\",\"Attributes\":[],\"AttributeCount\":0}\n"
+    + "1,{\"$type\":\".General.Folder, LuaSTGEditorSharp\",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + folder
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Graphics.LoadImage, \",\"Attributes\":[{\"attrCap\":\"Path\",\"attrInput\":\"res/shared.png\",\"EditWindow\":\"plainFile\"}],\"AttributeCount\":1}\n"
+    + "1,{\"$type\":\".Boss.BossDefine, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\"pkg_enm\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "2,{\"$type\":\".Boss.BossSpellCard, \",\"Attributes\":[{\"attrCap\":\"Name\",\"attrInput\":\""
+    + card
+    + "\",\"EditWindow\":\"\"}],\"AttributeCount\":1}\n"
+    + "3,{\"$type\":\".Boss.BossSCStart, \",\"Attributes\":[],\"AttributeCount\":0}\n";
+
+  /// <summary>
+  /// 写一个含 <c>root.lstges</c>（引用 <c>res/shared.png</c>）的创作者包 zip；
+  /// <paramref name="includeImage"/> 为 false 时故意不放物理图片，用于验证缺失资源警告。
+  /// </summary>
+  private string CreateTwoPackageZip(
+    string packageName,
+    string folder,
+    string card,
+    bool includeImage = true
+  )
+  {
+    var srcDir = "two_" + packageName;
+    var lstgesPath = WriteEngineData(srcDir + "/root.lstges", TwoPackageText(folder, card));
+    var zipPath = Path.Combine(_tempDir, packageName + ".zip");
+    using (var fs = File.Create(zipPath))
+    using (var zip = new ZipArchive(fs, ZipArchiveMode.Create))
+    {
+      zip.CreateEntryFromFile(lstgesPath, "root.lstges");
+      if (includeImage)
+      {
+        var imgPath = WriteEngineData(srcDir + "/res/shared.png", "PNG-" + packageName);
+        zip.CreateEntryFromFile(imgPath, "res/shared.png");
+      }
+    }
+    return zipPath;
+  }
+
+  /// <summary>
+  /// 构造两个包含同名资源文件的创作者包（包名 pkg_alice / pkg_bob）；
+  /// <paramref name="includeAliceImage"/> / <paramref name="includeBobImage"/> 可控是否放入物理图片。
+  /// </summary>
+  private DataManager BuildTwoPackageDataManager(
+    string userDataName,
+    bool autoRename,
+    MergeAlgorithm algorithm,
+    bool includeAliceImage = true,
+    bool includeBobImage = true
+  )
+  {
+    var templatePath = WriteEngineData("twotmpl/root.lstgproj", TwoPackageTemplate);
+    var zipA = CreateTwoPackageZip("pkg_alice", "resAlice", "卡A", includeAliceImage);
+    var zipB = CreateTwoPackageZip("pkg_bob", "resBob", "卡B", includeBobImage);
+
+    var dm = new DataManager(Path.Combine(_tempDir, userDataName), new AesEncryptor("test-key"));
+    dm.LoadAll();
+    foreach (var zipPath in new[] { zipA, zipB })
+    {
+      var import = MergeImporter.ImportZip(zipPath);
+      import.IsSuccess.ShouldBeTrue();
+      dm.CreatorPackages.Add(import.Package!);
+      foreach (var card in import.Cards)
+        dm.MergeConfig.Mapping.Add(card);
+    }
+
+    dm.MergeConfig.TemplatePath.Value = templatePath;
+    dm.MergeConfig.OutputDir.Value = Path.Combine(_tempDir, "out_" + userDataName);
+    dm.MergeConfig.IncludeLstges.Value = true;
+    dm.MergeConfig.OutputName.Value = "mod";
+    dm.MergeConfig.AutoRenameConflicts.Value = autoRename;
+    dm.MergeConfig.Algorithm.Value = algorithm;
+    return dm;
+  }
+
+  /// <summary>收集合并工程内全部资源引用（相对路径，正斜杠）。</summary>
+  private static List<string> CollectResourceRefs(LstgesDocument doc)
+  {
+    var refs = new List<string>();
+    foreach (var node in doc.Nodes)
+    {
+      if (node.Type == null || !ResourceDetector.ResourceTypes.Contains(node.Type))
+        continue;
+      var path = node.GetAttrAt(0);
+      if (string.IsNullOrWhiteSpace(path))
+        continue;
+      foreach (var part in path.Split('|', StringSplitOptions.RemoveEmptyEntries))
+        refs.Add(part.Trim().Replace('\\', '/'));
+    }
+    return refs;
+  }
+
+  /// <summary>断言合并 .lstgproj 内每条资源引用都能在指定目录找到物理文件。</summary>
+  private static void AssertMergedRefsResolve(LstgesDocument merged, string dir, string label)
+  {
+    var refs = CollectResourceRefs(merged);
+    refs.ShouldNotBeEmpty();
+    foreach (var rel in refs)
+      File.Exists(Path.Combine(dir, rel)).ShouldBeTrue($"{label} 缺少合并工程引用的资源：{rel}");
+  }
+
+  [Test]
+  public void MergeEngine_TwoPackagesSharedResource_AutoRename_DoubleCopiesAndRefsResolve()
+  {
+    var dm = BuildTwoPackageDataManager(
+      "ud_two_on_ex",
+      autoRename: true,
+      MergeAlgorithm.Extractive
+    );
+    var engine = new MergeEngine(dm, dm.MergeConfig.TemplatePath.Value, true, false);
+    var result = engine.BuildAndMerge();
+
+    result.Error.ShouldBeNull();
+    result.IsSuccess.ShouldBeTrue();
+
+    var workDir = Path.GetDirectoryName(engine.MergedProjectPath)!;
+    var outDir = dm.MergeConfig.OutputDir.Value;
+
+    // 工作目录与输出目录都同时存在两个改名后的文件（<包名>_<原名>），原文件名不再落盘
+    var renamed = new[] { "res/pkg_alice_shared.png", "res/pkg_bob_shared.png" };
+    foreach (var rel in renamed)
+    {
+      File.Exists(Path.Combine(workDir, rel)).ShouldBeTrue($"工作目录缺少改名后文件 {rel}");
+      File.Exists(Path.Combine(outDir, rel)).ShouldBeTrue($"输出目录缺少改名后文件 {rel}");
+    }
+    File.Exists(Path.Combine(workDir, "res/shared.png")).ShouldBeFalse();
+    File.Exists(Path.Combine(outDir, "res/shared.png")).ShouldBeFalse();
+
+    // 合并 .lstgproj 内资源引用逐条能在工作目录 / 输出目录找到
+    var merged = LstgesParser.LoadFile(engine.MergedProjectPath, out var parseError);
+    parseError.ShouldBeNull();
+    merged.ShouldNotBeNull();
+    var refs = CollectResourceRefs(merged!);
+    refs.ShouldContain("res/pkg_alice_shared.png");
+    refs.ShouldContain("res/pkg_bob_shared.png");
+    AssertMergedRefsResolve(merged!, workDir, "工作目录");
+    AssertMergedRefsResolve(merged!, outDir, "输出目录");
+
+    // 自动改名后不应再报缺失资源；冲突列表仍应记录该资源冲突
+    result
+      .Warnings.Any(w => w.Contains("缺失"))
+      .ShouldBeFalse(string.Join(" | ", result.Warnings));
+    result
+      .Conflicts.Any(c => c.Kind == MergeConflictKind.Resource && c.Name == "shared.png")
+      .ShouldBeTrue();
+    result.ResourcePlacements.Count.ShouldBe(2);
+  }
+
+  [Test]
+  public void MergeEngine_TwoPackagesSharedResource_RenameDisabled_KeepsOriginalAndListsConflict()
+  {
+    var dm = BuildTwoPackageDataManager(
+      "ud_two_off_ex",
+      autoRename: false,
+      MergeAlgorithm.Extractive
+    );
+    var engine = new MergeEngine(dm, dm.MergeConfig.TemplatePath.Value, true, false);
+    var result = engine.BuildAndMerge();
+
+    result.Error.ShouldBeNull();
+    result.IsSuccess.ShouldBeTrue();
+
+    // 冲突列表包含该资源冲突（裸文件名），物理文件保留原名且不出现改名后文件
+    result
+      .Conflicts.Any(c => c.Kind == MergeConflictKind.Resource && c.Name == "shared.png")
+      .ShouldBeTrue();
+    result.ResourcePlacements.ShouldBeEmpty();
+
+    var workDir = Path.GetDirectoryName(engine.MergedProjectPath)!;
+    var outDir = dm.MergeConfig.OutputDir.Value;
+    File.Exists(Path.Combine(workDir, "res/shared.png")).ShouldBeTrue();
+    File.Exists(Path.Combine(outDir, "res/shared.png")).ShouldBeTrue();
+    File.Exists(Path.Combine(workDir, "res/pkg_alice_shared.png")).ShouldBeFalse();
+    File.Exists(Path.Combine(workDir, "res/pkg_bob_shared.png")).ShouldBeFalse();
+    File.Exists(Path.Combine(outDir, "res/pkg_alice_shared.png")).ShouldBeFalse();
+    File.Exists(Path.Combine(outDir, "res/pkg_bob_shared.png")).ShouldBeFalse();
+  }
+
+  [Test]
+  public void MergeEngine_TopFolderCarry_AutoRename_DoubleCopiesAndRefsResolve()
+  {
+    var dm = BuildTwoPackageDataManager(
+      "ud_two_on_tfc",
+      autoRename: true,
+      MergeAlgorithm.TopFolderCarry
+    );
+    var engine = new MergeEngine(dm, dm.MergeConfig.TemplatePath.Value, true, false);
+    var result = engine.BuildAndMerge();
+
+    result.Error.ShouldBeNull();
+    result.IsSuccess.ShouldBeTrue();
+
+    var workDir = Path.GetDirectoryName(engine.MergedProjectPath)!;
+    var outDir = dm.MergeConfig.OutputDir.Value;
+    var renamed = new[] { "res/pkg_alice_shared.png", "res/pkg_bob_shared.png" };
+    foreach (var rel in renamed)
+    {
+      File.Exists(Path.Combine(workDir, rel)).ShouldBeTrue($"工作目录缺少改名后文件 {rel}");
+      File.Exists(Path.Combine(outDir, rel)).ShouldBeTrue($"输出目录缺少改名后文件 {rel}");
+    }
+    File.Exists(Path.Combine(workDir, "res/shared.png")).ShouldBeFalse();
+    File.Exists(Path.Combine(outDir, "res/shared.png")).ShouldBeFalse();
+
+    var merged = LstgesParser.LoadFile(engine.MergedProjectPath, out var parseError);
+    parseError.ShouldBeNull();
+    merged.ShouldNotBeNull();
+    var refs = CollectResourceRefs(merged!);
+    refs.ShouldContain("res/pkg_alice_shared.png");
+    refs.ShouldContain("res/pkg_bob_shared.png");
+    AssertMergedRefsResolve(merged!, workDir, "工作目录");
+    AssertMergedRefsResolve(merged!, outDir, "输出目录");
+
+    result.Warnings.Any(w => w.Contains("缺失")).ShouldBeFalse(string.Join(" | ", result.Warnings));
+    result.ResourcePlacements.Count.ShouldBe(2);
+  }
+
+  [Test]
+  public void MergeEngine_TopFolderCarry_RenameDisabled_KeepsOriginal()
+  {
+    var dm = BuildTwoPackageDataManager(
+      "ud_two_off_tfc",
+      autoRename: false,
+      MergeAlgorithm.TopFolderCarry
+    );
+    var engine = new MergeEngine(dm, dm.MergeConfig.TemplatePath.Value, true, false);
+    var result = engine.BuildAndMerge();
+
+    result.Error.ShouldBeNull();
+    result.IsSuccess.ShouldBeTrue();
+    result
+      .Conflicts.Any(c => c.Kind == MergeConflictKind.Resource && c.Name == "shared.png")
+      .ShouldBeTrue();
+    result.ResourcePlacements.ShouldBeEmpty();
+
+    var workDir = Path.GetDirectoryName(engine.MergedProjectPath)!;
+    File.Exists(Path.Combine(workDir, "res/shared.png")).ShouldBeTrue();
+    File.Exists(Path.Combine(workDir, "res/pkg_alice_shared.png")).ShouldBeFalse();
+    File.Exists(Path.Combine(workDir, "res/pkg_bob_shared.png")).ShouldBeFalse();
+  }
+
+  [Test]
+  public void MergeEngine_AutoRename_MissingPhysicalImage_AddsMissingWarning()
+  {
+    // 正向覆盖（code-reviewer W1）：其中一包只有 .lstges 引用、缺物理图片时，
+    // 自动改名链路必须把「自动改名资源缺失」作为非致命警告返回（先前只有「不缺失」负向断言）。
+    var dm = BuildTwoPackageDataManager(
+      "ud_two_missing_ex",
+      autoRename: true,
+      MergeAlgorithm.Extractive,
+      includeBobImage: false
+    );
+    var engine = new MergeEngine(dm, dm.MergeConfig.TemplatePath.Value, true, false);
+    var result = engine.BuildAndMerge();
+
+    result.Error.ShouldBeNull();
+    result.IsSuccess.ShouldBeTrue();
+
+    // 文案级正向断言：警告前缀 + 包名 + 源相对路径，便于用户定位到具体包与文件
+    result.Warnings.ShouldContain(
+      w => w.Contains("自动改名资源缺失"),
+      string.Join(" | ", result.Warnings)
+    );
+    result.Warnings.ShouldContain(w => w.Contains("pkg_bob") && w.Contains("res/shared.png"));
+
+    // 缺失不阻塞导出：另一个包的改名资源照常落盘，缺图那份不落盘
+    var workDir = Path.GetDirectoryName(engine.MergedProjectPath)!;
+    var outDir = dm.MergeConfig.OutputDir.Value;
+    File.Exists(Path.Combine(workDir, "res/pkg_alice_shared.png")).ShouldBeTrue();
+    File.Exists(Path.Combine(outDir, "res/pkg_alice_shared.png")).ShouldBeTrue();
+    File.Exists(Path.Combine(workDir, "res/pkg_bob_shared.png")).ShouldBeFalse();
+  }
 }
