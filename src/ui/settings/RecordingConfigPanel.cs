@@ -55,8 +55,11 @@ using Godot;
 [Meta(typeof(IAutoNode))]
 public sealed partial class RecordingConfigPanel : VBoxContainer
 {
-  private static readonly Color _okColor = new(0.62f, 0.86f, 0.52f);
-  private static readonly Color _warnColor = new(0.96f, 0.68f, 0.36f);
+  /// <summary>「可用」状态行的兜底配色（默认主题观感，与接入主题前一致）。</summary>
+  private static readonly Color OkColorFallback = new(0.62f, 0.86f, 0.52f);
+
+  /// <summary>「需处理」状态行的兜底配色（默认主题观感，与接入主题前一致）。</summary>
+  private static readonly Color WarnColorFallback = new(0.96f, 0.68f, 0.36f);
 
   /// <summary>磁盘探针的去抖时延（秒）：连续 tick 只落一次递归枚举；与场景里 ProbeTimer 的 wait_time 对照。</summary>
   internal const double ProbeDebounceSeconds = 0.3;
@@ -68,6 +71,9 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   private RecordingConfig _config = default!;
 
   private bool _syncing;
+
+  /// <summary>本帧是否已排过主题重画：合并同一帧里父子控件连发的主题通知。</summary>
+  private bool _themeRefreshQueued;
 
   /// <summary>8 个配置项的 Sync 绑定（规则 20：在 <see cref="_ExitTree"/> 释放）。</summary>
   private readonly List<IDisposable> _bindings = new();
@@ -141,6 +147,51 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
     EngineDirDialog.DirSelected += CommitEngineDir;
     SandboxRootDialog.DirSelected += CommitSandboxRoot;
     ProbeTimer.Timeout += OnFootprintDebounceElapsed;
+
+    // 状态行颜色是渲染时写进控件的，主题切换不会自己更新：订阅后按只读刷新路径到帧末重算一次
+    ThemeChanged += OnThemeChanged;
+  }
+
+  /// <summary>主题变化：合并到帧末按新语义色重算状态行颜色。</summary>
+  /// <remarks>
+  /// 走既有只读刷新入口 <see cref="RefreshProbes"/>（插件检查 + 目录校验 + 磁盘提示都在其中），
+  /// 只重画不写模型，录制业务语义不变；依赖尚未解析时什么都不做（状态行还没渲染）。
+  /// 重算必须排到帧末：父控件在自己的 <c>theme_changed</c> 回调里解析主题项仍拿到旧值，
+  /// 同步重算会把旧主题色固化进 <c>font_color</c> 覆盖。
+  /// </remarks>
+  private void OnThemeChanged()
+  {
+    if (_dm is null || _config is null)
+    {
+      return;
+    }
+
+    QueueThemeRefresh();
+  }
+
+  /// <summary>排一次帧末的主题重算；本帧已排过就直接返回（合并多次通知）。</summary>
+  private void QueueThemeRefresh()
+  {
+    if (_themeRefreshQueued)
+    {
+      return;
+    }
+
+    _themeRefreshQueued = true;
+    CallDeferred(nameof(FlushThemeRefresh));
+  }
+
+  /// <summary>执行帧末合并后的主题重算；公开以便 <c>CallDeferred</c> 按名调用，不属于对外契约。</summary>
+  public void FlushThemeRefresh()
+  {
+    _themeRefreshQueued = false;
+
+    if (_dm is null || _config is null)
+    {
+      return;
+    }
+
+    RefreshProbes();
   }
 
   /// <summary>点「选择目录…」：定位到当前引擎目录后弹出目录选择框。</summary>
@@ -648,6 +699,11 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   /// <inheritdoc/>
   public override void _ExitTree()
   {
+    ThemeChanged -= OnThemeChanged;
+
+    // 离场后排队的 deferred 重算不再需要：标记一并清掉，避免重新入树后一直以为「本帧已排过」
+    _themeRefreshQueued = false;
+
     // 规则 20：绑定必须在节点退出时释放；探针定时器也停掉，避免对已离场面板回填
     DisposeBindings();
     ProbeTimer?.Stop();
@@ -844,10 +900,21 @@ public sealed partial class RecordingConfigPanel : VBoxContainer
   /// <param name="label">状态行。</param>
   /// <param name="text">文案。</param>
   /// <param name="ok">是否处于可用状态。</param>
+  /// <remarks>
+  /// 颜色取主题的业务语义色（浅色主题下纯绿 / 纯橙会糊在浅底上），主题未提供时退回接入主题前的那两个常量。
+  /// 状态行是 <c>[Node]</c> 注入的接口适配器，取其包装的真实控件来解析主题链。
+  /// </remarks>
   private static void SetStatus(ILabel label, string text, bool ok)
   {
     label.Text = text;
-    label.AddThemeColorOverride("font_color", ok ? _okColor : _warnColor);
+
+    var control = (label as INodeAdapter)?.TargetObj;
+    label.AddThemeColorOverride(
+      "font_color",
+      ok
+        ? AppPalette.Get(control, ThemeCatalog.StatusOk, OkColorFallback)
+        : AppPalette.Get(control, ThemeCatalog.StatusWarn, WarnColorFallback)
+    );
     label.TooltipText = text;
   }
 

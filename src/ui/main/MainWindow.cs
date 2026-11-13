@@ -48,6 +48,10 @@ public partial class MainWindow
   [Node("%LeftPanel")]
   public IVBoxContainer LeftPanel { get; set; } = default!;
 
+  /// <summary>左栏顶部的品牌 Logo（浅色主题换成浅色版贴图）。</summary>
+  [Node("%Logo")]
+  public ITextureRect Logo { get; set; } = default!;
+
   [Node("%RightPanel")]
   public IControl RightPanel { get; set; } = default!;
 
@@ -150,6 +154,24 @@ public partial class MainWindow
   private AutoValue<int>.Binding? _webSocketPortBinding;
   private AutoValue<string>.Binding? _koishiWebSocketUrlBinding;
 
+  /// <summary>主题应用器；测试模式不构造（<c>null</c>），避免测试期改全局主题与清屏色。</summary>
+  private ThemeApplier? _themeApplier;
+
+  /// <summary>界面主题配置的绑定：值变化时排队应用主题，退出时释放。</summary>
+  private AutoValue<string>.Binding? _themeIdBinding;
+
+  /// <summary>主题绑定已就绪：订阅会立刻回放一次当前值，置位前先抑制这次伪变更。</summary>
+  private bool _themeBindingReady;
+
+  /// <summary>已排队一次主题应用（同一帧内多次改值只应用一次）。</summary>
+  private bool _themeApplyQueued;
+
+  /// <summary>深色版 Logo（默认与其它非浅色主题使用）；资源缺失时为 <c>null</c>。</summary>
+  private Texture2D? _logoDark;
+
+  /// <summary>浅色版 Logo（浅色主题使用）；资源缺失时为 <c>null</c>。</summary>
+  private Texture2D? _logoLight;
+
   private Control? _currentPanel;
   private const string DefaultPanel = "guessing";
 
@@ -219,7 +241,11 @@ public partial class MainWindow
     if (ReferenceEquals(_activeInstance, this))
       _activeInstance = null;
 
-    // 先摘掉配置绑定，保证退出过程中不会再有新的重启请求进来
+    // 先摘掉配置绑定，保证退出过程中不会再有新的重启请求进来。
+    // 主题绑定同时摘下：已排队的 deferred 应用还有 ApplyThemeFromSettings 里的 _exiting 守卫兜底。
+    _themeIdBinding?.Dispose();
+    _themeIdBinding = null;
+    _themeApplyQueued = false;
     _webSocketModeBinding?.Dispose();
     _webSocketPortBinding?.Dispose();
     _koishiWebSocketUrlBinding?.Dispose();
@@ -302,6 +328,20 @@ public partial class MainWindow
       );
       _dataManager.LoadAll();
 
+      // 主题接线：先记下引擎清屏色作为「默认主题」的兜底底色（应用主题后它会被改写，故必须先用先取），
+      // 再同步应用一次存档主题。顺序必须在窗口几何还原之前：主题只改配色不改尺寸，
+      // 先定外观再摆几何，避免启动时先按旧外观露一帧再变脸。
+      _logoDark = GD.Load<Texture2D>("res://src/assets/brand/logo-lockup.svg");
+      _logoLight = GD.Load<Texture2D>("res://src/assets/brand/logo-lockup-light.svg");
+      var defaultBackground = RenderingServer.GetDefaultClearColor();
+      _themeApplier = new ThemeApplier(
+        defaultBackground,
+        // null 主题表示「恢复引擎默认外观」，因此这里必须允许把 null 写进 Theme 属性
+        theme => GetWindow().Theme = theme!,
+        color => RenderingServer.SetDefaultClearColor(color)
+      );
+      ApplyThemeFromSettings();
+
       // 主窗口几何还原：数据加载完成后立即应用（越早越不闪），测试模式不进入本分支
       _windowLayout = new WindowLayoutState(
         AdaptMainWindow(),
@@ -353,6 +393,12 @@ public partial class MainWindow
       _koishiWebSocketUrlBinding = _dataManager
         .Settings.KoishiWebSocketUrl.Bind()
         .OnValue(_ => RestartWebSocket());
+
+      // 主题绑定：订阅即用当前值回放一次，而启动时刚同步应用过，故先抑制这次回放
+      //（不抑制会在启动帧多排一次应用，要等一帧才轮到它，还白跑一遍加载）。
+      _themeBindingReady = false;
+      _themeIdBinding = _dataManager.Settings.ThemeId.Bind().OnValue(_ => QueueThemeApply());
+      _themeBindingReady = true;
 
       // 注册退出入口：Main 关窗/退出时经静态方法触发末次保存。
       // 测试模式不注册，避免静态实例跨用例残留。
@@ -409,6 +455,56 @@ public partial class MainWindow
     // 启动 WebSocket 服务器（测试模式下跳过，避免启动真实网络服务）
     if (!(this as IAutoInit).IsTesting)
       _ = _webSocketLifecycle.StartAsync(_dataManager.Settings);
+  }
+
+  /// <summary>
+  /// 把设置里的界面主题应用到当前窗口，并换上与主题明暗匹配的 Logo。
+  /// </summary>
+  /// <remarks>
+  /// <para>
+  /// 公开仅为让 <see cref="CallDeferred(string)"/> 能按名调用：外部（设置页、启动流程）一律只写
+  /// <c>Settings.ThemeId</c>，由绑定驱动本方法，<b>本方法不属于对外契约</b>。
+  /// </para>
+  /// <para>
+  /// <c>_exiting</c> / 未入树 / 应用器未构造（测试模式）三种时机一律早退：此时改全局外观没有意义，
+  /// 还可能与正在拆解的节点或测试用例抢状态。应用失败时应用器已回退默认主题，这里只补一条 WARN，
+  /// 面向用户的提示由设置页负责。
+  /// </para>
+  /// </remarks>
+  public void ApplyThemeFromSettings()
+  {
+    _themeApplyQueued = false;
+
+    if (_exiting || !IsInsideTree() || _themeApplier is null)
+      return;
+
+    var result = _themeApplier.Apply(_dataManager.Settings.ThemeId.Value);
+
+    if (!result.Ok)
+      _logService?.GetLogger("Theme").Warn($"MainWindow: apply theme failed: {result.Error}");
+
+    // 浅色主题下深色 Logo 几乎不可见，故按「实际生效」的主题换贴图：
+    // 未知 ID / 加载失败时应用器已回退默认主题，这里自然也落回深色版。
+    // 贴图加载失败（null）时保持场景里配的原值，不把 Logo 清空。
+    var resolved = ThemeCatalog.TryResolve(result.AppliedId, out var option, out _);
+    var texture = resolved && option.IsLight ? _logoLight : _logoDark;
+    if (texture is not null)
+      Logo.Texture = texture;
+  }
+
+  /// <summary>
+  /// 排队一次主题应用：绑定回调只置脏并转 <c>CallDeferred</c>，不在回调栈里改界面（规则 19）。
+  /// </summary>
+  /// <remarks>
+  /// 三重守卫：绑定尚未就绪（订阅回放）、本帧已排队（同一帧多次改值合并）、已在退出流程。
+  /// </remarks>
+  private void QueueThemeApply()
+  {
+    if (!_themeBindingReady || _themeApplyQueued || _exiting)
+      return;
+
+    _themeApplyQueued = true;
+    CallDeferred(nameof(ApplyThemeFromSettings));
   }
 
   /// <summary>

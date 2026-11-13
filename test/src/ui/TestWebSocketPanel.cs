@@ -239,6 +239,32 @@ public class TestWebSocketPanel : TestClass
     (_panel.RefreshCountForTests - before).ShouldBe(2, "合并不丢事件，下一帧的变化应再刷一次");
   }
 
+  /// <summary>
+  /// 主题变化合并到帧末：状态行的语义色是渲染时写进控件的，主题切换要重算，但不得在信号回调里同步重画。
+  /// </summary>
+  /// <remarks>
+  /// 这里不手工顶替帧末调用，而是等真实的 <c>ProcessFrame</c>：若去掉合并标记
+  /// （<see cref="WebSocketPanel"/> 的 <c>_refreshQueued</c>），两次通知会各排一次 deferred，
+  /// 刷两次，本用例随之变红。
+  /// </remarks>
+  [Test]
+  public async Task ThemeChanged_DefersRefreshAndMergesToOnePass()
+  {
+    _panel.UpdateServer(_server);
+    var before = _panel.RefreshCountForTests;
+
+    _panel.EmitSignal(Control.SignalName.ThemeChanged);
+    _panel.EmitSignal(Control.SignalName.ThemeChanged);
+
+    _panel.RefreshCountForTests.ShouldBe(before, "主题变化不得同步刷新状态行");
+
+    // 规则 30：CallDeferred 之后必须等帧再断言，不手工调 FlushRefresh
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    (_panel.RefreshCountForTests - before).ShouldBe(1, "同帧两次主题通知只应合并成一次刷新");
+  }
+
   [Test]
   public void ClientConnected_AddsToClientList()
   {

@@ -10,6 +10,7 @@ using AutoCMEX.Core.Storage;
 using AutoCMEX.Models;
 using AutoCMEX.UI.Settings;
 using Chickensoft.AutoInject;
+using Chickensoft.GodotNodeInterfaces;
 using Chickensoft.GoDotTest;
 using Chickensoft.Log;
 using Godot;
@@ -364,6 +365,39 @@ public class RecordingConfigPanelTest : TestClass
     _panel.ActionLabel.Visible.ShouldBeFalse();
   }
 
+  /// <summary>
+  /// 回归：主题变化的整页重画必须合并到帧末执行——父控件在 <c>theme_changed</c> 回调里解析主题项
+  /// 仍拿到旧值，同步重算会把旧主题色固化成状态行的 <c>font_color</c>。
+  /// </summary>
+  /// <remarks>
+  /// <c>ActionLabel.Visible</c> 只由 <see cref="RecordingConfigPanel.RefreshProbes"/> 写入，
+  /// 数它的 setter 调用次数即「重算了几轮」；真实场景控件没有计数能力，故这里挂一个记录用的 mock。
+  /// </remarks>
+  [Test]
+  public async Task ThemeChanged_DefersSingleProbesRefresh()
+  {
+    var actionLabel = new Mock<ILabel>();
+    actionLabel.SetupProperty(m => m.Text, "占位提示");
+    actionLabel.SetupProperty(m => m.Visible);
+    _panel.ActionLabel = actionLabel.Object;
+    actionLabel.Invocations.Clear();
+
+    _panel.EmitSignal(Control.SignalName.ThemeChanged);
+    _panel.EmitSignal(Control.SignalName.ThemeChanged);
+
+    CountProbeRefreshes(actionLabel).ShouldBe(0, "主题变化不得在信号回调里同步重算状态行");
+
+    // 帧末那次 deferred 由这里显式顶替：两次通知只排了一次
+    _panel.FlushThemeRefresh();
+    CountProbeRefreshes(actionLabel).ShouldBe(1);
+
+    // 再等帧末：排队的那次 deferred 只补刷一轮（未合并的话两次通知会补刷两轮）
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+    await TestScene.ToSignal(TestScene.GetTree(), SceneTree.SignalName.ProcessFrame);
+
+    CountProbeRefreshes(actionLabel).ShouldBe(2, "连发两次主题通知只应合并成一次帧末重算");
+  }
+
   [Test]
   public async Task RefreshProbes_WithReadyPlugins_ReportsReadyAndActionableButtons()
   {
@@ -673,6 +707,12 @@ public class RecordingConfigPanelTest : TestClass
   /// <returns>找到的数值框。</returns>
   private static SpinBox SpinBoxBox(Node scene, string name) =>
     scene.FindChild(name, recursive: true, owned: false).ShouldBeOfType<SpinBox>();
+
+  /// <summary>数 <c>RefreshProbes</c> 写入 <c>ActionLabel.Visible</c> 的次数（即重算了几轮）。</summary>
+  /// <param name="actionLabel">记录用的标签 mock。</param>
+  /// <returns>写入次数。</returns>
+  private static int CountProbeRefreshes(Mock<ILabel> actionLabel) =>
+    actionLabel.Invocations.Count(call => call.Method.Name == "set_Visible");
 
   /// <summary>新建一个接好依赖并进场景树的面板（同一 DataManager，便于验证回填与去抖探针）。</summary>
   /// <returns>已建好的面板（<c>OnReady</c>/<c>OnResolved</c> 已随进树执行完毕）。</returns>

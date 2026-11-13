@@ -98,6 +98,7 @@ public class MainWindowTest : TestClass
         ["%LeftPanel"] = leftPanel.Object,
         ["%RightPanel"] = rightPanel.Object,
         ["%MainContainer"] = GodotInterfaces.Adapt<ISplitContainer>(mainContainer),
+        ["%Logo"] = new Mock<ITextureRect>().Object,
         ["%MergeBtn"] = _mergeBtn.Object,
         ["%GuessingBtn"] = _guessingBtn.Object,
         ["%InfoBtn"] = _infoBtn.Object,

@@ -42,6 +42,9 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
   /// <summary>卡片最小宽度（像素），避免列过窄导致标题折行。</summary>
   private const int CardMinWidth = 260;
 
+  /// <summary>卡片副标题的兜底配色（默认主题观感，与接入主题前一致）。</summary>
+  private static readonly Color SubTitleColorFallback = new(0.65f, 0.65f, 0.68f);
+
   [Node("%SetSelector")]
   public IOptionButton SetSelector { get; set; } = default!;
 
@@ -151,6 +154,8 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
   /// <inheritdoc/>
   public override void _ExitTree()
   {
+    ThemeChanged -= OnThemeChanged;
+
     _setsBinding?.Dispose();
     _setsBinding = null;
 
@@ -205,7 +210,20 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
     CardScroll.Resized += ScheduleLayoutRefresh;
     CardList.Resized += ScheduleLayoutRefresh;
     VisibilityChanged += ScheduleLayoutRefresh;
+
+    // 卡片里的配色是在构建期固化到控件上的，主题切换不会自己更新：
+    // 订阅主题变化后走既有重建通道（同一帧内多次变化由 ScheduleRebuild 合并）。
+    ThemeChanged += OnThemeChanged;
   }
+
+  /// <summary>
+  /// 主题变化：重建卡片以套用新的语义色。
+  /// </summary>
+  /// <remarks>
+  /// 卡片副标题的颜色是构建期用 <see cref="AppPalette"/> 取到后写进控件的，没有别的刷新入口；
+  /// 因此这里复用 <see cref="ScheduleRebuild"/> 这条既有的延迟重建通道，不另开刷新路径。
+  /// </remarks>
+  private void OnThemeChanged() => ScheduleRebuild();
 
   /// <summary>AutoInject 依赖解析完成：绑定数据源并首次重建卡片（装配全部来自依赖注入）。</summary>
   public void OnResolved()
@@ -332,7 +350,6 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
       AutowrapMode = TextServer.AutowrapMode.WordSmart,
     };
     subTitle.AddThemeFontSizeOverride("font_size", 12);
-    subTitle.AddThemeColorOverride("font_color", new Color(0.65f, 0.65f, 0.68f));
     body.AddChild(subTitle);
 
     var player = new GifFramePlayer
@@ -349,6 +366,13 @@ public partial class GifSetPanel : VBoxContainer, IGifSetPanel
     var card = new PanelContainer { CustomMinimumSize = new Vector2(CardMinWidth, 0) };
     card.AddChild(body);
     CardList.AddChild(card);
+
+    // 副标题的语义色必须等卡片挂进树之后再取：主题链只沿祖先解析（含根 Window 的主题），
+    // 卡片还没入树时取到的永远是兜底色，浅色主题就白适配了。
+    subTitle.AddThemeColorOverride(
+      "font_color",
+      AppPalette.Get(subTitle, ThemeCatalog.MutedText, SubTitleColorFallback)
+    );
 
     _cards.Add(new CardRef(card, player, gifPath));
   }

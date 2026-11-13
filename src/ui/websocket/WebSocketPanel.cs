@@ -89,6 +89,12 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
 
   private string _lastEvent = "";
 
+  /// <summary>「运行中 / 已连接」状态行的兜底配色（默认主题观感，与接入主题前一致）。</summary>
+  private static readonly Color StatusOkFallback = new(0, 1, 0);
+
+  /// <summary>「已停止 / 未连接」状态行的兜底配色（默认主题观感，与接入主题前一致）。</summary>
+  private static readonly Color StatusErrorFallback = new(1, 0, 0);
+
   /// <summary>
   /// 本帧是否已排过刷新：连接/断开与状态变化常在同一事件链里连发，合并成每帧一次。
   /// </summary>
@@ -106,7 +112,13 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
   public void OnReady()
   {
     RefreshTimer.Timeout += OnRefreshTimerTimeout;
+
+    // 状态行的语义色是渲染时写进控件的，主题切换不会自己更新：订阅后合并到帧末重算一次
+    ThemeChanged += OnThemeChanged;
   }
+
+  /// <summary>主题变化：合并到帧末刷新一次状态行（<see cref="RefreshUI"/> 幂等）。</summary>
+  private void OnThemeChanged() => QueueRefresh();
 
   public void OnResolved()
   {
@@ -166,6 +178,8 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
 
   public override void _ExitTree()
   {
+    ThemeChanged -= OnThemeChanged;
+
     if (RefreshTimer != null)
     {
       RefreshTimer.Timeout -= OnRefreshTimerTimeout;
@@ -177,6 +191,9 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
       _server.OnClientDisconnected -= OnDisconnected;
       _server.OnStateChanged -= OnServerStateChanged;
     }
+
+    // 离场后不再需要排队标记：本帧已经不会有刷新要合并了
+    _refreshQueued = false;
   }
 
   private void OnRefreshTimerTimeout()
@@ -280,7 +297,17 @@ public partial class WebSocketPanel : Control, IWebSocketPanel
       ? (isRunning ? "已连接" : (isActive ? "未连接（重连中）" : "未连接"))
       : (isRunning ? "运行中" : "已停止");
     StatusLabel.Text = statusText;
-    StatusLabel.Modulate = isRunning ? new Color(0, 1, 0) : new Color(1, 0, 0);
+
+    // 用字色而不是 Modulate：Modulate 会连描边/背景一起染色，浅色主题下绿底红底更糊；
+    // 语义色经 AppPalette 取，主题未提供时退回接入主题前的那组绿/红。
+    StatusLabel.AddThemeColorOverride(
+      "font_color",
+      AppPalette.Get(
+        (StatusLabel as INodeAdapter)?.TargetObj,
+        isRunning ? ThemeCatalog.StatusOk : ThemeCatalog.StatusError,
+        isRunning ? StatusOkFallback : StatusErrorFallback
+      )
+    );
 
     // 端口/地址按实际实例显示：Server 打实际监听端口，Client 打实际连接地址，
     // 不再沿用场景里硬编码的「端口: 5140」
