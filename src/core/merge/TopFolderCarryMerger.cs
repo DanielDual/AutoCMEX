@@ -70,7 +70,15 @@ public sealed class TopFolderCarryMerger
     var carrySubtrees = CollectCarryFolders(packages, templateTopFolders);
 
     // ---- 3. 资源引用收集与可选自动改名（与提取式一致）----
-    var renameMap = ResolveResourceRenames(packages, spellSubtrees, carrySubtrees, opt, conflicts);
+    var placements = new List<ResourcePlacement>();
+    var renameMap = ResolveResourceRenames(
+      packages,
+      spellSubtrees,
+      carrySubtrees,
+      opt,
+      conflicts,
+      placements
+    );
 
     // ---- 4. 注入符卡子树 ----
     var spellSeg = BuildFlat(spellMarker.Value, spellSubtrees, renameMap);
@@ -112,6 +120,7 @@ public sealed class TopFolderCarryMerger
       Merged = doc,
       Conflicts = conflicts,
       Warnings = warnings,
+      ResourcePlacements = placements,
     };
   }
 
@@ -246,16 +255,23 @@ public sealed class TopFolderCarryMerger
 
   private readonly record struct ResourceRef(int Pkg, string BareName, string Original);
 
-  /// <summary>收集全部资源引用（含符卡子树与整文件夹子树），跨包按文件名判定冲突并可选自动改名。</summary>
+  /// <summary>
+  /// 收集全部资源引用（含符卡子树与整文件夹子树），跨包按文件名判定冲突并可选自动改名。
+  /// 跨包同名且 <see cref="MergeOptions.AutoRenameResources"/> 为 true 时，同步把
+  /// 「原相对路径 → 保留目录、仅换文件名后的目标相对路径」写入 <paramref name="placements"/>，
+  /// 供 <see cref="MergeEngine"/> 把物理文件落到改名后的路径（默认关闭时 placements 为空）。
+  /// </summary>
   private Dictionary<(int Pkg, string Path), string> ResolveResourceRenames(
     IReadOnlyList<CreatorPackageDoc> packages,
     IReadOnlyList<SubtreeRef> spellSubtrees,
     IReadOnlyList<SubtreeRef> carrySubtrees,
     MergeOptions opt,
-    List<MergeConflict> conflicts
+    List<MergeConflict> conflicts,
+    List<ResourcePlacement> placements
   )
   {
     var map = new Dictionary<(int, string), string>();
+    var recorded = new HashSet<(int Pkg, string Path)>();
     var refs = new List<ResourceRef>();
     foreach (var s in spellSubtrees)
       refs.AddRange(CollectResourceRefs(s, packages));
@@ -281,10 +297,20 @@ public sealed class TopFolderCarryMerger
       }
       foreach (var r in group)
       {
-        map[(r.Pkg, r.Original)] =
-          collides && opt.AutoRenameResources
-            ? $"{packages[r.Pkg].PackageName}_{group.Key}"
-            : group.Key;
+        var rename = collides && opt.AutoRenameResources;
+        var newName = rename ? $"{packages[r.Pkg].PackageName}_{group.Key}" : group.Key;
+        map[(r.Pkg, r.Original)] = newName;
+
+        // 仅「跨包同名冲突 + 自动改名」才需要物理落盘；同一路径可能被多个节点引用，按路径去重。
+        if (!rename || !recorded.Add((r.Pkg, r.Original)))
+          continue;
+        placements.Add(
+          new ResourcePlacement(
+            packages[r.Pkg].PackageName,
+            r.Original,
+            ReplaceFileName(r.Original, newName)
+          )
+        );
       }
     }
     return map;

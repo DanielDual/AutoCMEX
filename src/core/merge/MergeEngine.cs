@@ -127,9 +127,24 @@ public class MergeEngine
 
       // 物理资源必须随合并 .lstgproj 落在同一目录（Sharp 依相对基准找文件打包）。
       // 工作目录（Sharp 输入）始终复制；只要配置了输出目录也会复制（与是否交付 .lstgproj 无关）。
-      CopyResources(result.Merged!, Path.GetDirectoryName(_workProjectPath) ?? string.Empty);
+      // 自动改名资源的落盘计划随结果传入，避免按改名后路径在源包找不到源文件而漏拷。
+      var missing = new List<string>();
+      missing.AddRange(
+        CopyResources(
+          result.Merged!,
+          Path.GetDirectoryName(_workProjectPath) ?? string.Empty,
+          result.ResourcePlacements
+        )
+      );
       if (_dm.MergeConfig.OutputDir.Value.Length > 0)
-        CopyResources(result.Merged!, _dm.MergeConfig.OutputDir.Value);
+      {
+        missing.AddRange(
+          CopyResources(result.Merged!, _dm.MergeConfig.OutputDir.Value, result.ResourcePlacements)
+        );
+      }
+
+      // 缺失资源并入合并警告，由 MergePanel 在冲突行之后以 [警告] 展示（不新增弹窗）。
+      result.Warnings.AddRange(missing.Distinct());
     }
 
     _log.Print(
@@ -203,9 +218,19 @@ public class MergeEngine
   /// <summary>
   /// 把合并工程实际引用的物理资源按相对路径基准复制到目标目录（工作目录/输出目录），
   /// 使 Sharp 打包时能找到资源文件。源：各源包解压目录（优先）+ 模板工程目录。
-  /// 命中排除集的资源不在合并工程中，故不涉及复制。返回未找到的相对路径列表。
+  /// 命中排除集的资源不在合并工程中，故不涉及复制。
+  /// <para>
+  /// 先处理 <paramref name="placements"/>（自动改名资源）：按包名建立「包名 → 解压目录」映射，
+  /// 从对应源包目录取原始相对路径、写到改名后的目标相对路径；已被 placement 处理的目标路径
+  /// 在后续「按合并工程引用搜索」循环中跳过，避免改名后路径在源目录找不到而误报缺失。
+  /// </para>
+  /// 返回未找到的资源描述列表（普通缺失为相对路径，自动改名缺失带包名与源路径）。
   /// </summary>
-  private List<string> CopyResources(LstgesDocument merged, string targetDir)
+  private List<string> CopyResources(
+    LstgesDocument merged,
+    string targetDir,
+    IReadOnlyList<ResourcePlacement> placements
+  )
   {
     var missing = new List<string>();
     if (string.IsNullOrEmpty(targetDir) || merged == null)
@@ -227,12 +252,15 @@ public class MergeEngine
           referenced.Add(rel);
       }
     }
-    if (referenced.Count == 0)
+    if (referenced.Count == 0 && placements.Count == 0)
       return missing;
 
-    // 源目录：各非删除包解压目录（优先，保证导入资源取创作者实际文件）+ 模板工程目录（模板自身资源）
+    // 源目录：各非删除包解压目录（优先，保证导入资源取创作者实际文件）+ 模板工程目录（模板自身资源）。
+    // 另建「包名 → 解压目录」映射供自动改名资源按包取源文件（不用包索引，避免不可读包错位）。
     var sources = new List<string>();
     var archives = new List<PackageWork>();
+    var packageDirs = new Dictionary<string, string>(StringComparer.Ordinal);
+    var copiedCount = 0;
     try
     {
       foreach (var pkg in _dm.CreatorPackages)
@@ -244,6 +272,7 @@ public class MergeEngine
         {
           sources.Add(work.TempDir);
           archives.Add(work);
+          packageDirs[pkg.PackageName] = work.TempDir;
         }
         else
         {
@@ -254,24 +283,55 @@ public class MergeEngine
       if (!string.IsNullOrEmpty(templateDir))
         sources.Add(templateDir);
 
+      // 先处理自动改名资源：按包名映射取源文件，落到改名后的目标相对路径。
+      var handled = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+      foreach (var placement in placements)
+      {
+        var srcRel = NormalizeRelative(placement.SourceRelativePath);
+        var dstRel = NormalizeRelative(placement.DestinationRelativePath);
+        if (srcRel.Length == 0 || dstRel.Length == 0)
+          continue;
+
+        // 该目标路径已由 placement 负责：后续引用搜索循环跳过，避免按改名后路径重复找源文件。
+        handled.Add(dstRel);
+
+        if (!packageDirs.TryGetValue(placement.PackageName ?? string.Empty, out var packageDir))
+        {
+          missing.Add(
+            $"自动改名资源缺失：未找到创作者包 \"{placement.PackageName}\" 的解压目录（源 {srcRel}）"
+          );
+          continue;
+        }
+
+        var candidate = Path.Combine(packageDir, srcRel);
+        if (!File.Exists(candidate))
+        {
+          missing.Add(
+            $"自动改名资源缺失：包 \"{placement.PackageName}\" 内未找到 {srcRel}（目标 {dstRel}）"
+          );
+          continue;
+        }
+        CopyToTarget(candidate, targetDir, dstRel);
+        copiedCount++;
+      }
+
       foreach (var rel in referenced)
       {
+        if (handled.Contains(rel))
+          continue;
         var copied = false;
         foreach (var src in sources)
         {
           var candidate = Path.Combine(src, rel);
           if (!File.Exists(candidate))
             continue;
-          var dest = Path.Combine(targetDir, rel);
-          var destDir = Path.GetDirectoryName(dest);
-          if (!string.IsNullOrEmpty(destDir))
-            Directory.CreateDirectory(destDir);
-          File.Copy(candidate, dest, overwrite: true);
+          CopyToTarget(candidate, targetDir, rel);
           copied = true;
+          copiedCount++;
           break;
         }
         if (!copied)
-          missing.Add(rel);
+          missing.Add($"缺失资源文件：{rel}");
       }
     }
     finally
@@ -283,8 +343,21 @@ public class MergeEngine
     if (missing.Count > 0)
       _log.Warn($"MergeEngine: missing resource files while copying: {string.Join(", ", missing)}");
     else
-      _log.Print($"MergeEngine: copied {referenced.Count} referenced resources to {targetDir}.");
+      _log.Print($"MergeEngine: copied {copiedCount} referenced resources to {targetDir}.");
     return missing;
+  }
+
+  /// <summary>
+  /// 把 <paramref name="sourcePath"/> 复制到 <paramref name="targetDir"/> 下的
+  /// <paramref name="relativePath"/>（自动创建目标子目录）。
+  /// </summary>
+  private static void CopyToTarget(string sourcePath, string targetDir, string relativePath)
+  {
+    var dest = Path.Combine(targetDir, relativePath);
+    var destDir = Path.GetDirectoryName(dest);
+    if (!string.IsNullOrEmpty(destDir))
+      Directory.CreateDirectory(destDir);
+    File.Copy(sourcePath, dest, overwrite: true);
   }
 
   /// <summary>把资源相对路径归一为「相对工程根、无 ./ 或前导 /」形式。</summary>

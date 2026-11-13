@@ -44,6 +44,18 @@ public sealed class MergeOptions
   public IReadOnlyCollection<string>? ExcludedArchiveSpaces { get; set; }
 }
 
+/// <summary>
+/// 一条资源物理落盘计划：把 <paramref name="PackageName"/> 创作者包解压目录下的
+/// <paramref name="SourceRelativePath"/> 复制到合并目标目录的
+/// <paramref name="DestinationRelativePath"/>。仅收录「跨包同名冲突且开启自动改名」的资源；
+/// 默认关闭自动改名时该列表为空，模板同名资源与对象名冲突不自动改名、不在此列。
+/// </summary>
+public readonly record struct ResourcePlacement(
+  string PackageName,
+  string SourceRelativePath,
+  string DestinationRelativePath
+);
+
 /// <summary>合并结果。</summary>
 public sealed class MergeResult
 {
@@ -52,6 +64,14 @@ public sealed class MergeResult
 
   /// <summary>收集到的命名冲突（默认保留原名，供 UI 展示）。</summary>
   public List<MergeConflict> Conflicts { get; init; } = new();
+
+  /// <summary>
+  /// 自动改名资源的物理落盘计划（默认空）：跨包同名冲突且开启自动改名时，逐项记录
+  /// 「包名 + 原始相对路径 + 改名后目标相对路径」，供 <see cref="MergeEngine"/> 把物理文件
+  /// 复制到改名后的落点。默认关闭时为空，因此不改变既有导出行为。
+  /// </summary>
+  public IReadOnlyList<ResourcePlacement> ResourcePlacements { get; init; } =
+    Array.Empty<ResourcePlacement>();
 
   /// <summary>非致命警告（如缺失资源/Object 注入点导致静默丢弃）。</summary>
   public List<string> Warnings { get; init; } = new();
@@ -288,14 +308,16 @@ public class Merger
     var objectSubtrees = transplants.Definitions;
     var topResources = transplants.Resources;
 
-    // ---- 4. 资源路径解析（冲突检测 + 可选自动改名） ----
+    // ---- 4. 资源路径解析（冲突检测 + 可选自动改名 + 物理落盘计划） ----
+    var placements = new List<ResourcePlacement>();
     var renameMap = ResolveResourceRenames(
       packages,
       spellSubtrees,
       objectSubtrees,
       topResources,
       opt,
-      conflicts
+      conflicts,
+      placements
     );
 
     // ---- 5. 注入符卡子树（重编号，按映射顺序） ----
@@ -370,6 +392,7 @@ public class Merger
       Merged = doc,
       Conflicts = conflicts,
       Warnings = warnings,
+      ResourcePlacements = placements,
     };
   }
 
@@ -531,16 +554,24 @@ public class Merger
 
   private sealed record ResourceRef(int Pkg, string BareName, string Original, string PackageName);
 
+  /// <summary>
+  /// 解析资源改名：按「文件名」跨包判定同名冲突，收集冲突并生成 (包, 原路径) → 新文件名映射。
+  /// 跨包同名且 <see cref="MergeOptions.AutoRenameResources"/> 为 true 时，同时把
+  /// 「原相对路径 → 保留目录、仅换文件名后的目标相对路径」写入 <paramref name="placements"/>，
+  /// 供 <see cref="MergeEngine"/> 把物理文件落到改名后的路径（默认关闭时 placements 为空）。
+  /// </summary>
   private static Dictionary<(int Pkg, string Path), string> ResolveResourceRenames(
     IReadOnlyList<CreatorPackageDoc> packages,
     IReadOnlyList<SubtreeRef> spellSubtrees,
     IReadOnlyList<SubtreeRef> objectSubtrees,
     IReadOnlyList<SubtreeRef> topResources,
     MergeOptions opt,
-    List<MergeConflict> conflicts
+    List<MergeConflict> conflicts,
+    List<ResourcePlacement> placements
   )
   {
     var map = new Dictionary<(int, string), string>();
+    var recorded = new HashSet<(int Pkg, string Path)>();
 
     var refs = new List<ResourceRef>();
     foreach (var s in spellSubtrees)
@@ -573,10 +604,20 @@ public class Merger
 
       foreach (var r in group)
       {
-        map[(r.Pkg, r.Original)] =
-          collides && opt.AutoRenameResources
-            ? $"{packages[r.Pkg].PackageName}_{group.Key}"
-            : group.Key;
+        var rename = collides && opt.AutoRenameResources;
+        var newName = rename ? $"{packages[r.Pkg].PackageName}_{group.Key}" : group.Key;
+        map[(r.Pkg, r.Original)] = newName;
+
+        // 仅「跨包同名冲突 + 自动改名」才需要物理落盘；同一路径可能被多个节点引用，按路径去重。
+        if (!rename || !recorded.Add((r.Pkg, r.Original)))
+          continue;
+        placements.Add(
+          new ResourcePlacement(
+            packages[r.Pkg].PackageName,
+            r.Original,
+            ReplaceResourceFileName(r.Original, newName)
+          )
+        );
       }
     }
 
