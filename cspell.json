@@ -1,7 +1,5 @@
 {
-  "files": [
-    "**/*.*"
-  ],
+  "files": ["**/*.*"],
   "ignorePaths": [
     "**/*.tscn",
     "**/*.import",
@@ -17,6 +15,7 @@
     "**/bin/**/*.*",
     "**/obj/**/*.*",
     "addons/**/*.*",
+    "src/tools/**/*.*",
     "skills-lock.json"
   ],
   "words": [
@@ -195,6 +194,21 @@
     "wisys",
     "Wyri",
     "XRIP",
-    "Xunit"
+    "Xunit",
+    "codeload",
+    "Cff",
+    "Elias",
+    "getfenv",
+    "LuaBinaries",
+    "luabinaries",
+    "LuaJIT",
+    "luajit",
+    "NoCff",
+    "nocff",
+    "Oelschner",
+    "Prometheus",
+    "PUC",
+    "Rio",
+    "unobfuscated"
   ]
 }
