@@ -1,0 +1,31 @@
+[gd_scene format=3 uid="uid://b2nhkxylwnllv"]
+
+[ext_resource type="Script" uid="uid://dcpnwp6ixk2lv" path="res://src/ui/settings/GeneralConfigPanel.cs" id="1_djecv"]
+
+[node name="VBoxContainer" type="VBoxContainer" unique_id=903437087]
+script = ExtResource("1_djecv")
+
+[node name="ThemeHintLabel" type="Label" parent="." unique_id=432679726]
+unique_name_in_owner = true
+layout_mode = 2
+text = "选择后立即生效并自动保存；默认主题保持原样。"
+autowrap_mode = 3
+
+[node name="ThemeRow" type="HBoxContainer" parent="." unique_id=1174787983]
+layout_mode = 2
+
+[node name="ThemeLabel" type="Label" parent="ThemeRow" unique_id=4181608]
+custom_minimum_size = Vector2(120, 0)
+layout_mode = 2
+text = "界面主题:"
+
+[node name="ThemeSelect" type="OptionButton" parent="ThemeRow" unique_id=405974220]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+
+[node name="ThemeStatusLabel" type="Label" parent="." unique_id=180972813]
+unique_name_in_owner = true
+visible = false
+layout_mode = 2
+autowrap_mode = 3

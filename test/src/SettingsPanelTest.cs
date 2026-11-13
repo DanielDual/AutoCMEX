@@ -24,6 +24,7 @@ public class SettingsPanelTest : TestClass
   private Mock<IItemList> _categoryList = default!;
   private Mock<ISplitContainer> _contentArea = default!;
   private InfoConfigPanel _infoConfigPanel = default!;
+  private GeneralConfigPanel _generalConfigPanel = default!;
   private readonly List<Node> _toCleanup = new();
 
   public SettingsPanelTest(Node testScene)
@@ -66,6 +67,9 @@ public class SettingsPanelTest : TestClass
     _infoConfigPanel = new InfoConfigPanel();
     _panel.InfoConfigPanel = _infoConfigPanel;
     _toCleanup.Add(_infoConfigPanel);
+    _generalConfigPanel = new GeneralConfigPanel();
+    _panel.GeneralConfigPanel = _generalConfigPanel;
+    _toCleanup.Add(_generalConfigPanel);
 
     _panel.FakeDependency<DataManager>(_dm);
 
@@ -156,6 +160,29 @@ public class SettingsPanelTest : TestClass
     // 切回「AI模型」应重新隐藏「信息」页
     _categoryList.Raise(m => m.ItemSelected += null, 0L);
     _infoConfigPanel.Visible.ShouldBeFalse();
+  }
+
+  [Test]
+  public void SettingsPanel_GeneralConfigPanel_IsInterface()
+  {
+    _panel.GeneralConfigPanel.ShouldNotBeNull();
+    _panel.GeneralConfigPanel.ShouldBeAssignableTo<IGeneralConfigPanel>();
+  }
+
+  [Test]
+  public void SettingsPanel_GeneralCategory_ShowsGeneralConfigPanelOnly()
+  {
+    // 「通用」是 _categories 的最后一项（下标 6）
+    _generalConfigPanel.Visible.ShouldBeFalse();
+
+    _categoryList.Raise(m => m.ItemSelected += null, 6L);
+    _generalConfigPanel.Visible.ShouldBeTrue();
+    _infoConfigPanel.Visible.ShouldBeFalse();
+    ((Control)_panel.AiModelConfigPanel).Visible.ShouldBeFalse();
+
+    // 切回「AI模型」应重新隐藏「通用」页
+    _categoryList.Raise(m => m.ItemSelected += null, 0L);
+    _generalConfigPanel.Visible.ShouldBeFalse();
   }
 
   // ==================== 分割条布局记忆 ====================

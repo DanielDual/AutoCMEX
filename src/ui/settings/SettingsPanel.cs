@@ -44,6 +44,10 @@ public partial class SettingsPanel : Control, ISettingsPanel
   [Node("%InfoConfigPanel")]
   public IInfoConfigPanel InfoConfigPanel { get; set; } = default!;
 
+  /// <summary>「通用」类别页（唯一名称 <c>%GeneralConfigPanel</c>）。</summary>
+  [Node("%GeneralConfigPanel")]
+  public IGeneralConfigPanel GeneralConfigPanel { get; set; } = default!;
+
   #endregion
 
   #region Dependencies
@@ -97,6 +101,8 @@ public partial class SettingsPanel : Control, ISettingsPanel
       chatPanel.Visible = false;
     if (InfoConfigPanel is Control infoPanel)
       infoPanel.Visible = false;
+    if (GeneralConfigPanel is Control generalPanel)
+      generalPanel.Visible = false;
   }
 
   public void OnResolved()
@@ -150,6 +156,8 @@ public partial class SettingsPanel : Control, ISettingsPanel
       chatPanel.Visible = false;
     if (InfoConfigPanel is Control infoPanelHidden)
       infoPanelHidden.Visible = false;
+    if (GeneralConfigPanel is Control generalPanelHidden)
+      generalPanelHidden.Visible = false;
 
     // 显示当前类别对应的面板（索引与 _categories 顺序一致）
     switch (_currentCategory)
@@ -165,6 +173,11 @@ public partial class SettingsPanel : Control, ISettingsPanel
       case 4:
         if (InfoConfigPanel is Control infoPanelVisible)
           infoPanelVisible.Visible = true;
+        break;
+      case 6:
+        // 索引与 _categories 一致，通用=6
+        if (GeneralConfigPanel is Control generalPanelVisible)
+          generalPanelVisible.Visible = true;
         break;
       default:
         // 其他类别暂无独立场景，保持隐藏

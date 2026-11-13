@@ -6,6 +6,8 @@
 [ext_resource type="Script" uid="uid://bubjcl7bce0df" path="res://src/ui/settings/AiModelConfigPanel.cs" id="3_yhunq"]
 [ext_resource type="Script" uid="uid://vwn0wnq3t4w3" path="res://src/ui/settings/ChatConfigPanel.cs" id="5_gct5u"]
 [ext_resource type="Script" uid="uid://c5cppb0a6efbd" path="res://src/ui/settings/InfoConfigPanel.cs" id="6_x2n56"]
+[ext_resource type="PackedScene" uid="uid://b2nhkxylwnllv" path="res://src/ui/settings/GeneralConfigPanel.tscn" id="7_general"]
+[ext_resource type="Script" uid="uid://dcpnwp6ixk2lv" path="res://src/ui/settings/GeneralConfigPanel.cs" id="8_general_script"]
 
 [node name="Control" type="Control" unique_id=1958570285]
 layout_mode = 3
@@ -125,3 +127,13 @@ vertical_alignment = 1
 [node name="InfoMessageDialog" type="AcceptDialog" parent="MainContainer/ContentArea/ConfigArea/InfoConfigPanel" unique_id=795122898]
 unique_name_in_owner = true
 title = "群列表刷新"
+
+[node name="GeneralConfigPanel" type="VBoxContainer" parent="MainContainer/ContentArea/ConfigArea" instance=ExtResource("7_general")]
+unique_name_in_owner = true
+visible = false
+layout_mode = 0
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("8_general_script")
