@@ -121,6 +121,14 @@ public class ModelsTest : TestClass
     settings.KoishiPluginPath.Value.ShouldBe(string.Empty);
   }
 
+  /// <summary>界面主题默认值是「默认（Godot 原生）」，旧配置缺键时即为该值。</summary>
+  [Test]
+  public void AppSettings_DefaultThemeId_IsDefault()
+  {
+    var settings = new AppSettings();
+    settings.ThemeId.Value.ShouldBe("default");
+  }
+
   [Test]
   public void AppSettings_CanAddAiModels()
   {

@@ -209,6 +209,7 @@ public class StorageTest : TestClass
     dm.Bosses.Add(new Boss { Name = "TestBoss" });
     dm.Aliases.Add(new CreatorAlias { MainName = "Alice" });
     dm.Settings.WebSocketPort.Value = 9999;
+    dm.Settings.ThemeId.Value = "indigo-night";
 
     dm.SaveAll();
 
@@ -221,6 +222,7 @@ public class StorageTest : TestClass
     dm2.Aliases.Count.ShouldBe(1);
     dm2.Aliases[0].MainName.ShouldBe("Alice");
     dm2.Settings.WebSocketPort.Value.ShouldBe(9999);
+    dm2.Settings.ThemeId.Value.ShouldBe("indigo-night");
   }
 
   [Test]
@@ -229,7 +231,7 @@ public class StorageTest : TestClass
     // 模拟真实数据：app_settings.json 内含显式 null 字段（如 "activeAiModelId": null）。
     // System.Text.Json 反序列化会把对应 AutoValue/AutoList 属性覆盖为 null，
     // 此前导致 GuessingPanel.OnResolved 调用 .Bind() 时抛 NullReferenceException。
-    // 此处把 EnsureIntegrity 回填的全部 15 个属性都显式置 null，
+    // 此处把 EnsureIntegrity 回填的全部 16 个属性都显式置 null，
     // 确保测试真正覆盖遍历回填逻辑，避免个别属性回填失效但测试不报。
     var keyPath = AesEncryptor.GetDefaultKeyPath(_tempDir);
     var encryptor = new AesEncryptor(keyPath);
@@ -241,7 +243,8 @@ public class StorageTest : TestClass
         + "\"webSocketEnableAuth\": null, \"webSocketAuthToken\": null, "
         + "\"webSocketMaxConnections\": null, \"webSocketHeartbeatIntervalMs\": null, "
         + "\"webSocketHeartbeatTimeoutMs\": null, \"webSocketMode\": null, "
-        + "\"koishiWebSocketUrl\": null, \"selectedBossIndex\": null, \"targetGroups\": null}"
+        + "\"koishiWebSocketUrl\": null, \"selectedBossIndex\": null, \"targetGroups\": null, "
+        + "\"themeId\": null}"
     );
 
     var dm = new DataManager(_tempDir, encryptor);
@@ -263,6 +266,7 @@ public class StorageTest : TestClass
     dm.Settings.KoishiWebSocketUrl.ShouldNotBeNull();
     dm.Settings.SelectedBossIndex.ShouldNotBeNull();
     dm.Settings.TargetGroups.ShouldNotBeNull();
+    dm.Settings.ThemeId.ShouldNotBeNull();
   }
 
   [Test]

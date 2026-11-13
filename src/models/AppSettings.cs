@@ -52,6 +52,9 @@ public class AppSettings
   /// <summary>信息板块的发布目标群聊列表（由设置面板「信息」类别维护）</summary>
   public AutoList<TargetGroup> TargetGroups { get; set; } = new();
 
+  /// <summary>界面主题 id（对应 <c>ThemeCatalog.Options</c> 中的 Id；默认 <c>"default"</c>）</summary>
+  public AutoValue<string> ThemeId { get; set; } = new("default");
+
   /// <summary>
   /// 恢复关键自动同步属性的非空完整性。
   /// </summary>
@@ -80,6 +83,7 @@ public class AppSettings
     KoishiWebSocketUrl ??= new(string.Empty);
     SelectedBossIndex ??= new(0);
     TargetGroups ??= new();
+    ThemeId ??= new("default");
 
     foreach (var group in TargetGroups)
     {
