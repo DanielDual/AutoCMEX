@@ -89,6 +89,14 @@ addons/        开发期编辑器/运行时插件
 
 整合、猜测、信息板块已可用；设置板块覆盖 AI、群聊、录制配置与通用主题选择；帮助板块还没做。
 
+## 第三方组件
+
+「混淆 Lua 脚本（实验性）」功能随包分发 Prometheus v0.3.1（Lua 混淆器）与 Lua 5.1.5 解释器（LuaBinaries，MIT）：
+
+Based on Prometheus by Elias Oelschner, https://github.com/prometheus-lua/Prometheus
+
+版本、来源、SHA256 与许可原文见 [第三方组件与许可](docs/third-party-notices.md)；工具目录内保留 `prometheus/LICENSE` 与 `runtime/COPYRIGHT`。
+
 ## 许可
 
 [MIT](LICENSE) © 2026 AutoCMEX
