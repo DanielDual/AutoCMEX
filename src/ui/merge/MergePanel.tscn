@@ -179,12 +179,12 @@ text = "导出包含 .lstges 工程文件"
 [node name="ObfuscateLuaToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane/OptionsFlow" unique_id=621693574]
 unique_name_in_owner = true
 layout_mode = 2
-text = "混淆 Lua 脚本"
+text = "混淆 Lua 脚本（实验性）"
 
 [node name="AutoRenameConflictsToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane/OptionsFlow" unique_id=1634520156]
 unique_name_in_owner = true
 layout_mode = 2
-text = "冲突自动改名"
+text = "冲突自动改名（实验性）"
 
 [node name="ForcePerformActionToggle" type="CheckBox" parent="RootSplit/RightSplit/ExportPane/OptionsFlow" unique_id=2114783056]
 unique_name_in_owner = true

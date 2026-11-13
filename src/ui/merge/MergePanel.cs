@@ -259,7 +259,11 @@ public partial class MergePanel : Control, IMergePanel
     AutoRenameConflictsToggle.Toggled += _ => PersistConfig();
     ForcePerformActionToggle.Toggled += _ => PersistConfig();
     GroupByCreatorFoldersToggle.Toggled += _ => PersistConfig();
-    MergeAlgorithmOption.ItemSelected += _ => PersistConfig();
+    MergeAlgorithmOption.ItemSelected += _ =>
+    {
+      PersistConfig();
+      SyncGroupByCreatorAvailability();
+    };
 
     // 右上「对应表」·打乱模式下拉：只属于对应表本身，与导出配置无关，故单独写回。
     MappingModeOption.ItemSelected += _ => SyncMappingModeToModel();
@@ -358,6 +362,24 @@ public partial class MergePanel : Control, IMergePanel
     ForcePerformActionToggle.ButtonPressed = _dm.MergeConfig.ForcePerformAction.Value;
     GroupByCreatorFoldersToggle.ButtonPressed = _dm.MergeConfig.GroupByCreatorFolders.Value;
     MergeAlgorithmOption.Select((int)_dm.MergeConfig.Algorithm.Value);
+    SyncGroupByCreatorAvailability();
+  }
+
+  /// <summary>
+  /// 同步「按创作者分组」开关在当前合并算法下的可用性（只改控件状态，不写模型）：
+  /// 整文件夹整搬（<see cref="MergeAlgorithm.TopFolderCarry"/>）下资源/对象随包内顶层文件夹整体搬运，
+  /// 该开关不生效，置灰并给出 hover 说明；提取式下恢复可用并清空说明。
+  /// </summary>
+  private void SyncGroupByCreatorAvailability()
+  {
+    if (_dm == null)
+      return;
+
+    var disabled = _dm.MergeConfig.Algorithm.Value == MergeAlgorithm.TopFolderCarry;
+    GroupByCreatorFoldersToggle.Disabled = disabled;
+    GroupByCreatorFoldersToggle.TooltipText = disabled
+      ? "整文件夹整搬模式下不生效：资源/对象随包内顶层文件夹整体搬运"
+      : string.Empty;
   }
 
   #endregion
@@ -681,11 +703,20 @@ public partial class MergePanel : Control, IMergePanel
   /// <summary>
   /// 调起 Sharp Cli 把合并产生的工作工程（临时目录下的 .lstgproj）编译打包为 mod zip；返回成功与否。
   /// </summary>
-  private bool TryBuildModZip(MergeEngine engine, out string message)
+  /// <param name="engine">整合引擎（提供工作工程路径）。</param>
+  /// <param name="message">面向用户的打包结果说明。</param>
+  /// <param name="zipPath">预期产出的 mod zip 路径（成功后交给 <see cref="FinalizeModZip"/> 做后处理）。</param>
+  private bool TryBuildModZip(MergeEngine engine, out string message, out string zipPath)
   {
     message = string.Empty;
+    zipPath = string.Empty;
     if (_dm == null)
       return false;
+
+    var outputDir = _dm.MergeConfig.OutputDir.Value.Trim();
+    var outputName = _dm.MergeConfig.OutputName.Value.Trim();
+    if (!string.IsNullOrEmpty(outputDir) && !string.IsNullOrEmpty(outputName))
+      zipPath = Path.Combine(outputDir, outputName + ".zip");
 
     var sharpDir = _dm.MergeConfig.SharpEditorPath.Value.Trim();
     var plugin = _dm.MergeConfig.PluginDll.Value.Trim();
@@ -699,8 +730,8 @@ public partial class MergePanel : Control, IMergePanel
     var ok = invoker.Run(
       sharpDir,
       engine.MergedProjectPath,
-      _dm.MergeConfig.OutputDir.Value.Trim(),
-      _dm.MergeConfig.OutputName.Value.Trim(),
+      outputDir,
+      outputName,
       plugin,
       out var exitCode,
       out _
@@ -709,6 +740,38 @@ public partial class MergePanel : Control, IMergePanel
       ? $"已打包 mod zip（输出名：{_dm.MergeConfig.OutputName.Value}）"
       : $"Sharp 打包失败（exit {exitCode}），请检查 Sharp 配置";
     return ok;
+  }
+
+  /// <summary>
+  /// Sharp 打包成功后对 mod zip 做后处理（混淆 .lua + 按选项保留/移除工程文件条目），
+  /// 并把结果以 <c>[混淆]</c> 行追加到冲突/日志列表（不新增弹窗）。
+  /// </summary>
+  /// <param name="zipPath">Sharp 产出的 mod zip 路径。</param>
+  /// <param name="obfuscateLua">是否混淆 Lua 脚本。</param>
+  /// <param name="includeLstges">是否保留 zip 内 <c>&lt;输出名&gt;.lstgproj</c> 条目。</param>
+  private void FinalizeModZip(string zipPath, bool obfuscateLua, bool includeLstges)
+  {
+    var finalizer = new ModPackageFinalizer(new PrometheusLuaObfuscator(_log), _log);
+    var result = finalizer.Finalize(zipPath, obfuscateLua, includeLstges);
+
+    foreach (var warning in result.Warnings)
+      ConflictList.AddItem($"[混淆] 警告：{warning}");
+
+    if (result.IsSuccess)
+    {
+      if (!result.Processed)
+        return;
+      var summary = obfuscateLua ? $"已混淆 {result.ObfuscatedCount} 个 Lua 脚本" : "未开启混淆";
+      if (result.RemovedProjectFile)
+        summary += "；已移除工程文件条目";
+      ConflictList.AddItem($"[混淆] 成功：{summary}");
+      return;
+    }
+
+    // fail-closed：不交付半混淆产物，原 zip 已改名备份，明确告知用户。
+    ConflictList.AddItem($"[混淆] 失败：{result.Error}");
+    if (!string.IsNullOrEmpty(result.BackupPath))
+      ConflictList.AddItem($"[混淆] 原 zip 已保留为：{Path.GetFileName(result.BackupPath)}");
   }
 
   private void OnExportFullPackage()
@@ -746,9 +809,21 @@ public partial class MergePanel : Control, IMergePanel
     foreach (var c in result.Conflicts)
       ConflictList.AddItem($"[{c.Kind}] {c.Name}（{c.Packages}）");
 
+    // 非致命警告（如自动改名资源物理文件缺失、注入点缺失导致静默丢弃）逐条展示在冲突行之后。
+    foreach (var warning in result.Warnings)
+      ConflictList.AddItem($"[警告] {warning}");
+
     // Sharp 打包（可选）：配置了 Sharp 路径与插件 dll 才打包 mod zip，否则仅提示（不阻塞工程/对应表生成）
-    TryBuildModZip(engine, out var buildMessage);
+    var obfuscateLua = ObfuscateLuaToggle.ButtonPressed;
+    var includeLstges = IncludeLstgesToggle.ButtonPressed;
+    var built = TryBuildModZip(engine, out var buildMessage, out var zipPath);
     ConflictList.AddItem($"[打包] {buildMessage}");
+
+    // zip 后处理只在 Sharp 成功产出 zip 后执行；混淆开启但没生成 zip 时必须明确告知未生效。
+    if (built)
+      FinalizeModZip(zipPath, obfuscateLua, includeLstges);
+    else if (obfuscateLua)
+      ConflictList.AddItem($"[混淆] 未生成 mod zip，混淆未生效（{buildMessage}）");
 
     var exportResult = engine.ExportMapping(_dm.MergeConfig.OutputDir.Value);
     if (!string.IsNullOrEmpty(exportResult))
