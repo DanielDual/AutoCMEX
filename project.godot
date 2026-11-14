@@ -45,7 +45,7 @@ enabled=PackedStringArray("res://addons/auto_reload/plugin.cfg", "res://addons/g
 
 [gui]
 
-theme/default_font_multichannel_signed_distance_field=true
+theme/default_font_multichannel_signed_distance_field=false
 theme/default_font_generate_mipmaps=true
 theme/default_theme_scale=2.0
 
