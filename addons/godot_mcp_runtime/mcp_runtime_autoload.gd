@@ -68,7 +68,8 @@ func _process(_delta: float) -> void:
 
 func _start_server() -> void:
 	_server = TCPServer.new()
-	var error = _server.listen(_port)
+	# 只绑定回环地址：这个端口没有鉴权，不能暴露给局域网。
+	var error = _server.listen(_port, "127.0.0.1")
 	if error != OK:
 		push_error("[MCP Runtime] Failed to start server on port %d: %s" % [_port, error])
 		_enabled = false
