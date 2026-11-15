@@ -20,6 +20,12 @@ signal command_received(command: String, params: Dictionary)
 
 func _ready() -> void:
 	name = "MCPRuntime"
+	# 默认不监听：本插件随源码公开，任何人克隆后直接运行游戏都会在本机起一个
+	# 无鉴权的 TCP 端口。只有显式打开 mcp/runtime_enabled 才启动；开发机通过
+	# override.cfg 打开，而该设置不会随导出构件分发。
+	if not ProjectSettings.get_setting("mcp/runtime_enabled", false):
+		_enabled = false
+		return
 	_start_server()
 	print("[MCP Runtime] Autoload ready, server starting on port %d" % _port)
 
