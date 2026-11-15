@@ -16,9 +16,13 @@ repos:
       - id: check-yaml
       - id: destroyed-symlinks
       - id: detect-private-key
+      # Vendored third-party sources must stay byte-identical to upstream
+      # (docs/third-party-notices.md asserts a per-file match).
       - id: end-of-file-fixer
+        exclude: ^src/tools/lua-obfuscator/
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
+        exclude: ^src/tools/lua-obfuscator/
 
   # Prettier formatter (maintained fork of pre-commit/mirrors-prettier)
   - repo: https://github.com/rbubley/mirrors-prettier
@@ -26,6 +30,8 @@ repos:
     hooks:
       - id: prettier
         types_or: [json, yaml, markdown, css, html, javascript]
+        # Vendored third-party sources must stay byte-identical to upstream.
+        exclude: ^src/tools/lua-obfuscator/
 
   # Local hooks
   - repo: local
