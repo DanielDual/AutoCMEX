@@ -1,0 +1,31 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!--
+    帮助内容生成器：构建期工具，把 docs/help/**/*.md 预渲染成 src/core/help/Generated/HelpContent.Generated.cs。
+    - 零 PackageReference：只用 BCL，避免给游戏工程引入任何新依赖。
+    - 编译逻辑来自 src/core/help/markdown/（同一份源码，游戏程序集与单测共用）。
+    - 关闭默认 Compile 通配，避免把 ../../src 下无关文件或本工程 obj 里的生成代码带进来。
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <AssemblyName>HelpContentGenerator</AssemblyName>
+    <RootNamespace>AutoCMEX.Tools.HelpContentGenerator</RootNamespace>
+    <EnableDefaultCompileItems>false</EnableDefaultCompileItems>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <IsPackable>false</IsPackable>
+    <GenerateDocumentationFile>false</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <Compile Include="Program.cs" />
+    <Compile
+      Include="../../src/core/help/markdown/**/*.cs"
+      Link="markdown/%(RecursiveDir)%(Filename)%(Extension)"
+    />
+    <!-- 渲染器引用的语义占位符常量（纯 C#、无 Godot 依赖） -->
+    <Compile Include="../../src/core/help/HelpPlaceholders.cs" Link="help/HelpPlaceholders.cs" />
+  </ItemGroup>
+</Project>

@@ -12,6 +12,8 @@ test-key
 skills-lock.json
 builds/
 
+# 帮助内容生成物（不提交；dotnet build 时由 tools/HelpContentGenerator 生成）
+src/core/help/Generated/HelpContent.Generated.cs
 
 # [Coverage]
 
