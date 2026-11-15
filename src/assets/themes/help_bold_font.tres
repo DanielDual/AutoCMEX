@@ -1,0 +1,8 @@
+[gd_resource type="SystemFont" format=3]
+
+[resource]
+font_names = PackedStringArray("Microsoft YaHei UI", "Microsoft YaHei", "Segoe UI", "Noto Sans CJK SC", "sans-serif")
+font_weight = 700
+antialiasing = 1
+multichannel_signed_distance_field = false
+subpixel_positioning = 1

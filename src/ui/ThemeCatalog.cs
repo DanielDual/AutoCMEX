@@ -52,6 +52,18 @@ public static class ThemeCatalog
   /// <summary>日志正文色（<see cref="AppColorsType"/> 下的颜色项名）。</summary>
   public const string LogText = "log_text";
 
+  /// <summary>帮助正文链接色（<see cref="AppColorsType"/> 下的颜色项名）。</summary>
+  public const string HelpLink = "help_link";
+
+  /// <summary>帮助代码块底色（<see cref="AppColorsType"/> 下的颜色项名）。</summary>
+  public const string HelpCodeBackground = "help_code_bg";
+
+  /// <summary>帮助表头底色（<see cref="AppColorsType"/> 下的颜色项名）。</summary>
+  public const string HelpTableHeaderBackground = "help_table_header_bg";
+
+  /// <summary>帮助表格线色（<see cref="AppColorsType"/> 下的颜色项名）。</summary>
+  public const string HelpBorder = "help_border";
+
   /// <summary>主题清单的固定顺序；下标 0 恒为 <see cref="DefaultId"/>。</summary>
   private static readonly ThemeOption[] Catalog =
   {

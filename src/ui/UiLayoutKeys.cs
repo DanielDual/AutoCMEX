@@ -35,4 +35,7 @@ public static class UiLayoutKeys
 
   /// <summary>设置板块内容分割条：<c>SettingsPanel.tscn</c> 的 <c>MainContainer/ContentArea</c>（类别 / 配置两栏）。</summary>
   public const string SettingsContent = "settings.content";
+
+  /// <summary>帮助板块内容分割条：<c>HelpPanel.tscn</c> 的 <c>Body</c>（左导航 / 正文两栏）。</summary>
+  public const string HelpNav = "help.nav";
 }

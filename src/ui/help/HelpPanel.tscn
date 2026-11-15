@@ -1,11 +1,196 @@
 [gd_scene format=3 uid="uid://lpqr6wef3tj8"]
 
-[node name="Control" type="Control" unique_id=1553635630]
-layout_mode = 3
-anchors_preset = 0
+[ext_resource type="Script" uid="uid://cf5qw27uigvoh" path="res://src/ui/help/HelpPanel.cs" id="1_help"]
+[ext_resource type="SystemFont" path="res://src/assets/themes/help_mono_font.tres" id="2_8tpmj"]
+[ext_resource type="StyleBox" path="res://src/assets/themes/empty_panel_style.tres" id="2_okqma"]
+[ext_resource type="SystemFont" path="res://src/assets/themes/help_bold_font.tres" id="2_q7vyf"]
 
-[node name="PlaceholderLabel" type="Label" parent="." unique_id=1838508749]
-layout_mode = 0
-text = "帮助板块 - 待开发"
-horizontal_alignment = 1
-vertical_alignment = 1
+[node name="HelpPanel" type="Control" unique_id=989848590]
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+grow_horizontal = 2
+grow_vertical = 2
+script = ExtResource("1_help")
+
+[node name="TopBar" type="HBoxContainer" parent="." unique_id=1502413604]
+unique_name_in_owner = true
+z_index = 5
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 1
+anchors_preset = 10
+anchor_right = 1.0
+offset_bottom = 56.0
+grow_horizontal = 2
+size_flags_horizontal = 3
+
+[node name="BackBtn" type="Button" parent="TopBar" unique_id=24883877]
+unique_name_in_owner = true
+layout_mode = 2
+text = "←"
+
+[node name="PageTitle" type="Label" parent="TopBar" unique_id=1722266296]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "帮助中心"
+
+[node name="TocBtn" type="Button" parent="TopBar" unique_id=1841257587]
+unique_name_in_owner = true
+layout_mode = 2
+text = "本页目录"
+
+[node name="SearchBtn" type="Button" parent="TopBar" unique_id=1795067346]
+unique_name_in_owner = true
+layout_mode = 2
+text = "搜索（Ctrl+K）"
+
+[node name="BottomBar" type="HBoxContainer" parent="." unique_id=2066867187]
+unique_name_in_owner = true
+z_index = 5
+custom_minimum_size = Vector2(0, 56)
+layout_mode = 1
+anchors_preset = 12
+anchor_top = 1.0
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -56.0
+grow_horizontal = 2
+grow_vertical = 0
+size_flags_horizontal = 3
+
+[node name="PrevBtn" type="Button" parent="BottomBar" unique_id=1704861388]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "上一页"
+clip_text = true
+
+[node name="NextBtn" type="Button" parent="BottomBar" unique_id=419906664]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+text = "下一页"
+clip_text = true
+
+[node name="TocPopup" type="PopupPanel" parent="." unique_id=155950640]
+unique_name_in_owner = true
+size = Vector2i(440, 320)
+
+[node name="TocList" type="ItemList" parent="TocPopup" unique_id=1864570413]
+unique_name_in_owner = true
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_left = 8.0
+offset_top = 8.0
+offset_right = 432.0
+offset_bottom = 312.0
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="Body" type="HSplitContainer" parent="." unique_id=1727341555]
+unique_name_in_owner = true
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 56.0
+offset_bottom = -56.0
+grow_horizontal = 2
+grow_vertical = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+split_offsets = PackedInt32Array(260)
+split_offset = 260
+
+[node name="NavTree" type="Tree" parent="Body" unique_id=22582621]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(260, 0)
+layout_mode = 2
+size_flags_vertical = 3
+hide_root = true
+
+[node name="ContentScroll" type="ScrollContainer" parent="Body" unique_id=2123460817]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+
+[node name="ContentView" type="RichTextLabel" parent="Body/ContentScroll" unique_id=2078541566]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+size_flags_vertical = 3
+focus_mode = 2
+theme_override_fonts/bold_font = ExtResource("2_q7vyf")
+theme_override_fonts/mono_font = ExtResource("2_8tpmj")
+bbcode_enabled = true
+fit_content = true
+scroll_active = false
+selection_enabled = true
+
+[node name="SearchOverlay" type="PanelContainer" parent="." unique_id=191017162]
+unique_name_in_owner = true
+visible = false
+z_index = 10
+layout_mode = 1
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = 56.0
+offset_bottom = -56.0
+grow_horizontal = 2
+grow_vertical = 2
+theme_override_styles/panel = ExtResource("2_okqma")
+
+[node name="SearchDebounce" type="Timer" parent="SearchOverlay" unique_id=59193099]
+unique_name_in_owner = true
+wait_time = 0.15
+one_shot = true
+
+[node name="SearchBackdrop" type="ColorRect" parent="SearchOverlay" unique_id=1756859914]
+unique_name_in_owner = true
+layout_mode = 2
+color = Color(0, 0, 0, 0.45)
+
+[node name="SearchCenter" type="CenterContainer" parent="SearchOverlay" unique_id=998027755]
+layout_mode = 2
+mouse_filter = 2
+
+[node name="SearchPanel" type="PanelContainer" parent="SearchOverlay/SearchCenter" unique_id=670566996]
+custom_minimum_size = Vector2(820, 520)
+layout_mode = 2
+
+[node name="SearchVBox" type="VBoxContainer" parent="SearchOverlay/SearchCenter/SearchPanel" unique_id=1480729965]
+layout_mode = 2
+size_flags_vertical = 3
+mouse_filter = 0
+
+[node name="SearchInputRow" type="HBoxContainer" parent="SearchOverlay/SearchCenter/SearchPanel/SearchVBox" unique_id=1060703205]
+layout_mode = 2
+size_flags_horizontal = 3
+mouse_filter = 0
+
+[node name="SearchInput" type="LineEdit" parent="SearchOverlay/SearchCenter/SearchPanel/SearchVBox/SearchInputRow" unique_id=925054520]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_horizontal = 3
+placeholder_text = "搜索帮助内容"
+
+[node name="SearchCloseBtn" type="Button" parent="SearchOverlay/SearchCenter/SearchPanel/SearchVBox/SearchInputRow" unique_id=1362798627]
+unique_name_in_owner = true
+custom_minimum_size = Vector2(44, 0)
+layout_mode = 2
+text = "✕"
+
+[node name="SearchHint" type="Label" parent="SearchOverlay/SearchCenter/SearchPanel/SearchVBox" unique_id=1501932506]
+unique_name_in_owner = true
+layout_mode = 2
+text = "输入关键词搜索帮助内容，Esc 关闭"
+
+[node name="SearchResults" type="ItemList" parent="SearchOverlay/SearchCenter/SearchPanel/SearchVBox" unique_id=918141614]
+unique_name_in_owner = true
+layout_mode = 2
+size_flags_vertical = 3

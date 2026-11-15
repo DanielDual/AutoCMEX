@@ -18,7 +18,7 @@ using Shouldly;
 /// </remarks>
 public class ThemeCatalogTest : TestClass
 {
-  /// <summary>每套主题必须定义的 7 个业务语义色（<see cref="ThemeCatalog.AppColorsType"/> 下）。</summary>
+  /// <summary>每套主题必须定义的 11 个业务语义色（<see cref="ThemeCatalog.AppColorsType"/> 下）。</summary>
   private static readonly string[] AppColorNames =
   {
     ThemeCatalog.WindowBackground,
@@ -28,6 +28,10 @@ public class ThemeCatalogTest : TestClass
     ThemeCatalog.MutedText,
     ThemeCatalog.Accent,
     ThemeCatalog.LogText,
+    ThemeCatalog.HelpLink,
+    ThemeCatalog.HelpCodeBackground,
+    ThemeCatalog.HelpTableHeaderBackground,
+    ThemeCatalog.HelpBorder,
   };
 
   /// <summary>每套主题必须覆盖的 Control 条目（类型, 名称）；缺失会导致控件退回引擎默认观感。</summary>
